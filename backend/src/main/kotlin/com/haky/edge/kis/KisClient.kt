@@ -12,8 +12,11 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.Json
 
 /**
@@ -38,6 +41,11 @@ class KisClient(
     private val tokenMutex = Mutex()
     @Volatile private var cachedToken: String? = null
     @Volatile private var tokenExpiryMs: Long = 0
+
+    // 한투 시세 호출 동시 실행 수 제한. 관심종목 9개를 한꺼번에 병렬 요청하면 한투의
+    // 초당 호출 한도를 넘어 일부가 거부된다(실측: 9개 동시 → ~5개만 성공). 동시 실행을
+    // 소수로 묶어 throughput 을 한도 아래로 유지한다(전 한투 호출이 이 한도를 공유).
+    private val rateLimiter = Semaphore(permits = 3)
 
     /**
      * 유효한 접근토큰을 반환한다. 한투 토큰은 24시간 유효하지만 발급 자체에 분당 호출 제한이 있어,
@@ -74,45 +82,63 @@ class KisClient(
         }
     }
 
-    /** 6자리 종목코드의 현재가/등락/거래량/고저를 조회해 정규화 Quote로 반환. */
+    /**
+     * 6자리 종목코드의 현재가/등락/거래량/고저를 조회해 정규화 Quote로 반환.
+     *
+     * 초당 한도를 넘으면 한투가 일부 요청을 rt_cd != "0" 으로 거부한다(관심종목 다건 조회 시 흔함).
+     * 동시성 제한(Semaphore)만으론 부족해, 거부당하면 점증 백오프로 재시도해 자동 복구한다.
+     */
     suspend fun getPrice(code: String): Quote {
         val accessToken = token()
-        val resp: KisPriceResponse =
-            http.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-price") {
-                // 한투는 인증을 Bearer 토큰 + appkey/appsecret 헤더로 이중 요구한다(셋 다 필요).
-                header("authorization", "Bearer $accessToken")
-                header("appkey", appKey)
-                header("appsecret", appSecret)
-                // tr_id 가 곧 "어떤 API인지"를 정한다. FHKST01010100 = 주식 현재가 시세.
-                header("tr_id", "FHKST01010100")
-                header("custtype", "P") // P=개인
-                // FID_COND_MRKT_DIV_CODE=J : 주식(KRX). FID_INPUT_ISCD : 6자리 종목코드.
-                parameter("FID_COND_MRKT_DIV_CODE", "J")
-                parameter("FID_INPUT_ISCD", code)
-            }.body()
-
-        val o = resp.output
-        // 한투는 HTTP 200이어도 본문의 rt_cd 로 성공/실패를 알린다("0"이 성공). 그래서 별도 검사 필요.
-        if (resp.rtCd != "0" || o == null) {
-            throw KisException(resp.msg1.ifBlank { "한투 조회 실패 (rt_cd=${resp.rtCd})" })
+        var lastMsg = ""
+        repeat(MAX_ATTEMPTS) { attempt ->
+            // withPermit: 동시에 최대 permits 개만 한투를 호출(나머지는 대기) → 폭주로 인한 한도 초과 완화.
+            val resp = rateLimiter.withPermit { requestPrice(code, accessToken) }
+            val o = resp.output
+            // 한투는 HTTP 200이어도 본문 rt_cd 로 성패를 알린다("0"이 성공).
+            if (resp.rtCd == "0" && o != null) {
+                return o.toQuote(code)
+            }
+            lastMsg = resp.msg1.ifBlank { "rt_cd=${resp.rtCd}" }
+            if (attempt < MAX_ATTEMPTS - 1) {
+                delay(BACKOFF_MS * (attempt + 1)) // 250ms, 500ms, 750ms ...
+            }
         }
-        // 한투 응답은 모든 값이 문자열이라 숫자로 변환한다.
-        // 주의: prdy_vrss(전일대비)와 prdy_ctrt(등락률)는 이미 부호가 붙어 있다("-192000", "-9.58").
-        //      별도의 prdy_vrss_sign 으로 부호를 다시 곱하면 음수×음수=양수가 되는 버그가 났었다 → 그대로 사용.
-        return Quote(
-            code = code,
-            price = o.price.toLongSafe(),
-            change = o.change.toLongSafe(),
-            changeRate = o.changeRate.toDoubleSafe(),
-            volume = o.volume.toLongSafe(),
-            open = o.open.toLongSafe(),
-            high = o.high.toLongSafe(),
-            low = o.low.toLongSafe(),
-            high52w = o.high52w.toLongSafe(),
-            low52w = o.low52w.toLongSafe(),
-        )
+        throw KisException("한투 조회 실패($code): $lastMsg")
+    }
+
+    /** 현재가 조회 HTTP 호출 1회. 한투는 Bearer 토큰 + appkey/appsecret 헤더를 모두 요구한다. */
+    private suspend fun requestPrice(code: String, accessToken: String): KisPriceResponse =
+        http.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-price") {
+            header("authorization", "Bearer $accessToken")
+            header("appkey", appKey)
+            header("appsecret", appSecret)
+            header("tr_id", "FHKST01010100") // tr_id = 어떤 API인지. 주식 현재가 시세.
+            header("custtype", "P")           // P=개인
+            parameter("FID_COND_MRKT_DIV_CODE", "J") // J=주식(KRX)
+            parameter("FID_INPUT_ISCD", code)
+        }.body()
+
+    companion object {
+        private const val MAX_ATTEMPTS = 4
+        private const val BACKOFF_MS = 250L
     }
 }
+
+// 한투 원본(문자열) → 우리 Quote 로 변환.
+// 주의: prdy_vrss(전일대비)·prdy_ctrt(등락률)는 이미 부호 포함("-192000","-9.58") → 부호 재적용 금지.
+private fun KisPriceOutput.toQuote(code: String) = Quote(
+    code = code,
+    price = price.toLongSafe(),
+    change = change.toLongSafe(),
+    changeRate = changeRate.toDoubleSafe(),
+    volume = volume.toLongSafe(),
+    open = open.toLongSafe(),
+    high = high.toLongSafe(),
+    low = low.toLongSafe(),
+    high52w = high52w.toLongSafe(),
+    low52w = low52w.toLongSafe(),
+)
 
 // 한투 값은 문자열이고 가끔 빈 문자열이 오기도 해서, 파싱 실패 시 0으로 안전 처리한다.
 private fun String.toLongSafe(): Long = trim().toLongOrNull() ?: 0L
