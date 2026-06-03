@@ -5,6 +5,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
+import io.ktor.client.request.parameter
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
@@ -32,4 +33,13 @@ class EdgeApi(
     /** 6자리 종목코드의 현재 시세를 백엔드에서 가져온다. */
     suspend fun getQuote(code: String): Quote =
         client.get("$baseUrl/quote/$code").body()
+
+    /**
+     * 여러 종목 시세를 한 번에 가져온다(관심종목 리스트용). → GET /quotes?codes=a,b,c
+     * 백엔드가 병렬 조회하며, 일부 실패분은 응답에서 빠질 수 있어 반환 개수가 요청보다 적을 수 있다.
+     */
+    suspend fun getQuotes(codes: List<String>): List<Quote> =
+        client.get("$baseUrl/quotes") {
+            parameter("codes", codes.joinToString(","))
+        }.body()
 }
