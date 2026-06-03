@@ -131,7 +131,7 @@
 각 단계는 독립적으로 빌드·실행되고, 끝나면 "눈에 보이는 결과"가 있다. 위에서 아래로 하나씩.
 
 **1.0 스켈레톤 (뼈대만, 데이터 없음)**
-- [ ] 1.0a KMP 프로젝트 생성 (`shared` + `iosApp`) → 빈 화면 빌드·실행 성공 *(Xcode/AS 설치 대기)*
+- [x] 1.0a KMP 프로젝트 생성 → `app/`(androidApp·iosApp·sharedLogic·sharedUI), 패키지 com.haky.edge ✅ *(빌드·실행 검증은 1.1c)*
 - [x] 1.0b Ktor 백엔드 프로젝트 생성 → `GET /health` 200 반환, 로컬 실행 확인 ✅ `backend/`
 - [ ] 1.0c (선택) Cloud Run 1회 배포 → 공개 URL에서 `/health` 확인
 

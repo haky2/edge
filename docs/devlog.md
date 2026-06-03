@@ -6,7 +6,20 @@
 
 ---
 
-## 2026-06-03 — 백엔드 첫 슬라이스 + 검색 + 문서화
+## 2026-06-03 (오후) — KMP 스캐폴드 + 폴더 정리
+
+**한 일**
+- KMP 앱 생성(마법사, com.haky.edge): `app/{androidApp(Compose), iosApp(SwiftUI), sharedLogic, sharedUI}` (1.0a).
+- 모노레포 폴더 정리: 루트 `stock→edge`, 앱 `Edge→app`. 아키텍처 컨벤션 문서화(package-by-feature, Phase 2 적용).
+- iOS는 SwiftUI 확인(ContentView.swift). sharedUI(Compose)는 안드로이드용.
+
+**다음 할 일**
+- 1.1c: `sharedLogic`에 Ktor 클라이언트+`Quote` 모델 → 백엔드 `/quote/009150` 호출 → 화면에 현재가 표시.
+- 어느 플랫폼부터 띄울지(안드로이드 에뮬 vs iOS 시뮬) 정하고 빌드·실행 검증.
+
+---
+
+## 2026-06-03 (오전) — 백엔드 첫 슬라이스 + 검색 + 문서화
 
 **한 일**
 - 백엔드 스캐폴드(`backend/`, Ktor + Cloud Run 타깃). `git init` + .gitignore.
