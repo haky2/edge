@@ -134,8 +134,11 @@
 
 **1.1 첫 수직 슬라이스 — 시세 1종목 end-to-end** ⭐ 첫 "보이는 성공"
 - [x] 1.1a 백엔드: 한투 OAuth 접근토큰 발급 + 만료 관리(메모리 캐시) ✅ `KisClient`
-- [x] 1.1b 백엔드: `GET /quote/{code}` → 한투 현재가 조회 → 정규화 JSON 반환 (캐시 없음) ✅ — **실데이터 검증은 .env 키 입력 후**
-- [ ] 1.1c 앱: Ktor client로 백엔드 호출 → 하드코딩 종목(삼성전기 009150) 현재가 1줄 표시 *(Xcode 대기)*
+- [x] 1.1b 백엔드: `GET /quote/{code}` → 한투 현재가 조회 → 정규화 JSON 반환 (캐시 없음) ✅ **실데이터 검증 완료**
+- [ ] 1.1c 앱: Ktor client로 백엔드 호출 → 하드코딩 종목(삼성전기 009150) 현재가 1줄 표시 *(Xcode 설치됨, 진행 가능)*
+
+> 한투 inquire-price 참고: `prdy_vrss`·`prdy_ctrt`는 **이미 부호 포함**(재적용 금지). 종목명(`hts_kor_isnm`)은 이 엔드포인트에 없음 → 검색(1.4)/관심종목에서 확보. 토큰 요청은 `encodeDefaults=true` 필수.
+> 도구: Xcode 설치 완료(단 `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` 1회 필요), Android Studio = `~/Applications/Android Studio.app`.
 
 > 백엔드 실행: `cd backend && cp .env.example .env` 후 키 입력 → `./run.sh` → `curl localhost:8080/quote/009150`
 
