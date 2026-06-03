@@ -20,7 +20,12 @@ struct ContentView: View {
                     Text(e).font(.footnote).foregroundColor(.secondary)
                 }
                 ForEach(watchlist, id: \.code) { item in
-                    row(item)
+                    // 탭하면 상세 화면으로. 리스트가 받아둔 시세를 넘겨 즉시 표시.
+                    NavigationLink {
+                        StockDetailView(item: item, quote: quotes[item.code], api: api)
+                    } label: {
+                        row(item)
+                    }
                 }
             }
             .navigationTitle("관심종목")
