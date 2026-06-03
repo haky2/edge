@@ -17,11 +17,16 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.File
 
 /**
  * 한투(KIS) Open API 클라이언트.
- * - OAuth 접근토큰을 메모리에 캐시(만료 1분 전까지 재사용) — 한투 토큰 발급은 분당 제한이 있어 캐시 필수.
+ * - OAuth 접근토큰을 메모리 + 파일에 캐시해 재사용. 한투는 "토큰 1일 1회 발급 원칙"이고
+ *   잦은 발급 시 이용이 제한될 수 있어, 24시간짜리 토큰을 파일에도 저장해 재시작 시 재발급을 피한다.
  * - 시세 등 읽기 전용 호출만 사용.
  */
 class KisClient(
@@ -42,10 +47,18 @@ class KisClient(
     @Volatile private var cachedToken: String? = null
     @Volatile private var tokenExpiryMs: Long = 0
 
-    // 한투 시세 호출 동시 실행 수 제한. 관심종목 9개를 한꺼번에 병렬 요청하면 한투의
-    // 초당 호출 한도를 넘어 일부가 거부된다(실측: 9개 동시 → ~5개만 성공). 동시 실행을
-    // 소수로 묶어 throughput 을 한도 아래로 유지한다(전 한투 호출이 이 한도를 공유).
-    private val rateLimiter = Semaphore(permits = 3)
+    // 한투 시세 호출 동시 실행 수 제한.
+    // 한투 정책: "신규 고객은 신청 후 3일간 초당 3건"으로 유량 제한, 이후 기본 유량으로 자동 상향.
+    // (모의투자는 제외) → 신규 키일수록 빡세서, 동시 실행을 묶어 한도 초과를 막는다.
+    // 3일 지나 유량이 풀리면 KIS_MAX_CONCURRENCY 를 올려 다종목 조회를 더 빠르게 할 수 있다.
+    private val rateLimiter = Semaphore(
+        permits = System.getenv("KIS_MAX_CONCURRENCY")?.toIntOrNull() ?: 3,
+    )
+
+    // 토큰을 파일에도 저장해 재시작 시 재발급을 피한다(한투 1일 1회 발급 원칙 준수).
+    // 토큰은 24시간 유효한 준-비밀값이므로 이 파일은 .gitignore 처리한다.
+    private val tokenFile = File(System.getenv("KIS_TOKEN_CACHE") ?: ".kis-token.json")
+    private val cacheJson = Json { ignoreUnknownKeys = true }
 
     /**
      * 유효한 접근토큰을 반환한다. 한투 토큰은 24시간 유효하지만 발급 자체에 분당 호출 제한이 있어,
@@ -58,10 +71,10 @@ class KisClient(
      *     나머지는 그 사이 채워진 캐시를 보고 재발급을 건너뛴다(중복 발급 방지).
      */
     private suspend fun token(): String {
-        cachedToken?.let { if (System.currentTimeMillis() < tokenExpiryMs) return it }
+        validToken()?.let { return it } // 빠른 경로: 메모리 캐시가 유효하면 락 없이 반환
         return tokenMutex.withLock {
-            // 락을 기다리는 동안 다른 코루틴이 이미 발급했을 수 있으므로 다시 확인.
-            cachedToken?.let { if (System.currentTimeMillis() < tokenExpiryMs) return it }
+            validToken()?.let { return it }       // 락 대기 중 다른 코루틴이 발급했을 수 있음
+            loadTokenFromFile()?.let { return it } // 재시작 직후: 파일에 살아있는 토큰이 있으면 재사용(재발급 회피)
             if (appKey.isBlank() || appSecret.isBlank()) {
                 throw KisException("KIS_APP_KEY / KIS_APP_SECRET 가 설정되지 않았습니다 (.env 확인)")
             }
@@ -78,7 +91,33 @@ class KisClient(
             // 만료 60초 전에 미리 폐기해, 경계 시점에 막 만료된 토큰으로 호출하는 일을 피한다.
             // coerceAtLeast(60): expires_in 이 비정상적으로 작아도 음수 만료가 되지 않도록 하한선.
             tokenExpiryMs = System.currentTimeMillis() + (resp.expiresIn - 60).coerceAtLeast(60) * 1000
+            saveTokenToFile() // 다음 재시작 때 재사용하도록 파일에 기록
             resp.accessToken
+        }
+    }
+
+    /** 메모리 캐시가 아직 유효하면 그 토큰, 아니면 null. */
+    private fun validToken(): String? =
+        cachedToken?.takeIf { System.currentTimeMillis() < tokenExpiryMs }
+
+    /** 파일에 저장된 토큰이 아직 유효하면 메모리에 올리고 반환, 아니면 null. */
+    private fun loadTokenFromFile(): String? = try {
+        if (!tokenFile.exists()) null
+        else cacheJson.decodeFromString<TokenCache>(tokenFile.readText())
+            .takeIf { System.currentTimeMillis() < it.expiryMs }
+            ?.also { cachedToken = it.token; tokenExpiryMs = it.expiryMs }
+            ?.token
+    } catch (_: Exception) {
+        null // 파일 손상 등은 무시하고 새로 발급
+    }
+
+    /** 현재 메모리 토큰을 파일에 저장(다음 재시작 때 재사용). 실패해도 동작엔 지장 없음. */
+    private fun saveTokenToFile() {
+        val token = cachedToken ?: return
+        try {
+            tokenFile.writeText(cacheJson.encodeToString(TokenCache(token, tokenExpiryMs)))
+        } catch (_: Exception) {
+            // 저장 실패 시 다음 재시작에 재발급될 뿐, 기능엔 영향 없음
         }
     }
 
@@ -143,3 +182,7 @@ private fun KisPriceOutput.toQuote(code: String) = Quote(
 // 한투 값은 문자열이고 가끔 빈 문자열이 오기도 해서, 파싱 실패 시 0으로 안전 처리한다.
 private fun String.toLongSafe(): Long = trim().toLongOrNull() ?: 0L
 private fun String.toDoubleSafe(): Double = trim().toDoubleOrNull() ?: 0.0
+
+/** 토큰 파일 캐시 형식. expiryMs = 만료 시각(epoch millis). */
+@Serializable
+private data class TokenCache(val token: String, val expiryMs: Long)

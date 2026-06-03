@@ -26,3 +26,5 @@ DerivedData/
 !.env.example
 secrets.properties
 **/src/main/resources/application-local.*
+.kis-token.json
+**/.kis-token.json
