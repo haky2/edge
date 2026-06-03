@@ -38,6 +38,11 @@
 - **결정:** 백엔드 1엔드포인트 ↔ 앱 1화면을 end-to-end로 돌려보고 다음으로. Phase 전체를 한 번에 만들지 않음.
 - **왜:** 매 단계 "보이는 결과 + 빌드·실행 검증"으로 리스크를 일찍 제거. 백엔드(한투 연동)가 진짜 리스크라 먼저 함.
 
-## 8. iOS 배포는 TestFlight (= Apple Developer $99/년)
+## 8. 백엔드 아키텍처 = 가벼운 레이어드 + package-by-feature (Phase 2부터 적용)
+- **결정:** 지금은 컨벤션만 문서화([architecture.md](backend/architecture.md)), 실제 폴더 재구성은 기능이 늘어나는 Phase 2에. 풀 DDD는 복잡한 도메인(분석/학습)에만 국소 적용.
+- **왜:** 기능 2개에 풀 DDD/레이어 분리는 오버엔지니어링. 방향(package-by-feature, 안티커럽션 유지)은 지금 고정하되, 리팩터링 비용은 효용이 생기는 시점으로 미룬다.
+- **대안:** 지금 전면 DDD — 효용 대비 ceremony 과다라 보류.
+
+## 9. iOS 배포는 TestFlight (= Apple Developer $99/년)
 - **결정:** 친구 배포 시 7일 재서명 대신 TestFlight.
 - **왜:** 7일 재서명은 매주 재설치라 비현실적. TestFlight는 외부 테스터 100명까지 링크 설치. Android는 APK 직접 배포(무료).

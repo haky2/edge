@@ -12,6 +12,7 @@
 |---|---|---|
 | [decisions.md](decisions.md) | 주요 의사결정과 그 이유(ADR-lite) | "왜 Cloud Run? 왜 키를 백엔드에?" 다시 헷갈릴 때 |
 | [devlog.md](devlog.md) | 세션별 작업 로그(한 일·막힌 점·다음) | 오랜만에 다시 시작할 때 맥락 복구 |
+| [backend/architecture.md](backend/architecture.md) | 백엔드 패키지 구조·레이어 컨벤션 | 새 기능 추가/리팩터링할 때 |
 | [backend/api.md](backend/api.md) | 백엔드 API 레퍼런스(엔드포인트·예시) | 앱에서 백엔드 붙일 때 |
 | [backend/development.md](backend/development.md) | 백엔드 실행/빌드/구조/배포 가이드 | 서버를 돌리거나 고칠 때 |
 | [backend/kis-api-notes.md](backend/kis-api-notes.md) | 한투(KIS) API 함정 모음 | 한투 연동에서 막힐 때 |
