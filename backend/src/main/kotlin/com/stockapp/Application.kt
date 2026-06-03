@@ -2,7 +2,11 @@ package com.stockapp
 
 import com.stockapp.kis.KisClient
 import com.stockapp.kis.KisException
+import com.stockapp.master.StockMaster
 import com.stockapp.routes.quoteRoutes
+import com.stockapp.routes.searchRoutes
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -44,9 +48,11 @@ fun Application.module() {
         appSecret = System.getenv("KIS_APP_SECRET").orEmpty(),
         baseUrl = System.getenv("KIS_BASE_URL") ?: "https://openapi.koreainvestment.com:9443",
     )
+    val master = StockMaster(HttpClient(CIO))
 
     routing {
         get("/health") { call.respondText("OK") }
         quoteRoutes(kis)
+        searchRoutes(master)
     }
 }
