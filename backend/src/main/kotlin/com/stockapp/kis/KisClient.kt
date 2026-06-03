@@ -28,7 +28,8 @@ class KisClient(
 ) {
     private val http = HttpClient(CIO) {
         install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true })
+            // encodeDefaults=true 필수: grant_type 같은 기본값 필드가 빠지면 한투가 EGW00115 반환
+            json(Json { ignoreUnknownKeys = true; encodeDefaults = true })
         }
     }
 
@@ -74,12 +75,10 @@ class KisClient(
         if (resp.rtCd != "0" || o == null) {
             throw KisException(resp.msg1.ifBlank { "한투 조회 실패 (rt_cd=${resp.rtCd})" })
         }
-        val sign = if (o.changeSign == "4" || o.changeSign == "5") -1 else 1
         return Quote(
             code = code,
-            name = o.name,
             price = o.price.toLongSafe(),
-            change = o.change.toLongSafe() * sign,
+            change = o.change.toLongSafe(), // 한투가 이미 부호 포함
             changeRate = o.changeRate.toDoubleSafe(),
             volume = o.volume.toLongSafe(),
             open = o.open.toLongSafe(),

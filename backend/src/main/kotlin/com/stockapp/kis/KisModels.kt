@@ -7,9 +7,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class Quote(
     val code: String,
-    val name: String,
     val price: Long,        // 현재가
-    val change: Long,       // 전일 대비 (부호 적용)
+    val change: Long,       // 전일 대비 (한투가 이미 부호 포함해 제공)
     val changeRate: Double, // 등락률 %
     val volume: Long,       // 누적 거래량
     val open: Long,         // 시가
@@ -45,11 +44,9 @@ data class KisPriceResponse(
 
 @Serializable
 data class KisPriceOutput(
-    @SerialName("hts_kor_isnm") val name: String = "",
     @SerialName("stck_prpr") val price: String = "0",
-    @SerialName("prdy_vrss") val change: String = "0",
-    @SerialName("prdy_vrss_sign") val changeSign: String = "3", // 1상한 2상승 3보합 4하한 5하락
-    @SerialName("prdy_ctrt") val changeRate: String = "0",
+    @SerialName("prdy_vrss") val change: String = "0", // 이미 부호 포함 (예: "-192000")
+    @SerialName("prdy_ctrt") val changeRate: String = "0", // 이미 부호 포함 (예: "-9.58")
     @SerialName("acml_vol") val volume: String = "0",
     @SerialName("stck_oprc") val open: String = "0",
     @SerialName("stck_hgpr") val high: String = "0",
