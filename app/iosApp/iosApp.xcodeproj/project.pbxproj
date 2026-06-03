@@ -152,7 +152,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then\n  echo \"Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \\\"YES\\\"\"\n  exit 0\nfi\ncd \"$SRCROOT/..\"\n./gradlew :sharedLogic:embedAndSignAppleFrameworkForXcode\n";
+			shellScript = "# Xcode는 셸 프로필(.zshrc)을 안 읽어 SDKMAN의 JAVA_HOME/PATH가 없다. Java 위치를 직접 잡아준다.\nif [ -z \"$JAVA_HOME\" ] && [ -d \"$HOME/.sdkman/candidates/java/current\" ]; then export JAVA_HOME=\"$HOME/.sdkman/candidates/java/current\"; fi\nexport PATH=\"$JAVA_HOME/bin:$PATH\"\nif [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then\n  echo \"Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \\\"YES\\\"\"\n  exit 0\nfi\ncd \"$SRCROOT/..\"\n./gradlew :sharedLogic:embedAndSignAppleFrameworkForXcode\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
