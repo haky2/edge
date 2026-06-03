@@ -4,5 +4,12 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!-- 개발용: localhost 등 로컬 네트워크로의 평문(HTTP) 연결 허용 (ATS 예외).
+	     배포 때 Cloud Run(HTTPS)로 가면 이 예외는 없어도 된다. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>
