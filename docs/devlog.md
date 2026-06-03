@@ -20,8 +20,15 @@
 **계획 변경**
 - 1.3을 더 쪼갬: **리스트 화면 먼저(하드코딩 9종목+라이브 시세)** → SQLDelight 영속화는 다음 세션(풀 예산).
 
-**다음 할 일**
-- 1.3a-2: iOS 관심종목 리스트 화면.
+**이어서 완료**
+- 1.3a-2: iOS 관심종목 11개 리스트(라이브 시세) + **행 탭 → 종목 상세**(거래량·시고저·52주).
+- 관심종목 11종목으로 교체(/search로 코드 검증).
+- IntelliJ에서 백엔드 실행 셋업: **EnvFile 플러그인으로 `backend/.env` 주입**(ApplicationKt main 컨피그, Executable 체크 안 함, working dir=backend/). 좀비 Gradle :run 서버가 8080 점유 → 포트 충돌 함정 겪음.
+- 한투 공식 repo(github.com/koreainvestment/open-trading-api)를 수급 등 레퍼런스로 기록.
+
+**다음 할 일 (다음 세션)**
+- 1.3b: SQLDelight 로컬 DB(watchlist + action_log.reason) — 하드코딩 → DB 영속화.
+- 1.3c: 검색(1.4b) 연동해 관심종목 추가/삭제.
 
 ---
 

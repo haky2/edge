@@ -59,6 +59,13 @@
 - 베이스 URL만 다르다: 실전 `:9443`, 모의 `:29443`.
 - 키 발급 후 **실전투자 API 사용 신청**이 별도로 필요할 수 있다. 권한 에러가 뜨면 이걸 의심.
 
+## 참고 자료
+- **한투 공식 샘플 repo**: https://github.com/koreainvestment/open-trading-api
+  - `examples_user/domestic_stock/domestic_stock_functions.py` — 국내주식 API 함수 전부(현재가·일별·**투자자별 매매동향=수급** 등) + tr_id·FID 파라미터.
+  - `*_ws.py` — 웹소켓(실시간). Python 위주(+TS/C#).
+  - **새 한투 엔드포인트 붙일 땐 이 repo의 해당 함수에서 tr_id·파라미터를 그대로 가져온다(추측 금지).**
+- 한투 API 포털: https://apiportal.koreainvestment.com/
+
 ## 아직 안 정한 것 (TODO)
-- 수급(투자자별 매매동향) 엔드포인트/tr_id 확정 — 장후 확정값 기준.
-- 다종목 시세를 한 번에 받는 방법(개별 반복 호출 vs 별도 API).
+- 수급(투자자별 매매동향) 엔드포인트/tr_id 확정 — 위 repo `domestic_stock_functions.py` 참고, 장후 확정값 기준.
+- ~~다종목 시세를 한 번에~~ → `/quotes` 구현 완료(병렬+동시성제한+재시도).
