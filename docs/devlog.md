@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-06-03 (저녁) — 1.1c 완료: iOS에 실시간 시세 ⭐ end-to-end 관통
+
+**한 일**
+- sharedLogic에 `EdgeApi`(Ktor) + `Quote` 모델, iosApp ContentView가 백엔드 `/quote/009150` 호출 → **iOS 시뮬에 삼성전기 현재가 표시 성공.**
+- 한투 API → 백엔드 → KMP → SwiftUI 첫 관통. 이후는 패턴 반복.
+
+**막힌 점 / 배운 것**
+- Xcode `PhaseScriptExecution failed` → 원인은 **Xcode가 SDKMAN Java를 못 찾음**(셸 프로필 미로드). 빌드 스크립트(Compile Kotlin Framework)에 `JAVA_HOME=~/.sdkman/.../current` 주입으로 해결. (project.pbxproj에 주석 포함)
+- iOS는 ATS 때문에 평문 localhost 차단 → Info.plist `NSAllowsLocalNetworking` 예외(개발용).
+- Kotlin suspend 함수가 Swift에 `async throws`로 노출돼 `try await`로 호출됨.
+
+**다음 할 일**
+- 1.2(거래량·52주 등 더 표시) / 1.3(관심종목+SQLDelight) / 1.4b(검색 화면) 중 선택.
+
+---
+
 ## 2026-06-03 (오후) — KMP 스캐폴드 + 폴더 정리
 
 **한 일**
