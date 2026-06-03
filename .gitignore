@@ -1,0 +1,27 @@
+# Gradle / Kotlin
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+local.properties
+
+# IDE
+.idea/
+*.iml
+.kotlin/
+
+# macOS
+.DS_Store
+
+# Xcode / iOS
+xcuserdata/
+*.xcuserstate
+DerivedData/
+**/iosApp/Pods/
+**/iosApp/*.xcworkspace/xcuserdata/
+
+# Secrets — API 키는 절대 커밋하지 않는다 (앱엔 키 없음, 백엔드 env로만)
+*.env
+.env*
+secrets.properties
+**/src/main/resources/application-local.*
