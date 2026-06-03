@@ -23,35 +23,49 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 fun main() {
+    // PORT는 환경변수에서 읽는다. Cloud Run은 컨테이너에 PORT를 주입하므로 거기에 맞춰야 하고,
+    // 로컬에선 .env 의 PORT(기본 8080)를 쓴다.
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
+    // host="0.0.0.0" : 모든 네트워크 인터페이스에서 수신.
+    // 127.0.0.1 로 묶으면 안드로이드 에뮬레이터(10.0.2.2)나 실기기에서 접근이 막힌다.
     embeddedServer(Netty, port = port, host = "0.0.0.0") {
         module()
     }.start(wait = true)
 }
 
+/** 에러를 항상 같은 JSON 모양({"error": "..."})으로 내려주기 위한 응답 DTO. */
 @Serializable
 data class ErrorResponse(val error: String)
 
 fun Application.module() {
     install(ContentNegotiation) {
+        // ignoreUnknownKeys=true : 한투 응답엔 우리가 안 쓰는 필드가 수십 개라, 모르는 키는 무시해야
+        //                          역직렬화가 깨지지 않는다. prettyPrint 는 개발 중 가독성용.
         json(Json { ignoreUnknownKeys = true; prettyPrint = true })
     }
     install(StatusPages) {
+        // 예외를 한 곳에서 잡아 일관된 에러 JSON으로 변환한다(각 라우트에서 try/catch 반복 안 함).
         exception<Throwable> { call, cause ->
+            // KisException = 외부(한투) 호출이 잘못된 경우 → 502 Bad Gateway(우리 서버가 아닌 상류 문제).
+            // 그 외 = 우리 코드의 버그 → 500. 앱이 이 구분으로 "재시도 vs 버그제보"를 판단할 수 있다.
             val status = if (cause is KisException) HttpStatusCode.BadGateway else HttpStatusCode.InternalServerError
             call.respond(status, ErrorResponse(cause.message ?: cause.toString()))
         }
     }
 
+    // 키는 코드/깃에 절대 두지 않고 환경변수로만 주입한다(run.sh 가 .env 를 읽어 넣어줌).
+    // 값이 없으면 빈 문자열 → 실제 호출 시점에 KisClient 가 친절한 에러를 던진다.
     val kis = KisClient(
         appKey = System.getenv("KIS_APP_KEY").orEmpty(),
         appSecret = System.getenv("KIS_APP_SECRET").orEmpty(),
+        // 실전/모의 서버 전환은 URL만 바꾸면 된다(모의는 :29443). 기본은 실전.
         baseUrl = System.getenv("KIS_BASE_URL") ?: "https://openapi.koreainvestment.com:9443",
     )
+    // 종목 마스터는 인증이 필요 없는 공개 다운로드라 별도의 평범한 HttpClient 를 쓴다(KisClient 와 분리).
     val master = StockMaster(HttpClient(CIO))
 
     routing {
-        get("/health") { call.respondText("OK") }
+        get("/health") { call.respondText("OK") } // 배포/모니터링용 헬스체크
         quoteRoutes(kis)
         searchRoutes(master)
     }
