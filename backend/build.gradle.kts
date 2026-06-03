@@ -4,11 +4,11 @@ plugins {
     application
 }
 
-group = "com.stockapp"
+group = "com.haky.edge"
 version = "0.0.1"
 
 application {
-    mainClass.set("com.stockapp.ApplicationKt")
+    mainClass.set("com.haky.edge.ApplicationKt")
 }
 
 repositories {

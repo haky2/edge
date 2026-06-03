@@ -1,6 +1,6 @@
-package com.stockapp.routes
+package com.haky.edge.routes
 
-import com.stockapp.master.StockMaster
+import com.haky.edge.master.StockMaster
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get

@@ -1,4 +1,4 @@
-package com.stockapp.master
+package com.haky.edge.master
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body

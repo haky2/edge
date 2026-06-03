@@ -1,4 +1,4 @@
-package com.stockapp.kis
+package com.haky.edge.kis
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable

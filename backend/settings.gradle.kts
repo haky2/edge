@@ -1,1 +1,1 @@
-rootProject.name = "stockapp-backend"
+rootProject.name = "edge-backend"

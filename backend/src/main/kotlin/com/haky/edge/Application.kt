@@ -1,10 +1,10 @@
-package com.stockapp
+package com.haky.edge
 
-import com.stockapp.kis.KisClient
-import com.stockapp.kis.KisException
-import com.stockapp.master.StockMaster
-import com.stockapp.routes.quoteRoutes
-import com.stockapp.routes.searchRoutes
+import com.haky.edge.kis.KisClient
+import com.haky.edge.kis.KisException
+import com.haky.edge.master.StockMaster
+import com.haky.edge.routes.quoteRoutes
+import com.haky.edge.routes.searchRoutes
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.http.HttpStatusCode

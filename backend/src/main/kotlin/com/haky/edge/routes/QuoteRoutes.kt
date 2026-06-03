@@ -1,7 +1,7 @@
-package com.stockapp.routes
+package com.haky.edge.routes
 
-import com.stockapp.ErrorResponse
-import com.stockapp.kis.KisClient
+import com.haky.edge.ErrorResponse
+import com.haky.edge.kis.KisClient
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route

@@ -33,7 +33,7 @@ backend/
 ├─ run.sh                      # .env 읽고 ./gradlew run
 ├─ .env.example               # 키 템플릿(.env 는 gitignore)
 └─ src/main/
-   ├─ kotlin/com/stockapp/
+   ├─ kotlin/com/haky/edge/
    │  ├─ Application.kt         # 서버 부팅, 플러그인(ContentNegotiation/StatusPages), 라우팅 등록
    │  ├─ kis/
    │  │  ├─ KisClient.kt        # 한투 호출(OAuth 토큰 캐시 + 현재가)

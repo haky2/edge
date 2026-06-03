@@ -1,4 +1,4 @@
-package com.stockapp.kis
+package com.haky.edge.kis
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
