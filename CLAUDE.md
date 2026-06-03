@@ -218,3 +218,9 @@
 - 각 단계는 *빌드·실행 확인*까지가 완료. 안 되면 다음으로 안 넘어간다.
 - 모델: Sonnet 기본, 복잡한 설계 결정 시 Opus.
 - 플러그인은 반복 패턴이 보일 때 그 한 가지만 추가 (풀세트 선설치 금지).
+
+## 문서 (`docs/`)
+- 계획·체크리스트의 정본은 이 `CLAUDE.md`. 보조 문서는 `docs/`에 둔다([docs/README.md](docs/README.md)).
+- `docs/decisions.md` 결정 이유 · `docs/devlog.md` 세션 작업 로그 · `docs/backend/` API·개발·한투 함정.
+- 세션 끝에 의미 있는 진척이 있으면 `docs/devlog.md`에 한 일/막힌 점/다음을 짧게 남긴다.
+- changelog는 git 커밋으로 갈음(버전 낼 때 도입).
