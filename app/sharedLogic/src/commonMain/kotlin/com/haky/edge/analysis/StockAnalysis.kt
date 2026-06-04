@@ -35,10 +35,14 @@ object StockAnalysis {
         )
     }
 
-    /** 외국인·기관의 최근 연속 추세(최신일 기준). flows 는 최신일이 앞. */
+    /**
+     * 외국인·기관·개인의 최근 연속 추세(최신일 기준). flows 는 최신일이 앞.
+     * 개인은 보통 외인+기관의 거울상이라 신호 가치는 낮지만, "개인 연속 순매수=과열" 맥락도 있어 함께 둔다.
+     */
     fun flowStreaks(flows: List<InvestorFlow>): List<FlowStreak> = listOfNotNull(
         streak("외국인", flows.map { it.foreign }),
         streak("기관", flows.map { it.institution }),
+        streak("개인", flows.map { it.individual }),
     )
 
     /**

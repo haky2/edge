@@ -28,6 +28,12 @@ class StockAnalysisTest {
         assertEquals(2, inst.days)
         assertEquals(110, inst.net)
         assertTrue(inst.buying)
+
+        // 개인은 -(외인+기관)의 거울상: 50, 140, -290 → 순매수 2일(누적 +190)에서 끊김.
+        val indiv = streaks.first { it.investor == "개인" }
+        assertEquals(2, indiv.days)
+        assertEquals(190, indiv.net)
+        assertTrue(indiv.buying)
     }
 
     @Test
