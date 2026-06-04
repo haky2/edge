@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var quotes: [String: Quote] = [:]   // code → 시세
     @State private var errorText: String?
     @State private var loading = false
+    @State private var showSearch = false              // 검색 시트 표시
 
     // iOS 시뮬레이터는 localhost 가 맥의 백엔드를 그대로 가리킨다.
     private let api = EdgeApi(baseUrl: "http://localhost:8080")
@@ -38,6 +39,11 @@ struct ContentView: View {
             }
             .navigationTitle("관심종목")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showSearch = true } label: {
+                        Image(systemName: "plus")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     if loading {
                         ProgressView()
@@ -50,6 +56,10 @@ struct ContentView: View {
             }
             .task { await load() }          // 첫 진입 시 로드
             .refreshable { await load() }   // 당겨서 새로고침
+            // 검색 시트. 닫히면 DB를 다시 읽어 새로 추가한 종목이 리스트에 반영된다.
+            .sheet(isPresented: $showSearch, onDismiss: { Task { await load() } }) {
+                SearchView(api: api)
+            }
         }
     }
 

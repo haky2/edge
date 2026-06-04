@@ -6,6 +6,28 @@
 
 ---
 
+## 2026-06-04 — 1.4b: 종목 검색 화면 → 관심종목 추가 ✅
+
+**한 일**
+- sharedLogic: `StockInfo` 모델 + `EdgeApi.search(q)`(GET /search).
+- iOS `SearchView`(시트): `.searchable` + return 시 검색, 결과 행에 이름/코드·시장 + "추가"(이미 있으면 초록 체크). 추가 시 `Db.watchlist.add`→SQLite. 시트 닫히면 ContentView가 DB 재로드해 반영(`+` 버튼 toolbar leading).
+- 1.4b로 **1.3c의 추가 경로까지 완성**(검색→DB). 삭제(스와이프) UI만 남음.
+
+**검증 (iOS 시뮬, 헤드리스 제약 우회)**
+- 환경에 idb/cliclick 없고 System Events 접근성 미허용(-1719) → 탭/키보드를 헤드리스로 못 줌.
+- 대신 SearchView를 임시 자동구동(query="삼성전기"+검색+첫 결과 추가)해 스크린샷으로 검색 UI 확인 → **앱 컨테이너의 edge.db를 sqlite3로 직접 읽어** 009150이 sort_order 11로 영속된 것 확인(api.search→repo.add→디스크 관통). 그 후 임시코드 되돌리고 테스트행 삭제, 리빌드로 정상 상태 복구.
+
+**배운 것**
+- 한글 쿼리는 curl에서 `--data-urlencode` 안 하면 빈 결과(앱의 Ktor `parameter()`는 자동 인코딩). `/search?q=0091`처럼 숫자면 코드 prefix.
+- Xcode 프로젝트가 `PBXFileSystemSynchronizedRootGroup`(동기화 그룹)이라 새 .swift는 폴더에 두면 pbxproj 편집 없이 자동 포함.
+- 헤드리스 UI 검증 한계 → 로직 경로는 임시 자동구동+DB 직접조회로 증명하는 패턴 유효.
+
+**다음 할 일**
+- 1.3c 마무리: ForEach `.onDelete`로 스와이프 삭제(repo.remove 연결).
+- 1.5: 평단가/수익률 — watchlist에 avg_price·qty·target·stop 필드 추가 + 입력 UI.
+
+---
+
 ## 2026-06-04 — 1.3b: SQLDelight 로컬 DB (관심종목 영속화) ✅
 
 **한 일**

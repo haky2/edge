@@ -156,14 +156,14 @@
 - [x] 1.3a-1 백엔드: `GET /quotes?codes=...` 다종목 시세(병렬+동시성제한+재시도) ✅ 9/9 검증
 - [x] 1.3a-2 앱: 관심종목 **리스트 화면**(하드코딩 11종목 + `/quotes` 라이브 시세) ✅ + 행 탭 → 상세(거래량·시고저·52주)
 - [x] 1.3b SQLDelight 세팅 + `watchlist` + `action_log`(`reason`) — 영속화 ✅ **iOS 시뮬 검증: DB 시드→읽기→/quotes→표시 관통**
-- [ ] 1.3c 관심종목 추가/삭제 (검색 1.4b와 연동) — 데이터 소스를 하드코딩 → DB로 교체
+- [~] 1.3c 관심종목 추가/삭제 (검색 1.4b와 연동) — **추가는 1.4b로 완료**(repo.add→DB), **삭제(스와이프) UI만 남음**(repo.remove는 구현됨)
 
 > SQLDelight 함정: 네이티브 드라이버(SQLiter)가 시스템 `libsqlite3`를 쓰는데 정적 프레임워크라 자동 링크가 안 됨 → iOS 앱 타깃 `OTHER_LDFLAGS`에 `-lsqlite3` 필수(`iosApp/Configuration/Config.xcconfig`에 넣음). 안 하면 `Undefined symbols: _sqlite3_*` 링크 에러. 드라이버 생성자는 플랫폼마다 달라(iOS=무인자, Android=Context) `expect class DriverFactory`로 선언. DB 정본은 `watchlist` 테이블, `Watchlist.defaultItems`는 첫 실행 시드값일 뿐.
 > Android 빌드는 SDK 위치(`local.properties`/`ANDROID_HOME`) 미설정이라 이 환경에선 컴파일 불가 — Android는 Phase 5라 보류(코드는 표준 `AndroidSqliteDriver` 패턴으로 작성해 둠).
 
 **1.4 종목 검색**
 - [x] 1.4a 백엔드: `GET /search?q=` ✅ 한투 공개 종목마스터(.mst) 파싱, 코드/이름 검색 (`StockMaster`)
-- [ ] 1.4b 앱: 검색 화면 → 결과 → 관심종목 추가 연결
+- [x] 1.4b 앱: 검색 화면 → 결과 → 관심종목 추가 연결 ✅ **iOS 시뮬 검증: /search 라이브 결과→추가→DB 영속(sqlite로 확인)**
 
 **1.5 평단가 / 수익률**
 - [ ] 1.5a `watchlist`에 `avg_price`·`qty`·`target_price`·`stop_price` 필드 추가

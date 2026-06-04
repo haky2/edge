@@ -1,6 +1,7 @@
 package com.haky.edge.api
 
 import com.haky.edge.model.Quote
+import com.haky.edge.model.StockInfo
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -41,5 +42,14 @@ class EdgeApi(
     suspend fun getQuotes(codes: List<String>): List<Quote> =
         client.get("$baseUrl/quotes") {
             parameter("codes", codes.joinToString(","))
+        }.body()
+
+    /**
+     * 종목 검색. 숫자면 코드 prefix, 아니면 이름 부분일치(백엔드가 자동 판별).
+     * 빈 질의는 백엔드가 빈 배열을 반환(에러 아님).
+     */
+    suspend fun search(query: String): List<StockInfo> =
+        client.get("$baseUrl/search") {
+            parameter("q", query)
         }.body()
 }
