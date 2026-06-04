@@ -3,7 +3,10 @@ package com.haky.edge
 import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.KisException
 import com.haky.edge.master.StockMaster
+import com.haky.edge.news.NaverNewsClient
+import com.haky.edge.news.NewsException
 import com.haky.edge.routes.investorRoutes
+import com.haky.edge.routes.newsRoutes
 import com.haky.edge.routes.quoteRoutes
 import com.haky.edge.routes.searchRoutes
 import io.ktor.client.HttpClient
@@ -49,7 +52,10 @@ fun Application.module() {
         exception<Throwable> { call, cause ->
             // KisException = 외부(한투) 호출이 잘못된 경우 → 502 Bad Gateway(우리 서버가 아닌 상류 문제).
             // 그 외 = 우리 코드의 버그 → 500. 앱이 이 구분으로 "재시도 vs 버그제보"를 판단할 수 있다.
-            val status = if (cause is KisException) HttpStatusCode.BadGateway else HttpStatusCode.InternalServerError
+            val status = when (cause) {
+                is KisException, is NewsException -> HttpStatusCode.BadGateway
+                else -> HttpStatusCode.InternalServerError
+            }
             call.respond(status, ErrorResponse(cause.message ?: cause.toString()))
         }
     }
@@ -64,11 +70,16 @@ fun Application.module() {
     )
     // 종목 마스터는 인증이 필요 없는 공개 다운로드라 별도의 평범한 HttpClient 를 쓴다(KisClient 와 분리).
     val master = StockMaster(HttpClient(CIO))
+    val naver = NaverNewsClient(
+        clientId = System.getenv("NAVER_CLIENT_ID").orEmpty(),
+        clientSecret = System.getenv("NAVER_CLIENT_SECRET").orEmpty(),
+    )
 
     routing {
         get("/health") { call.respondText("OK") } // 배포/모니터링용 헬스체크
         quoteRoutes(kis)
         investorRoutes(kis)
+        newsRoutes(naver)
         searchRoutes(master)
     }
 }

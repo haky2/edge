@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-06-04 — Phase 2: 뉴스 헤드라인 (2b)
+
+**한 일**
+- 백엔드 `NaverNewsClient`(네이버 검색 API, sort=date, HTML 태그+엔티티 제거) + `GET /news?q=종목명&display=5` 라우트. `NewsException`→StatusPages 502 처리.
+- sharedLogic `NewsItem` + `EdgeApi.getNews`. 상세 화면 '관련 뉴스' 카드(언론사·시각·탭→Safari).
+- `.env.example`에 `NAVER_CLIENT_ID/SECRET` 추가.
+
+**막힌 점**
+- Application.kt 인라인 FQN(`io.ktor.client.plugins...json(...)`)으로 Unresolved reference → NaverNewsClient가 자체 HttpClient+ContentNegotiation 생성하는 방식으로 분리해 해결.
+- HTML 엔티티(`&quot;` 등) stripHtml()에서 미처리 → 정규식+수동 replace 추가.
+
+**데이터 한계**: 네이버 검색 특성상 검색어 포괄성이 넓어 관련 없는 기사가 섞일 수 있음(삼성전자 같은 큰 기업). 실사용 시 크리티컬하지 않고, 2c Claude 해석 때 뉴스를 참고 입력으로만 쓸 것.
+
+**검증**: curl 실데이터(삼성전자 5건·HD현대중공업 3건) + 빌드 성공. 뉴스 카드는 스크롤 아래에 위치.
+
+**다음**: (2c) Claude 종합 코멘트 — 지금 ①(수급·52주·PER)+뉴스가 모두 준비됨. **Opus 권장**.
+
+---
+
 ## 2026-06-04 — Phase 2: PER/PBR 노출(2a) + 지표 해석에 개인 추가 + ② 비전 정리
 
 **한 일**

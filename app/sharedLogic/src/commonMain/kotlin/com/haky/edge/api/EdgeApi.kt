@@ -1,6 +1,7 @@
 package com.haky.edge.api
 
 import com.haky.edge.model.InvestorFlow
+import com.haky.edge.model.NewsItem
 import com.haky.edge.model.Quote
 import com.haky.edge.model.StockInfo
 import io.ktor.client.HttpClient
@@ -66,5 +67,16 @@ class EdgeApi(
     suspend fun getInvestorFlow(code: String, days: Int = 5): List<InvestorFlow> =
         client.get("$baseUrl/investor/$code") {
             parameter("days", days)
+        }.body()
+
+    /**
+     * 종목 관련 최신 뉴스 헤드라인. stockName 은 WatchItem.name 을 그대로 넘긴다.
+     * 백엔드가 네이버 검색 API 로 최신순 N건을 가져온다(HTML 태그 제거 후).
+     */
+    @Throws(Exception::class)
+    suspend fun getNews(stockName: String, display: Int = 5): List<NewsItem> =
+        client.get("$baseUrl/news") {
+            parameter("q", stockName)
+            parameter("display", display)
         }.body()
 }

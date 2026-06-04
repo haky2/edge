@@ -9,6 +9,7 @@ struct StockDetailView: View {
     private let api: EdgeApi
     @State private var quote: Quote?
     @State private var flows: [InvestorFlow] = []   // 일별 수급(외인/기관/개인)
+    @State private var news: [NewsItem] = []         // 관련 뉴스
     @State private var loading = false
     @State private var showEdit = false
 
@@ -33,6 +34,9 @@ struct StockDetailView: View {
                 }
                 if !flows.isEmpty {
                     flowCard()       // 수급: 외인/기관/개인 일별 순매수(Phase 2)
+                }
+                if !news.isEmpty {
+                    newsCard()       // 관련 뉴스 헤드라인(2b)
                 }
             }
             .padding()
@@ -284,10 +288,52 @@ struct StockDetailView: View {
         return "\(m)/\(day)"
     }
 
+    // 뉴스 카드(2b). 종목명으로 네이버 검색한 최신 헤드라인. 탭하면 Safari로 원문 이동.
+    private func newsCard() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("관련 뉴스").font(.subheadline.weight(.semibold)).padding(.top, 8)
+            ForEach(news, id: \.url) { article in
+                Link(destination: URL(string: article.url) ?? URL(string: "https://news.naver.com")!) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(article.title)
+                            .font(.caption)
+                            .foregroundColor(.primary)
+                            .lineLimit(2)
+                        HStack(spacing: 6) {
+                            Text(article.source).font(.caption2).foregroundColor(.secondary)
+                            Text("·").foregroundColor(.secondary)
+                            Text(shortDate(article.publishedAt)).font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 3)
+                }
+                if article.url != news.last?.url { Divider() }
+            }
+            .padding(.bottom, 4)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle()
+    }
+
+    // "Wed, 04 Jun 2026 10:30:00 +0900" → "06/04 10:30"
+    private func shortDate(_ raw: String) -> String {
+        // RFC 822 파싱. 실패하면 원본 앞부분만.
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.dateFormat = "EEE, dd MMM yyyy HH:mm:ss Z"
+        guard let date = fmt.date(from: raw) else {
+            return String(raw.prefix(16))
+        }
+        let out = DateFormatter()
+        out.dateFormat = "MM/dd HH:mm"
+        return out.string(from: date)
+    }
+
     private func load() async {
         loading = true
         if let q = try? await api.getQuote(code: item.code) { quote = q }
         flows = (try? await api.getInvestorFlow(code: item.code, days: 5)) ?? []
+        news = (try? await api.getNews(stockName: item.name, display: 5)) ?? []
         loading = false
     }
 }
