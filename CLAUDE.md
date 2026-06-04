@@ -147,6 +147,7 @@
 > 도구: Xcode 설치 완료(단 `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` 1회 필요), Android Studio = `~/Applications/Android Studio.app`.
 
 > 백엔드 실행: `cd backend && cp .env.example .env` 후 키 입력 → `./run.sh` → `curl localhost:8080/quote/009150`
+> ⚠️ KMP 함정: Swift가 잡아야 하는 **suspend 함수엔 `@Throws(Exception::class)` 필수**. 없으면 네트워크 예외(백엔드 다운 등)가 Swift `catch`로 안 가고 앱이 크래시(`DispatchedTask.kt` 역추적). `EdgeApi`의 get/search에 적용함.
 
 **1.2 시세 필드 확장**
 - [x] 1.2a 백엔드 응답에 등락률·거래량·52주 고저 추가 ✅ (Quote에 처음부터 포함)

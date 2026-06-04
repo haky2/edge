@@ -6,6 +6,17 @@
 
 ---
 
+## 2026-06-04 — fix: 백엔드 다운 시 앱 크래시(@Throws 누락) 🐛
+
+**증상**: Xcode에서 빌드·실행하면 앱이 뜨자마자 크래시(역추적이 `DispatchedTask.kt`). 백엔드를 안 켠 상태였음.
+**원인**: `EdgeApi`의 suspend 함수에 `@Throws`가 없어, Ktor 네트워크 예외(`DarwinHttpRequestException: Could not connect`)가 Swift `catch`로 **전달되지 않고** `Program will be terminated`로 크래시. ContentView의 "불러오기 실패" 처리까지 못 감. 그동안 항상 백엔드를 켜고 테스트해 잠복.
+**수정**: `getQuote/getQuotes/search`에 `@Throws(Exception::class)` → NSError로 브리지돼 Swift에서 잡힘.
+**검증**: 백엔드 down으로 실행 → 크래시 없이 "불러오기 실패…(cd backend && ./run.sh)" 메시지 표시, 앱 프로세스 생존 확인. 백엔드 up 재실행 → 라이브 시세 정상.
+
+> 교훈: KMP에서 Swift가 잡아야 하는 suspend 예외는 반드시 `@Throws` 필요. `try await`만으로는 부족(없으면 크래시).
+
+---
+
 ## 2026-06-04 — 1.3c 삭제 + 1.5 평단가/수익률 ⭐ Phase 1 핵심 루프 완성
 
 **한 일**

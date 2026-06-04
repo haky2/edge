@@ -19,6 +19,10 @@ import kotlinx.serialization.json.Json
  *  - 실기기/배포: 나중에 Cloud Run URL로 교체.
  *
  * suspend 함수는 Kotlin/Native가 Swift에 `async throws` 로 노출 → Swift에서 `try await api.getQuote(...)`.
+ *
+ * @Throws 필수: 이게 없으면 네트워크 예외(백엔드 다운 등 DarwinHttpRequestException)가 Swift catch로
+ * 전달되지 않고 "Program will be terminated" 로 **앱이 크래시**한다. @Throws 가 있어야 NSError 로 넘어가
+ * Swift `do/catch` 에서 잡혀 "불러오기 실패" 메시지로 처리된다.
  */
 class EdgeApi(
     private val baseUrl: String = "http://localhost:8080",
@@ -32,6 +36,7 @@ class EdgeApi(
     }
 
     /** 6자리 종목코드의 현재 시세를 백엔드에서 가져온다. */
+    @Throws(Exception::class)
     suspend fun getQuote(code: String): Quote =
         client.get("$baseUrl/quote/$code").body()
 
@@ -39,6 +44,7 @@ class EdgeApi(
      * 여러 종목 시세를 한 번에 가져온다(관심종목 리스트용). → GET /quotes?codes=a,b,c
      * 백엔드가 병렬 조회하며, 일부 실패분은 응답에서 빠질 수 있어 반환 개수가 요청보다 적을 수 있다.
      */
+    @Throws(Exception::class)
     suspend fun getQuotes(codes: List<String>): List<Quote> =
         client.get("$baseUrl/quotes") {
             parameter("codes", codes.joinToString(","))
@@ -48,6 +54,7 @@ class EdgeApi(
      * 종목 검색. 숫자면 코드 prefix, 아니면 이름 부분일치(백엔드가 자동 판별).
      * 빈 질의는 백엔드가 빈 배열을 반환(에러 아님).
      */
+    @Throws(Exception::class)
     suspend fun search(query: String): List<StockInfo> =
         client.get("$baseUrl/search") {
             parameter("q", query)
