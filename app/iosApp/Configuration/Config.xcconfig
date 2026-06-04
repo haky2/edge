@@ -5,3 +5,7 @@ PRODUCT_BUNDLE_IDENTIFIER=com.haky.edge.Edge$(TEAM_ID)
 
 CURRENT_PROJECT_VERSION=1
 MARKETING_VERSION=1.0
+
+// SQLDelight 네이티브 드라이버(SQLiter)가 시스템 libsqlite3 심볼을 쓴다.
+// 정적 프레임워크라 자동 링크가 안 돼, 앱 타깃에서 명시적으로 링크해야 한다(1.3b).
+OTHER_LDFLAGS=$(inherited) -lsqlite3

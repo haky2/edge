@@ -1,0 +1,26 @@
+-- 투자 행동 로그. Phase 4 학습의 입력값 — reason(왜 샀나/관심뒀나)을 Phase 1부터 포함한다.
+-- action: 'interest' | 'buy' | 'sell' | 'view' 등(문자열로 느슨하게, 나중에 enum 매핑).
+-- reason: 매수/매도/관심 시 한 줄 사유 태그. 마찰 없이 남기게 하는 게 핵심이라 NULL 허용.
+CREATE TABLE action_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    code        TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    reason      TEXT,
+    created_at  INTEGER NOT NULL   -- epoch millis
+);
+
+insert:
+INSERT INTO action_log(code, action, reason, created_at)
+VALUES (?, ?, ?, ?);
+
+selectByCode:
+SELECT id, code, action, reason, created_at
+FROM action_log
+WHERE code = ?
+ORDER BY created_at DESC;
+
+selectRecent:
+SELECT id, code, action, reason, created_at
+FROM action_log
+ORDER BY created_at DESC
+LIMIT ?;

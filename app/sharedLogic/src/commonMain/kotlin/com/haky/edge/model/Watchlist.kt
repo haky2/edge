@@ -7,11 +7,12 @@ import kotlinx.serialization.Serializable
 data class WatchItem(val code: String, val name: String)
 
 /**
- * 기본 관심종목 (CLAUDE.md 기준, 2026-06-03). 코드는 /search 로 검증함.
- * 지금은 하드코딩 — 다음 단계(1.3b)에서 SQLDelight 로컬 DB로 옮긴다.
+ * 기본 관심종목 시드 (CLAUDE.md 기준, 2026-06-03). 코드는 /search 로 검증함.
+ * 1.3b부터 정본은 SQLDelight DB(watchlist 테이블). 이 목록은 **첫 실행 시 시드값**으로만 쓰인다
+ * (WatchlistRepository.ensureSeeded). 화면은 DB에서 읽는다.
  */
 object Watchlist {
-    val items: List<WatchItem> = listOf(
+    val defaultItems: List<WatchItem> = listOf(
         WatchItem("018260", "삼성에스디에스"),
         WatchItem("329180", "HD현대중공업"),
         WatchItem("066570", "LG전자"),

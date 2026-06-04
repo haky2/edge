@@ -1,0 +1,21 @@
+-- 관심종목. 코드가 PK, 이름은 /quote 응답에 없어 여기 보관(화면에서 시세와 합침).
+-- sort_order: CLAUDE.md 우선순위 보존(작을수록 위). 추가/삭제는 1.3c에서 연결.
+CREATE TABLE watchlist (
+    code        TEXT NOT NULL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    sort_order  INTEGER NOT NULL,
+    added_at    INTEGER NOT NULL   -- epoch millis
+);
+
+selectAll:
+SELECT code, name FROM watchlist ORDER BY sort_order ASC;
+
+count:
+SELECT count(*) FROM watchlist;
+
+insert:
+INSERT OR REPLACE INTO watchlist(code, name, sort_order, added_at)
+VALUES (?, ?, ?, ?);
+
+deleteByCode:
+DELETE FROM watchlist WHERE code = ?;

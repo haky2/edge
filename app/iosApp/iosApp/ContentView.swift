@@ -1,17 +1,25 @@
 import SwiftUI
 import SharedLogic
 
-// 1.3a-2 — 관심종목 11개를 라이브 시세와 함께 리스트로 표시.
-// 종목 목록(코드+이름)은 sharedLogic의 Watchlist(하드코딩, 추후 DB로 이전),
-// 시세는 백엔드 /quotes 한 번 호출로 받아 코드 기준으로 합친다.
+// SQLDelight DB는 앱 전체에서 한 번만 연다(드라이버 중복 오픈 방지). 첫 접근 시 기본 11종목 시드.
+enum Db {
+    static let watchlist: WatchlistRepository = {
+        let repo = WatchlistRepository(driverFactory: DriverFactory())
+        repo.ensureSeeded()
+        return repo
+    }()
+}
+
+// 1.3b — 관심종목을 SQLDelight 로컬 DB에서 읽어 라이브 시세와 함께 리스트로 표시.
+// 종목 목록(코드+이름)은 이제 DB(watchlist 테이블)가 정본, 시세는 백엔드 /quotes로 합친다.
 struct ContentView: View {
+    @State private var watchlist: [WatchItem] = []     // DB에서 로드
     @State private var quotes: [String: Quote] = [:]   // code → 시세
     @State private var errorText: String?
     @State private var loading = false
 
     // iOS 시뮬레이터는 localhost 가 맥의 백엔드를 그대로 가리킨다.
     private let api = EdgeApi(baseUrl: "http://localhost:8080")
-    private let watchlist = Watchlist.shared.items      // Kotlin object → Swift는 .shared 로 접근
 
     var body: some View {
         NavigationStack {
@@ -72,8 +80,11 @@ struct ContentView: View {
     private func load() async {
         loading = true
         errorText = nil
+        // 관심종목을 DB에서 다시 읽는다(이후 추가/삭제가 반영되도록).
+        let items = Db.watchlist.all()
+        watchlist = items
         do {
-            let codes = watchlist.map { $0.code }
+            let codes = items.map { $0.code }
             let list = try await api.getQuotes(codes: codes)
             // 코드 → Quote 딕셔너리로 변환해 화면에서 빠르게 합친다.
             var map: [String: Quote] = [:]

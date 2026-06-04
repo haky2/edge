@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-06-04 — 1.3b: SQLDelight 로컬 DB (관심종목 영속화) ✅
+
+**한 일**
+- SQLDelight 2.3.2 도입(Kotlin 2.3.21 호환 확인). `sharedLogic`에 `.sq` 스키마 2개: `watchlist`(code PK·name·sort_order·added_at), `action_log`(id·code·action·**reason**·created_at) — reason은 Phase 4 학습 입력값이라 Phase 1부터 포함.
+- `expect/actual DriverFactory`(iOS=NativeSqliteDriver, Android=AndroidSqliteDriver) + `nowMillis()`. `WatchlistRepository`(seed/all/add/remove).
+- `Watchlist`는 이제 **시드 소스**(`defaultItems`)일 뿐, 정본은 DB. iOS `ContentView`가 DB에서 읽도록 교체 — 앱 전역 단일 repo(`Db.watchlist`)로 드라이버 1회 오픈.
+- **iOS 시뮬 풀 검증**: 빌드→설치→실행→스크린샷. 관심종목 11개가 우선순위 순서대로 라이브 시세와 함께 표시(DB 시드→읽기→/quotes→화면 관통).
+
+**막힌 점 / 배운 것**
+- iOS 링크 실패 `Undefined symbols: _sqlite3_*` → SQLiter가 시스템 libsqlite3를 쓰는데 정적 프레임워크라 자동 링크 안 됨. **`OTHER_LDFLAGS=-lsqlite3`**를 `Config.xcconfig`에 넣어 해결(Xcode GUI 빌드도 적용되게 xcconfig에).
+- Android는 SDK 위치 미설정이라 이 환경에선 컴파일 불가 → Phase 5라 보류, 코드는 표준 패턴으로 작성만.
+- expect/actual class는 아직 Beta 경고(무해).
+
+**다음 할 일**
+- 1.4b: 검색 화면(`GET /search`) → 결과 → 관심종목 추가.
+- 1.3c: 추가/삭제를 검색과 연동(repo.add/remove는 이미 있음, UI만).
+
+---
+
 ## 2026-06-03 (밤) — 1.2 상세화면 + 다종목/한투 유량·토큰
 
 **한 일**
