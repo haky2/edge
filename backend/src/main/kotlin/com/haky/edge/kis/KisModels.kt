@@ -21,6 +21,9 @@ data class Quote(
     val low: Long,          // 당일 저가
     val high52w: Long,      // 52주 최고
     val low52w: Long,       // 52주 최저
+    val per: Double,        // 주가수익비율 (적자 등으로 0/무의미일 수 있음)
+    val pbr: Double,        // 주가순자산비율
+    // EPS/BPS는 inquire-price 에선 빈 값(0)으로 와 신뢰 불가 → 정확값은 추후 DART 재무에서.
 )
 
 // 아래 한투 원본 모델들은 모든 필드에 기본값을 둔다.
@@ -70,6 +73,8 @@ data class KisPriceOutput(
     @SerialName("stck_lwpr") val low: String = "0",
     @SerialName("w52_hgpr") val high52w: String = "0",
     @SerialName("w52_lwpr") val low52w: String = "0",
+    @SerialName("per") val per: String = "0",
+    @SerialName("pbr") val pbr: String = "0",
 )
 
 // ── 수급(외인/기관/개인) ──────────────────────────────────────────────

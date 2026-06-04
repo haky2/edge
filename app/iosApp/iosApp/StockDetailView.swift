@@ -167,8 +167,21 @@ struct StockDetailView: View {
                 insight("52주 고점 대비", String(format: "%.1f%%", c.pctFromHigh52w))
                 insight("52주 저점 대비", String(format: "+%.1f%%", c.pctFromLow52w))
             }
-            if !streaks.isEmpty {
+            // 밸류에이션(PER/PBR) — 값 + 무슨 뜻인지 짧은 설명(① 계층: 사실·의미만, 판단 X).
+            let hasValuation = q.per > 0 || q.pbr > 0
+            if hasValuation {
                 if ctx != nil { Divider() }
+                if q.per > 0 {
+                    valuationRow("PER", String(format: "%.2f배", q.per),
+                        "주가 ÷ 주당순이익. 이익 대비 주가 수준 — 낮을수록 이익 대비 저렴, 성장 기대가 크면 높게 형성됨.")
+                }
+                if q.pbr > 0 {
+                    valuationRow("PBR", String(format: "%.2f배", q.pbr),
+                        "주가 ÷ 주당순자산. 1배면 장부가치 수준 — 낮을수록 자산 대비 저렴.")
+                }
+            }
+            if !streaks.isEmpty {
+                if ctx != nil || hasValuation { Divider() }
                 ForEach(streaks, id: \.investor) { s in
                     HStack(spacing: 6) {
                         Circle().fill(s.buying ? Color.red : Color.blue).frame(width: 6, height: 6)
@@ -195,6 +208,19 @@ struct StockDetailView: View {
             Text(value).fontWeight(.medium)
         }
         .font(.caption)
+    }
+
+    // 밸류에이션 한 줄: 위에 라벨·값, 아래에 "무슨 뜻인지" 짧은 설명(회색 caption).
+    private func valuationRow(_ label: String, _ value: String, _ meaning: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(label).foregroundColor(.secondary)
+                Spacer()
+                Text(value).fontWeight(.medium)
+            }
+            .font(.caption)
+            Text(meaning).font(.caption2).foregroundColor(.secondary)
+        }
     }
 
     // 52주 범위 내 위치(%)를 사람이 읽는 구간 라벨로. 판단이 아니라 위치 설명.

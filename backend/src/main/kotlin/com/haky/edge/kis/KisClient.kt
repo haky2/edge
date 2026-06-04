@@ -212,6 +212,8 @@ private fun KisPriceOutput.toQuote(code: String) = Quote(
     low = low.toLongSafe(),
     high52w = high52w.toLongSafe(),
     low52w = low52w.toLongSafe(),
+    per = per.toDoubleSafe(),
+    pbr = pbr.toDoubleSafe(),
 )
 
 // 한투 원본 수급 행 → 우리 InvestorFlow. 순매수 수량은 이미 부호 포함이라 그대로 파싱.
