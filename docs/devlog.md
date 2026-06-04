@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-06-04 — Phase 2: Claude 종합 코멘트 (2c) ⭐ 핵심 차별화 첫 구현
+
+**한 일**
+- 백엔드 `ClaudeClient`(Anthropic Messages API 직접 REST — KisClient/NaverNewsClient와 동일 패턴, 공식 SDK 없이). 헤더 `x-api-key`+`anthropic-version: 2023-06-01`, 모델 `claude-sonnet-4-6`(CLAUDE_MODEL로 override), HttpTimeout 60s.
+- `AnalysisService`: 사실 수집(quote+investorFlow+name+news) → `buildFacts`로 한국어 텍스트 → Claude. `(code,date)` 인메모리 캐시(전 유저 공유, CLAUDE.md 비용 정책). v1 포지션 무관.
+- 시스템 프롬프트(캐시 대상, cache_control ephemeral): 사실만 근거·수치 날조 금지·매매 단정 금지·참고용 디스클레이머·한국어 문단. `GET /analysis/{code}` 라우트, ClaudeException→502.
+- 앱: `Analysis` 모델 + `EdgeApi.getAnalysis`. 상세 'AI 종합 코멘트' 카드(✨, 별도 `.task`로 비동기 로딩, 참고용+기준일 디스클레이머 footer).
+
+**검증 (실호출)**
+- 충전 후 `/analysis/005930`: 사실 기반 코멘트(현재가·PER 53.55·외인 5일 순매도 구체수치·HBM 뉴스) + 목표가 등 **환각 없음** + 신중표현/디스클레이머. 생성 13.7초.
+- 캐시: 2차 호출 **0.007초**, 동일 코멘트 → (code,date) 적중 ✅.
+- iOS: 카드가 실제 코멘트로 렌더, 크래시 없음. (크레딧 막혔을 때도 502→폴백 우아 처리 확인.)
+
+**막힌 점**: Anthropic 계정 크레딧 잔액 부족으로 1차 검증 막힘 → 충전 후 통과(코드 문제 아님). 키 인증·요청·에러처리는 그 전에 이미 검증됨.
+
+**다음**: 2c 개인화("내 평단 기준" — 앱이 포지션 전달) / 또는 (2d) 섹터 수급 'cross-sector 썰'(Phase 3) / 또는 기술적 지표(RSI·이평).
+
+---
+
 ## 2026-06-04 — Phase 2: 뉴스 헤드라인 (2b)
 
 **한 일**

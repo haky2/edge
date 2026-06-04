@@ -1,5 +1,6 @@
 package com.haky.edge.api
 
+import com.haky.edge.model.Analysis
 import com.haky.edge.model.InvestorFlow
 import com.haky.edge.model.NewsItem
 import com.haky.edge.model.Quote
@@ -79,4 +80,12 @@ class EdgeApi(
             parameter("q", stockName)
             parameter("display", display)
         }.body()
+
+    /**
+     * 종목 종합 코멘트(시세·52주·PER·수급·뉴스 → Claude 해석). 백엔드가 당일 캐시.
+     * Claude 생성이라 수 초 걸릴 수 있음 — 화면에서 로딩 표시 권장.
+     */
+    @Throws(Exception::class)
+    suspend fun getAnalysis(code: String): Analysis =
+        client.get("$baseUrl/analysis/$code").body()
 }

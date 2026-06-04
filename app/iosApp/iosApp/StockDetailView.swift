@@ -10,6 +10,8 @@ struct StockDetailView: View {
     @State private var quote: Quote?
     @State private var flows: [InvestorFlow] = []   // 일별 수급(외인/기관/개인)
     @State private var news: [NewsItem] = []         // 관련 뉴스
+    @State private var analysis: Analysis?           // AI 종합 코멘트
+    @State private var analyzing = false
     @State private var loading = false
     @State private var showEdit = false
 
@@ -28,6 +30,7 @@ struct StockDetailView: View {
                     priceHeader(q)   // 현재가 + 등락
                     detailCard(q)    // 거래량·시고저·52주
                     analysisCard(q)  // 지표 해석 ① 계산 기반(52주 위치·수급 흐름 요약)
+                    aiCommentCard()  // ② Claude 종합 코멘트(2c)
                     positionCard(q)  // 내 포지션 + 수익률(1.5)
                 } else if loading {
                     ProgressView().padding(.top, 40)
@@ -57,7 +60,8 @@ struct StockDetailView: View {
                 }
             }
         }
-        .task { await load() } // 진입 시 최신가로 갱신
+        .task { await load() }             // 진입 시 시세·수급·뉴스 갱신(빠름)
+        .task { await loadAnalysis() }     // AI 코멘트는 느려서 별도로(동시 진행)
         .sheet(isPresented: $showEdit) {
             PositionEditView(item: item) { updated in item = updated }  // 저장 시 화면 즉시 반영
         }
@@ -237,6 +241,39 @@ struct StockDetailView: View {
         }
     }
 
+    // AI 종합 코멘트 카드(2c). 사실(시세·52주·PER·수급·뉴스)을 백엔드가 모아 Claude가 해석.
+    // Claude 생성이라 수 초 걸려 별도 로딩. 매매 판단/책임은 사용자 — 참고용 디스클레이머를 항상 붙인다.
+    @ViewBuilder
+    private func aiCommentCard() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles").foregroundColor(.purple)
+                Text("AI 종합 코멘트").font(.subheadline.weight(.semibold))
+                Spacer()
+                if analyzing { ProgressView().scaleEffect(0.8) }
+            }
+            .padding(.top, 8)
+
+            if let a = analysis {
+                Text(a.comment)
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("참고용 · \(a.date) 기준 · 투자 판단과 책임은 본인에게 있습니다")
+                    .font(.caption2).foregroundColor(.secondary)
+                    .padding(.top, 2)
+            } else if analyzing {
+                Text("시세·수급·뉴스를 종합해 코멘트를 생성하고 있어요…")
+                    .font(.footnote).foregroundColor(.secondary)
+            } else {
+                Text("코멘트를 불러오지 못했어요. 새로고침해 주세요.")
+                    .font(.footnote).foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 6)
+        .cardStyle()
+    }
+
     // 수급 카드(Phase 2). 외인/기관/개인 일별 순매수 수량(주). 순매수=빨강 / 순매도=파랑.
     // 장후 확정 일별값(백엔드가 미확정 당일은 제외). 큰 수는 만/억으로 축약.
     private func flowCard() -> some View {
@@ -335,6 +372,12 @@ struct StockDetailView: View {
         flows = (try? await api.getInvestorFlow(code: item.code, days: 5)) ?? []
         news = (try? await api.getNews(stockName: item.name, display: 5)) ?? []
         loading = false
+    }
+
+    private func loadAnalysis() async {
+        analyzing = true
+        analysis = try? await api.getAnalysis(code: item.code)
+        analyzing = false
     }
 }
 
