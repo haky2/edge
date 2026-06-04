@@ -1,7 +1,7 @@
 import SwiftUI
 import SharedLogic
 
-// SQLDelight DB는 앱 전체에서 한 번만 연다(드라이버 중복 오픈 방지). 첫 접근 시 기본 11종목 시드.
+// 앱 전역 싱글톤. DB는 한 번만 열고, api 인스턴스도 공유한다.
 enum Db {
     static let watchlist: WatchlistRepository = {
         let repo = WatchlistRepository(driverFactory: DriverFactory())
@@ -9,19 +9,18 @@ enum Db {
         return repo
     }()
     static let actionLog = ActionLogRepository(driverFactory: DriverFactory())
+    static let api = EdgeApi(baseUrl: "http://localhost:8080")
 }
 
-// 1.3b — 관심종목을 SQLDelight 로컬 DB에서 읽어 라이브 시세와 함께 리스트로 표시.
-// 종목 목록(코드+이름)은 이제 DB(watchlist 테이블)가 정본, 시세는 백엔드 /quotes로 합친다.
-struct ContentView: View {
+// 관심종목 탭. DB에서 종목 목록을 읽고 백엔드 /quotes로 라이브 시세를 합쳐 표시.
+struct WatchlistView: View {
     @State private var watchlist: [WatchItem] = []     // DB에서 로드
     @State private var quotes: [String: Quote] = [:]   // code → 시세
     @State private var errorText: String?
     @State private var loading = false
     @State private var showSearch = false              // 검색 시트 표시
 
-    // iOS 시뮬레이터는 localhost 가 맥의 백엔드를 그대로 가리킨다.
-    private let api = EdgeApi(baseUrl: "http://localhost:8080")
+    private let api = Db.api
 
     var body: some View {
         NavigationStack {
@@ -117,8 +116,14 @@ struct ContentView: View {
     }
 }
 
-struct ContentView_Previews: PreviewProvider {
-    static var previews: some View {
-        ContentView()
+// 앱 루트: 하단 탭바 (관심종목 / 내 자산). Phase 3에서 브리핑 탭 추가 예정.
+struct ContentView: View {
+    var body: some View {
+        TabView {
+            WatchlistView()
+                .tabItem { Label("관심종목", systemImage: "star") }
+            PortfolioView()
+                .tabItem { Label("내 자산", systemImage: "chart.pie") }
+        }
     }
 }

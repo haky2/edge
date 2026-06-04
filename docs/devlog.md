@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-06-04 — Phase 3: 하단 탭바 + 내 자산 탭
+
+**한 일**
+- `ContentView` → `WatchlistView` 리네임. `Db.api` 공유 싱글톤 추가(EdgeApi 인스턴스 중복 생성 제거).
+- `ContentView` = TabView 래퍼 (관심종목·내 자산 탭). 브리핑 탭은 Phase 3 데일리 브리핑 때 추가.
+- `PortfolioView`: 평단·수량 입력된 종목만 필터 → `/quotes` 현재가 → 총 투자금·총 평가금액·총 손익·수익률 집계 카드 + 보유 종목 리스트(행 탭→StockDetailView). 빈 상태 안내 문구.
+
+**검증**: iOS 시뮬 — 탭바 표시, 관심종목 탭 정상 동작. Xcode BUILD SUCCEEDED.
+
+**다음**: 평단 입력 후 내 자산 탭 집계 확인(수동) / Phase 3 데일리 브리핑 / DART 공시 / 매크로.
+
+---
+
 ## 2026-06-04 — 매매일지 (행동 로그 기록 UI)
 
 **한 일**
