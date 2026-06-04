@@ -181,6 +181,54 @@ class KisClient(
         throw KisException("한투 수급 조회 실패($code): $lastMsg")
     }
 
+    /**
+     * 종목 일봉 차트(최근 bars개 영업일). getPrice 와 동일한 동시성 제한 + rt_cd 재시도.
+     * tr_id FHKST03010100, 조회구분 D=일봉. 최신일이 앞(output2).
+     * 이평선(5/20/60)·RSI·거래량 추세 계산용으로, 넉넉하게 최소 62개(RSI 14 + 이평 60 - 12 여유) 요청.
+     */
+    suspend fun getDailyChart(code: String, bars: Int = 62): List<DailyBar> {
+        val accessToken = token()
+        var lastMsg = ""
+        repeat(MAX_ATTEMPTS) { attempt ->
+            val resp = rateLimiter.withPermit { requestDailyChart(code, accessToken) }
+            if (resp.rtCd == "0") {
+                return resp.output2.take(bars).map {
+                    DailyBar(
+                        date = it.date,
+                        open = it.open.toLongSafe(),
+                        high = it.high.toLongSafe(),
+                        low = it.low.toLongSafe(),
+                        close = it.close.toLongSafe(),
+                        volume = it.volume.toLongSafe(),
+                    )
+                }.filter { it.close > 0 }   // 비정상(0) 행 방어
+            }
+            lastMsg = resp.msg1.ifBlank { "rt_cd=${resp.rtCd}" }
+            if (attempt < MAX_ATTEMPTS - 1) delay(BACKOFF_MS * (attempt + 1))
+        }
+        throw KisException("한투 일봉 조회 실패($code): $lastMsg")
+    }
+
+    /** 일봉 HTTP 호출 1회. period_div_code=D, adj_prc_div=1(수정주가). */
+    private suspend fun requestDailyChart(code: String, accessToken: String): KisDailyResponse {
+        // start/end: 한투는 최근일 기준으로 내려주므로 end=오늘, start=충분히 과거(3개월)로 둔다.
+        val today = java.time.LocalDate.now().toString().replace("-", "")
+        val startDate = java.time.LocalDate.now().minusMonths(4).toString().replace("-", "")
+        return http.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice") {
+            header("authorization", "Bearer $accessToken")
+            header("appkey", appKey)
+            header("appsecret", appSecret)
+            header("tr_id", "FHKST03010100") // 국내주식 기간별 시세(일/주/월/년)
+            header("custtype", "P")
+            parameter("FID_COND_MRKT_DIV_CODE", "J")
+            parameter("FID_INPUT_ISCD", code)
+            parameter("FID_INPUT_DATE_1", startDate)
+            parameter("FID_INPUT_DATE_2", today)
+            parameter("FID_PERIOD_DIV_CODE", "D") // D=일봉
+            parameter("FID_ORG_ADJ_PRC", "1")    // 1=수정주가
+        }.body()
+    }
+
     /** 일별 투자자 수급 HTTP 호출 1회. tr_id = 주식현재가 투자자. */
     private suspend fun requestInvestor(code: String, accessToken: String): KisInvestorResponse =
         http.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-investor") {
@@ -214,6 +262,7 @@ private fun KisPriceOutput.toQuote(code: String) = Quote(
     low52w = low52w.toLongSafe(),
     per = per.toDoubleSafe(),
     pbr = pbr.toDoubleSafe(),
+    sectorName = sectorName,
 )
 
 // 한투 원본 수급 행 → 우리 InvestorFlow. 순매수 수량은 이미 부호 포함이라 그대로 파싱.

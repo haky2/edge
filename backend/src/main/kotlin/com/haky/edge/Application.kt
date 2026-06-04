@@ -9,6 +9,7 @@ import com.haky.edge.master.StockMaster
 import com.haky.edge.news.NaverNewsClient
 import com.haky.edge.news.NewsException
 import com.haky.edge.routes.analysisRoutes
+import com.haky.edge.routes.chartRoutes
 import com.haky.edge.routes.investorRoutes
 import com.haky.edge.routes.newsRoutes
 import com.haky.edge.routes.quoteRoutes
@@ -88,6 +89,7 @@ fun Application.module() {
     routing {
         get("/health") { call.respondText("OK") } // 배포/모니터링용 헬스체크
         quoteRoutes(kis)
+        chartRoutes(kis)
         investorRoutes(kis)
         newsRoutes(naver)
         searchRoutes(master)

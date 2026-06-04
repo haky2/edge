@@ -8,6 +8,7 @@ enum Db {
         repo.ensureSeeded()
         return repo
     }()
+    static let actionLog = ActionLogRepository(driverFactory: DriverFactory())
 }
 
 // 1.3b — 관심종목을 SQLDelight 로컬 DB에서 읽어 라이브 시세와 함께 리스트로 표시.

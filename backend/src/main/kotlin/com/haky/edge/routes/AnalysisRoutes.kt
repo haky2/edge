@@ -2,6 +2,7 @@ package com.haky.edge.routes
 
 import com.haky.edge.ErrorResponse
 import com.haky.edge.ai.AnalysisService
+import com.haky.edge.ai.Position
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -17,6 +18,14 @@ fun Route.analysisRoutes(analysis: AnalysisService) {
             call.respond(HttpStatusCode.BadRequest, ErrorResponse("종목코드는 6자리 숫자여야 합니다: '$code'"))
             return@get
         }
-        call.respond(analysis.analyze(code))
+        val avgPrice = call.parameters["avgPrice"]?.toDoubleOrNull()
+        val qty = call.parameters["qty"]?.toLongOrNull()
+        val position = if (avgPrice != null && qty != null) Position(
+            avgPrice = avgPrice,
+            qty = qty,
+            targetPrice = call.parameters["targetPrice"]?.toDoubleOrNull() ?: 0.0,
+            stopPrice = call.parameters["stopPrice"]?.toDoubleOrNull() ?: 0.0,
+        ) else null
+        call.respond(analysis.analyze(code, position))
     }
 }

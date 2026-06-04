@@ -6,6 +6,78 @@
 
 ---
 
+## 2026-06-04 — 매매일지 (행동 로그 기록 UI)
+
+**한 일**
+- `ActionLogEntry` 모델 + `ActionLogRepository`(sharedLogic): `insert(code, action, reason)` / `getByCode(code, limit=5)`. 기존 `action_log` 스키마(Phase 1.3b 작성) 그대로 사용.
+- `Db.actionLog` 싱글톤 (`ContentView`).
+- `StockDetailView`: "기록" 툴바 버튼(✎ 아이콘) → `ActionLogSheetView` 시트. 시트 닫히면 `loadLogs()` 재호출.
+- `ActionLogSheetView`: 관심/매수/매도 세그먼트 피커 + 사유 텍스트필드 + 저장.
+- `logCard()`: 최근 5건 배지(관심=주황/매수=빨강/매도=파랑) + 사유 + 시각. 기록이 있을 때만 표시.
+
+**검증**: sharedLogic 테스트 통과, Xcode BUILD SUCCEEDED.
+
+**다음**: iOS 시뮬에서 관심 기록 입력 후 로그 카드 표시 확인 (수동) / Phase 2 남은 항목: Claude 매수/매도 참고 범위 / Phase 3 탭바.
+
+---
+
+## 2026-06-04 — 2c 개인화: Claude 코멘트에 내 포지션 전달
+
+**한 일**
+- 백엔드 `Position` data class (avgPrice·qty·targetPrice·stopPrice) 추가.
+- `AnalysisService.analyze(code, position?)`: position 있으면 `(code,date,avg,qty)` 별도 캐시 키로 개인화 버전 생성. `buildFacts()`에 "내 포지션" 섹션 추가(평가손익·수익률·목표가/손절가 거리).
+- 시스템 프롬프트 규칙 7 추가: "내 포지션 섹션 있으면 평단 기준 해석을 코멘트에 자연스럽게 녹여라".
+- `AnalysisRoutes`: avgPrice·qty·targetPrice·stopPrice 쿼리 파라미터 파싱 → Position 생성.
+- `EdgeApi.getAnalysisPersonalized(code, avgPrice, qty, targetPrice, stopPrice)` 추가.
+- `StockDetailView.loadAnalysis()`: 포지션(avgPrice+qty) 있으면 personalized 호출, 없으면 일반 호출.
+
+**검증 (curl · 빌드)**
+- 포지션 없는 일반 호출: 캐시 적중 0.009초.
+- 포지션 있는 개인화 호출(avg=300,000·qty=50·target=420,000·stop=270,000): "평단 300,000원 대비 현재 +17.2%, 목표가까지 19.5%, 손절가 거리 23.2%" 자연스럽게 녹인 코멘트 생성(첫 호출 ~14초, 2차 캐시 적중).
+- 백엔드 컴파일·sharedLogic iOS 프레임워크 링크·Xcode 빌드 모두 BUILD SUCCEEDED.
+
+**캐시 설계**: 포지션 없음=(code,date) 전 유저 공유 캐시. 포지션 있음=(code,date,avg,qty) 별도 캐시(포지션별). targetPrice/stopPrice는 캐시 키 제외(같은 포지션이면 보통 동일).
+
+**다음**: iOS 시뮬에서 포지션 입력 후 개인화 코멘트 렌더 확인 (수동) / KRX 업종별 PER 연동 / 매매일지 / Phase 3 탭바 검토.
+
+---
+
+## 2026-06-04 — 업종명 표시 + 기술적 지표 설명 추가
+
+**한 일**
+- 백엔드 `KisPriceOutput`에 `bstp_kor_isnm` 매핑 → `Quote.sectorName` 필드 추가 (백엔드·sharedLogic 모두).
+- `StockDetailView` 지표 해석 카드: PER 위에 "업종: 전기·전자" 행 추가.
+- 기술적 지표 카드: MA5/20/60·RSI14·거래량 비율 각각에 설명 한 줄 추가(`technicalRow` 함수 공통화).
+
+**검증**: iOS 시뮬 — 업종 "전기·전자" 표시 확인, MA/RSI/거래량 설명 문구 렌더 확인. 빌드 에러 없음.
+
+**확인된 사실 (섹터 평균 PER)**: 한투 API에 업종 평균 PER/PBR 직접 제공 엔드포인트 없음. 섹터 평균은 **KRX 통계 파일** 방식으로 별도 슬라이스에서 구현 예정.
+
+**다음**: KRX 업종별 PER/PBR 파일 연동 / 또는 다른 Phase 2 항목.
+
+---
+
+## 2026-06-04 — Phase 2: 기술적 지표 (이평선·RSI·거래량) 슬라이스 완료
+
+**한 일**
+- `DailyBar.kt` (sharedLogic 모델, YYYYMMDD·OHLCV, 최신이 앞)
+- `TechnicalIndicators.kt` (object): `sma(n)` / `rsi(wilder, n=14)` / `volumeRatio(n=20)` → `TechnicalResult` (null=데이터 부족)
+- `TechnicalIndicatorsTest.kt` (commonTest): SMA·RSI·volumeRatio 경계값 + calculate 통합 8케이스, `iosSimulatorArm64Test` 경고 없이 통과.
+- `EdgeApi.getDaily(code, bars=62)` 추가 (`GET /daily/{code}?bars=62`, 백엔드는 이미 완성).
+- `StockDetailView` — **기술적 지표 카드** 추가: MA5/MA20/MA60(원 단위), RSI14(과매수권 빨강/과매도권 파랑/구간 라벨), 거래량 비율(20일 평균 대비 배수, 2배↑=주황). `load()` 안에서 `getDaily` → `TechnicalIndicators.calculate` 순으로 연결.
+
+**검증 (iOS 시뮬 실데이터)**
+- SK하이닉스: MA5 2,328,600원 / MA20 1,978,500원 / MA60 1,355,117원 / RSI14 75.9(과매수권·빨강) / 거래량 0.6배 — 정상 렌더.
+- 백엔드 `/daily/005930?bars=62` 62개 정상 반환, 수동 MA·거래량 비율 계산과 일치.
+- 빌드 경고·크래시 없음.
+
+**막힌 점**
+- 이전 세션이 1M 컨텍스트 에러로 중단됐지만 파일은 이미 기록됨 → /clear 후 재확인 후 이어서 진행.
+
+**다음**: (2d) 섹터 수급/cross-sector(Phase 3에 묶음) / 또는 2c 개인화(포지션 전달) / 또는 CLAUDE.md Phase 2 기술적 지표 체크박스 정리.
+
+---
+
 ## 2026-06-04 — Phase 2: Claude 종합 코멘트 (2c) ⭐ 핵심 차별화 첫 구현
 
 **한 일**

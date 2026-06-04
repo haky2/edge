@@ -20,6 +20,7 @@ data class Quote(
     val low: Long,          // 당일 저가
     val high52w: Long,      // 52주 최고
     val low52w: Long,       // 52주 최저
-    val per: Double = 0.0,  // 주가수익비율 (0/음수면 적자 등으로 산정 불가)
-    val pbr: Double = 0.0,  // 주가순자산비율
+    val per: Double = 0.0,       // 주가수익비율 (0/음수면 적자 등으로 산정 불가)
+    val pbr: Double = 0.0,       // 주가순자산비율
+    val sectorName: String = "", // 업종명 (e.g. "전기·전자"), 백엔드가 bstp_kor_isnm 에서 채움
 )

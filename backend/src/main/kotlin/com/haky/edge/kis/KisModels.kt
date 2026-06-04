@@ -23,6 +23,7 @@ data class Quote(
     val low52w: Long,       // 52주 최저
     val per: Double,        // 주가수익비율 (적자 등으로 0/무의미일 수 있음)
     val pbr: Double,        // 주가순자산비율
+    val sectorName: String = "", // 업종명 (bstp_kor_isnm, e.g. "전기·전자")
     // EPS/BPS는 inquire-price 에선 빈 값(0)으로 와 신뢰 불가 → 정확값은 추후 DART 재무에서.
 )
 
@@ -75,6 +76,7 @@ data class KisPriceOutput(
     @SerialName("w52_lwpr") val low52w: String = "0",
     @SerialName("per") val per: String = "0",
     @SerialName("pbr") val pbr: String = "0",
+    @SerialName("bstp_kor_isnm") val sectorName: String = "", // 업종명
 )
 
 // ── 수급(외인/기관/개인) ──────────────────────────────────────────────
@@ -105,6 +107,40 @@ data class KisInvestorRow(
     @SerialName("frgn_ntby_qty") val foreign: String = "0",   // 외국인 순매수 수량
     @SerialName("orgn_ntby_qty") val institution: String = "0", // 기관계 순매수 수량
     @SerialName("prsn_ntby_qty") val individual: String = "0",  // 개인 순매수 수량
+)
+
+// ── 일봉 차트(이평/거래량/RSI 계산용) ─────────────────────────────────
+// 한투 inquire-daily-itemchartprice(tr_id FHKST03010100): 종목 일/주/월봉. 여기선 일봉(D)만.
+// 지표(이평선·RSI·거래량 추세)는 원시 일봉을 앱(sharedLogic)에서 계산한다 — 테스트·Android 재사용.
+
+/** 앱에 내려주는 일봉 1개. 최신일이 앞. */
+@Serializable
+data class DailyBar(
+    val date: String,   // 영업일 YYYYMMDD
+    val open: Long,
+    val high: Long,
+    val low: Long,
+    val close: Long,
+    val volume: Long,
+)
+
+/** inquire-daily-itemchartprice 응답. output2 가 일자별 배열(최신일이 앞). */
+@Serializable
+data class KisDailyResponse(
+    @SerialName("rt_cd") val rtCd: String = "",
+    @SerialName("msg1") val msg1: String = "",
+    @SerialName("output2") val output2: List<KisDailyBar> = emptyList(),
+)
+
+/** 한투 원본 일봉 행. 숫자는 전부 문자열. */
+@Serializable
+data class KisDailyBar(
+    @SerialName("stck_bsop_date") val date: String = "",
+    @SerialName("stck_oprc") val open: String = "0",
+    @SerialName("stck_hgpr") val high: String = "0",
+    @SerialName("stck_lwpr") val low: String = "0",
+    @SerialName("stck_clpr") val close: String = "0",
+    @SerialName("acml_vol") val volume: String = "0",
 )
 
 /** 한투 연동 중 발생한 오류(상류 문제)를 일반 버그와 구분하기 위한 예외 — StatusPages에서 502로 매핑된다. */

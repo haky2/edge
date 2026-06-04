@@ -1,6 +1,7 @@
 package com.haky.edge.api
 
 import com.haky.edge.model.Analysis
+import com.haky.edge.model.DailyBar
 import com.haky.edge.model.InvestorFlow
 import com.haky.edge.model.NewsItem
 import com.haky.edge.model.Quote
@@ -82,10 +83,38 @@ class EdgeApi(
         }.body()
 
     /**
+     * 일봉 OHLCV (최신일이 앞). 이평선·RSI·거래량 추세 계산에 사용.
+     * bars 기본값 62 = MA60 계산에 필요한 최소값(60) + 여유 2.
+     */
+    @Throws(Exception::class)
+    suspend fun getDaily(code: String, bars: Int = 62): List<DailyBar> =
+        client.get("$baseUrl/daily/$code") {
+            parameter("bars", bars)
+        }.body()
+
+    /**
      * 종목 종합 코멘트(시세·52주·PER·수급·뉴스 → Claude 해석). 백엔드가 당일 캐시.
-     * Claude 생성이라 수 초 걸릴 수 있음 — 화면에서 로딩 표시 권장.
+     * 포지션 없는 일반 버전 — 전 유저 공유 캐시.
      */
     @Throws(Exception::class)
     suspend fun getAnalysis(code: String): Analysis =
         client.get("$baseUrl/analysis/$code").body()
+
+    /**
+     * 포지션 기반 개인화 코멘트. 평단·수량·목표가·손절가를 Claude에 전달해 내 포지션 기준 해석 제공.
+     * targetPrice·stopPrice 미입력 시 0.0 전달(백엔드가 0.0 = 미입력으로 처리).
+     */
+    @Throws(Exception::class)
+    suspend fun getAnalysisPersonalized(
+        code: String,
+        avgPrice: Double,
+        qty: Long,
+        targetPrice: Double,
+        stopPrice: Double,
+    ): Analysis = client.get("$baseUrl/analysis/$code") {
+        parameter("avgPrice", avgPrice)
+        parameter("qty", qty)
+        if (targetPrice > 0.0) parameter("targetPrice", targetPrice)
+        if (stopPrice > 0.0) parameter("stopPrice", stopPrice)
+    }.body()
 }
