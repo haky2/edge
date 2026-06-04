@@ -36,6 +36,7 @@ struct ContentView: View {
                         row(item)
                     }
                 }
+                .onDelete(perform: delete)   // 1.3c — 스와이프 삭제 → DB에서 제거
             }
             .navigationTitle("관심종목")
             .toolbar {
@@ -85,6 +86,14 @@ struct ContentView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    // 스와이프 삭제: 해당 종목을 DB에서 지우고 로컬 리스트도 즉시 갱신.
+    private func delete(at offsets: IndexSet) {
+        for index in offsets {
+            Db.watchlist.remove(code: watchlist[index].code)
+        }
+        watchlist.remove(atOffsets: offsets)
     }
 
     private func load() async {

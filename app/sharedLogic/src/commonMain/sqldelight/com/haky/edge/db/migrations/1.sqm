@@ -1,0 +1,5 @@
+-- v1 → v2: 관심종목에 내 포지션 필드 추가(1.5a). 기존 설치(시드된 11종목)는 이 ALTER로 보존하며 업그레이드.
+ALTER TABLE watchlist ADD COLUMN avg_price REAL;
+ALTER TABLE watchlist ADD COLUMN qty INTEGER;
+ALTER TABLE watchlist ADD COLUMN target_price REAL;
+ALTER TABLE watchlist ADD COLUMN stop_price REAL;

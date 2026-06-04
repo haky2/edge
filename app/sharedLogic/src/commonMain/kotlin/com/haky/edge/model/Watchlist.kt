@@ -2,9 +2,19 @@ package com.haky.edge.model
 
 import kotlinx.serialization.Serializable
 
-/** 관심종목 1건(코드 + 이름). /quote 응답엔 이름이 없어, 이름은 여기서 들고 있다가 화면에서 합친다. */
+/**
+ * 관심종목 1건. /quote 응답엔 이름이 없어 이름은 여기서 들고 있다가 화면에서 합친다.
+ * 1.5: 내 포지션 필드(평단가·수량·목표가·손절가)는 입력 전이면 null. 시드/검색추가 땐 code·name만 채운다.
+ */
 @Serializable
-data class WatchItem(val code: String, val name: String)
+data class WatchItem(
+    val code: String,
+    val name: String,
+    val avgPrice: Double? = null,
+    val qty: Long? = null,
+    val targetPrice: Double? = null,
+    val stopPrice: Double? = null,
+)
 
 /**
  * 기본 관심종목 시드 (CLAUDE.md 기준, 2026-06-03). 코드는 /search 로 검증함.

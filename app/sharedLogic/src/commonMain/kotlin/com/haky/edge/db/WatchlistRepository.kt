@@ -22,9 +22,23 @@ class WatchlistRepository(driverFactory: DriverFactory) {
         }
     }
 
-    /** sort_order 순으로 전체 반환(화면 리스트용). */
+    /** sort_order 순으로 전체 반환(화면 리스트용). 포지션 필드 포함. */
     fun all(): List<WatchItem> =
-        queries.selectAll { code, name -> WatchItem(code, name) }.executeAsList()
+        queries.selectAll { code, name, avgPrice, qty, targetPrice, stopPrice ->
+            WatchItem(code, name, avgPrice, qty, targetPrice, stopPrice)
+        }.executeAsList()
+
+    /**
+     * 내 포지션(평단가·수량·목표가·손절가) 저장. 각 값은 null이면 미입력으로 비운다.
+     * 상세 화면의 입력 UI(1.5b)가 호출.
+     */
+    fun updatePosition(
+        code: String,
+        avgPrice: Double?,
+        qty: Long?,
+        targetPrice: Double?,
+        stopPrice: Double?,
+    ) = queries.updatePosition(avgPrice, qty, targetPrice, stopPrice, code)
 
     /** 관심종목 추가(검색 1.4b 연동용). 기존 코드면 이름/순서 갱신. 끝에 붙인다. */
     fun add(code: String, name: String) {

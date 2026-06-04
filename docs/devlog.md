@@ -6,6 +6,31 @@
 
 ---
 
+## 2026-06-04 — 1.3c 삭제 + 1.5 평단가/수익률 ⭐ Phase 1 핵심 루프 완성
+
+**한 일**
+- 1.3c: 리스트 스와이프 삭제(`.onDelete`→`repo.remove`). 검색추가(1.4b)+스와이프삭제로 하드코딩→DB 교체 완전 마무리.
+- 1.5a: `watchlist`에 nullable `avg_price·qty·target_price·stop_price` 추가. **기존 DB는 `migrations/1.sqm`(v1→v2) ALTER로 보존 업그레이드**.
+- 1.5b: 상세에 `PositionEditView`(시트, decimalPad) — 평단/수량/목표/손절 입력, 빈칸은 NULL → `repo.updatePosition`.
+- 1.5c: 상세 '내 포지션' 카드 — 현재가로 평가손익·수익률(상승빨강/하락파랑), 목표·손절 거리%·도달(🎯/⚠️) 표시.
+- 카드 공통 스타일 추출(`cardStyle()`), 상세를 ScrollView로(포지션 늘어나도 스크롤).
+
+**검증 (iOS 시뮬 + SQLite 직접 확인)**
+- 마이그레이션: 기존 v1 DB(11종목) 재설치 → 컬럼 4개 추가·`user_version=2`·**11행 보존**(데이터 손실 없음). 신규설치도 v2로 바로 생성.
+- 수익률: 005930 포지션 시드(평단30만·10주) → 상세 자동진입 스크린샷: 평가손익 +555,000원·수익률 +18.50%·목표 +12.5%·손절 -21.2% **계산 정확**.
+- Swift→DB 쓰기: `updatePosition`(nil→NULL 정상)·`remove` 임시 자동구동 후 sqlite로 확인. 끝나고 임시코드 되돌림 + 앱 재설치로 DB 클린 리시드.
+
+**배운 것**
+- Swift는 **Kotlin 기본값 인자를 못 받음** → `WatchItem(code:name:...)` 전 필드 명시 필요(빌드에러로 발견).
+- nullable Double/Long ↔ `KotlinDouble(double:)`/`KotlinLong(longLong:)` 박싱, 읽기 `.doubleValue`/`.int64Value`.
+- 헤드리스라 탭/키보드 못 줌 → 자동구동+sqlite 직접조회 패턴으로 검증(1.4b와 동일).
+
+**다음 할 일**
+- Phase 1 핵심 루프(검색→관심→평단→수익률) 완성. 남은 1.0c(Cloud Run 배포)는 선택.
+- 다음: **Phase 2 진입** — 수급(외인/기관) 또는 종목상세 '지표 해석'(계산기반 먼저) 중 택1.
+
+---
+
 ## 2026-06-04 — 1.4b: 종목 검색 화면 → 관심종목 추가 ✅
 
 **한 일**
