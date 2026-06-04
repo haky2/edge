@@ -3,6 +3,7 @@ package com.haky.edge
 import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.KisException
 import com.haky.edge.master.StockMaster
+import com.haky.edge.routes.investorRoutes
 import com.haky.edge.routes.quoteRoutes
 import com.haky.edge.routes.searchRoutes
 import io.ktor.client.HttpClient
@@ -67,6 +68,7 @@ fun Application.module() {
     routing {
         get("/health") { call.respondText("OK") } // 배포/모니터링용 헬스체크
         quoteRoutes(kis)
+        investorRoutes(kis)
         searchRoutes(master)
     }
 }

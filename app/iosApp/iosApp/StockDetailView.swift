@@ -8,6 +8,7 @@ struct StockDetailView: View {
     @State private var item: WatchItem          // 포지션 편집 결과를 반영하려 가변
     private let api: EdgeApi
     @State private var quote: Quote?
+    @State private var flows: [InvestorFlow] = []   // 일별 수급(외인/기관/개인)
     @State private var loading = false
     @State private var showEdit = false
 
@@ -28,6 +29,9 @@ struct StockDetailView: View {
                     positionCard(q)  // 내 포지션 + 수익률(1.5)
                 } else if loading {
                     ProgressView().padding(.top, 40)
+                }
+                if !flows.isEmpty {
+                    flowCard()       // 수급: 외인/기관/개인 일별 순매수(Phase 2)
                 }
             }
             .padding()
@@ -148,9 +152,61 @@ struct StockDetailView: View {
         .padding(.vertical, 8)
     }
 
+    // 수급 카드(Phase 2). 외인/기관/개인 일별 순매수 수량(주). 순매수=빨강 / 순매도=파랑.
+    // 장후 확정 일별값(백엔드가 미확정 당일은 제외). 큰 수는 만/억으로 축약.
+    private func flowCard() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("수급 · 순매수(주)").font(.subheadline.weight(.semibold))
+                .padding(.top, 8)
+            Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 8) {
+                GridRow {
+                    Text("날짜").gridColumnAlignment(.leading)
+                    Text("외국인"); Text("기관"); Text("개인")
+                }
+                .font(.caption).foregroundColor(.secondary)
+                Divider().gridCellColumns(4)
+                ForEach(flows, id: \.date) { f in
+                    GridRow {
+                        Text(mmdd(f.date)).gridColumnAlignment(.leading).foregroundColor(.secondary)
+                        flowCell(f.foreign)
+                        flowCell(f.institution)
+                        flowCell(f.individual)
+                    }
+                    .font(.caption.monospacedDigit())
+                }
+            }
+            .padding(.bottom, 6)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle()
+    }
+
+    private func flowCell(_ n: Int64) -> some View {
+        Text(flowText(n)).foregroundColor(n > 0 ? .red : (n < 0 ? .blue : .secondary))
+    }
+
+    // 순매수 수량 축약: 1.2억 / 1102만 / 1,234. 부호 포함.
+    private func flowText(_ n: Int64) -> String {
+        if n == 0 { return "0" }
+        let sign = n > 0 ? "+" : "-"
+        let a = Double(abs(n))
+        if a >= 1e8 { return sign + String(format: "%.1f억", a / 1e8) }
+        if a >= 1e4 { return sign + String(format: "%.0f만", a / 1e4) }
+        return sign + Int64(a).formatted()
+    }
+
+    // "20260602" → "06/02"
+    private func mmdd(_ d: String) -> String {
+        guard d.count == 8 else { return d }
+        let m = d.dropFirst(4).prefix(2)
+        let day = d.suffix(2)
+        return "\(m)/\(day)"
+    }
+
     private func load() async {
         loading = true
         if let q = try? await api.getQuote(code: item.code) { quote = q }
+        flows = (try? await api.getInvestorFlow(code: item.code, days: 5)) ?? []
         loading = false
     }
 }

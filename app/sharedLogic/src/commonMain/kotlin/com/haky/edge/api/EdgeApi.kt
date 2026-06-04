@@ -1,5 +1,6 @@
 package com.haky.edge.api
 
+import com.haky.edge.model.InvestorFlow
 import com.haky.edge.model.Quote
 import com.haky.edge.model.StockInfo
 import io.ktor.client.HttpClient
@@ -58,5 +59,12 @@ class EdgeApi(
     suspend fun search(query: String): List<StockInfo> =
         client.get("$baseUrl/search") {
             parameter("q", query)
+        }.body()
+
+    /** 종목 일별 수급(외인/기관/개인 순매수) 최근 days일치. 최신일이 앞(장후 확정값만). */
+    @Throws(Exception::class)
+    suspend fun getInvestorFlow(code: String, days: Int = 5): List<InvestorFlow> =
+        client.get("$baseUrl/investor/$code") {
+            parameter("days", days)
         }.body()
 }

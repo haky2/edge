@@ -158,6 +158,41 @@ class KisClient(
             parameter("FID_INPUT_ISCD", code)
         }.body()
 
+    /**
+     * 종목별 일별 투자자 수급(외인/기관/개인 순매수)을 최근 days일치 반환. 최신일이 앞.
+     * 장후 확정 일별값(CLAUDE.md). getPrice 와 같은 동시성 제한 + rt_cd 백오프 재시도를 적용.
+     */
+    suspend fun getInvestorFlow(code: String, days: Int = 5): List<InvestorFlow> {
+        val accessToken = token()
+        var lastMsg = ""
+        repeat(MAX_ATTEMPTS) { attempt ->
+            val resp = rateLimiter.withPermit { requestInvestor(code, accessToken) }
+            if (resp.rtCd == "0") {
+                // 한투는 최신 행에 "당일"을 주는데 장 마감 전이면 전부 0(미확정)으로 온다.
+                // CLAUDE.md 원칙대로 확정 일별값만 쓴다 → 외인·기관·개인이 모두 0인 행은 제외하고 N일.
+                return resp.output
+                    .map { it.toInvestorFlow() }
+                    .filter { it.foreign != 0L || it.institution != 0L || it.individual != 0L }
+                    .take(days)
+            }
+            lastMsg = resp.msg1.ifBlank { "rt_cd=${resp.rtCd}" }
+            if (attempt < MAX_ATTEMPTS - 1) delay(BACKOFF_MS * (attempt + 1))
+        }
+        throw KisException("한투 수급 조회 실패($code): $lastMsg")
+    }
+
+    /** 일별 투자자 수급 HTTP 호출 1회. tr_id = 주식현재가 투자자. */
+    private suspend fun requestInvestor(code: String, accessToken: String): KisInvestorResponse =
+        http.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-investor") {
+            header("authorization", "Bearer $accessToken")
+            header("appkey", appKey)
+            header("appsecret", appSecret)
+            header("tr_id", "FHKST01010900") // 주식현재가 투자자(종목별 일별 수급)
+            header("custtype", "P")
+            parameter("FID_COND_MRKT_DIV_CODE", "J")
+            parameter("FID_INPUT_ISCD", code)
+        }.body()
+
     companion object {
         private const val MAX_ATTEMPTS = 4
         private const val BACKOFF_MS = 250L
@@ -177,6 +212,14 @@ private fun KisPriceOutput.toQuote(code: String) = Quote(
     low = low.toLongSafe(),
     high52w = high52w.toLongSafe(),
     low52w = low52w.toLongSafe(),
+)
+
+// 한투 원본 수급 행 → 우리 InvestorFlow. 순매수 수량은 이미 부호 포함이라 그대로 파싱.
+private fun KisInvestorRow.toInvestorFlow() = InvestorFlow(
+    date = date,
+    foreign = foreign.toLongSafe(),
+    institution = institution.toLongSafe(),
+    individual = individual.toLongSafe(),
 )
 
 // 한투 값은 문자열이고 가끔 빈 문자열이 오기도 해서, 파싱 실패 시 0으로 안전 처리한다.

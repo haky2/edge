@@ -72,5 +72,35 @@ data class KisPriceOutput(
     @SerialName("w52_lwpr") val low52w: String = "0",
 )
 
+// ── 수급(외인/기관/개인) ──────────────────────────────────────────────
+// 한투 inquire-investor(tr_id FHKST01010900, "주식현재가 투자자")는 종목별 "일별" 투자자 순매수를 준다.
+// CLAUDE.md 원칙: 장후 확정 일별값을 쓴다(장중 당일 행은 추정치라 패턴 통계 오염 위험) → 최근 N일 추이로 표시.
+
+/** 앱에 내려주는 정규화된 일별 수급 1건. 순매수 수량(주, 부호 포함: +매수 / -매도). */
+@Serializable
+data class InvestorFlow(
+    val date: String,        // 영업일 YYYYMMDD
+    val foreign: Long,       // 외국인 순매수 수량
+    val institution: Long,   // 기관계 순매수 수량
+    val individual: Long,    // 개인 순매수 수량
+)
+
+/** inquire-investor 응답 껍데기. output 이 일자별 배열(최신일이 앞). */
+@Serializable
+data class KisInvestorResponse(
+    @SerialName("rt_cd") val rtCd: String = "",
+    @SerialName("msg1") val msg1: String = "",
+    val output: List<KisInvestorRow> = emptyList(),
+)
+
+/** 한투 원본 일별 수급 행. 숫자는 전부 문자열, 순매수 수량은 이미 부호 포함. */
+@Serializable
+data class KisInvestorRow(
+    @SerialName("stck_bsop_date") val date: String = "",
+    @SerialName("frgn_ntby_qty") val foreign: String = "0",   // 외국인 순매수 수량
+    @SerialName("orgn_ntby_qty") val institution: String = "0", // 기관계 순매수 수량
+    @SerialName("prsn_ntby_qty") val individual: String = "0",  // 개인 순매수 수량
+)
+
 /** 한투 연동 중 발생한 오류(상류 문제)를 일반 버그와 구분하기 위한 예외 — StatusPages에서 502로 매핑된다. */
 class KisException(message: String) : RuntimeException(message)
