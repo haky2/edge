@@ -26,6 +26,7 @@ struct StockDetailView: View {
                 if let q = quote {
                     priceHeader(q)   // 현재가 + 등락
                     detailCard(q)    // 거래량·시고저·52주
+                    analysisCard(q)  // 지표 해석 ① 계산 기반(52주 위치·수급 흐름 요약)
                     positionCard(q)  // 내 포지션 + 수익률(1.5)
                 } else if loading {
                     ProgressView().padding(.top, 40)
@@ -150,6 +151,60 @@ struct StockDetailView: View {
             Text(value).fontWeight(.semibold).foregroundColor(up ? .red : .blue)
         }
         .padding(.vertical, 8)
+    }
+
+    // 지표 해석 ① 계산 기반(LLM 없음). 이미 받은 시세·수급으로 즉시 계산한 "위치/흐름" 요약.
+    // 사실만 보여주고 매수/매도 판단은 하지 않는다(그건 추후 Claude 층).
+    @ViewBuilder
+    private func analysisCard(_ q: Quote) -> some View {
+        let ctx = StockAnalysis.shared.priceContext(q: q)
+        let streaks = StockAnalysis.shared.flowStreaks(flows: flows)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("지표 해석").font(.subheadline.weight(.semibold)).padding(.top, 8)
+
+            if let c = ctx {
+                insight("52주 위치", "\(Int(c.pctInRange52w.rounded()))% · \(rangeLabel(c.pctInRange52w))")
+                insight("52주 고점 대비", String(format: "%.1f%%", c.pctFromHigh52w))
+                insight("52주 저점 대비", String(format: "+%.1f%%", c.pctFromLow52w))
+            }
+            if !streaks.isEmpty {
+                if ctx != nil { Divider() }
+                ForEach(streaks, id: \.investor) { s in
+                    HStack(spacing: 6) {
+                        Circle().fill(s.buying ? Color.red : Color.blue).frame(width: 6, height: 6)
+                        Text("\(s.investor) \(s.days)일 연속 \(s.buying ? "순매수" : "순매도")")
+                        Spacer()
+                        Text("누적 \(flowText(s.net))")
+                            .foregroundColor(s.buying ? .red : .blue)
+                            .font(.caption.monospacedDigit())
+                    }
+                    .font(.caption)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 6)
+        .cardStyle()
+    }
+
+    // 라벨 + 값 한 줄(작은 caption). 지표 해석용.
+    private func insight(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).foregroundColor(.secondary)
+            Spacer()
+            Text(value).fontWeight(.medium)
+        }
+        .font(.caption)
+    }
+
+    // 52주 범위 내 위치(%)를 사람이 읽는 구간 라벨로. 판단이 아니라 위치 설명.
+    private func rangeLabel(_ pct: Double) -> String {
+        switch pct {
+        case ..<25: return "저점권"
+        case ..<50: return "중하단"
+        case ..<75: return "중상단"
+        default: return "고점권"
+        }
     }
 
     // 수급 카드(Phase 2). 외인/기관/개인 일별 순매수 수량(주). 순매수=빨강 / 순매도=파랑.
