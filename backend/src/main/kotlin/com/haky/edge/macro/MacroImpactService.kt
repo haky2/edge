@@ -187,7 +187,9 @@ class MacroImpactService(
         kisName.contains("전기가스") || kisName.contains("전력") -> Sector.POWER_EQUIP
         kisName.contains("철강") || kisName.contains("금속") || kisName.contains("전선") -> Sector.POWER_EQUIP
         kisName.contains("기계") || kisName.contains("조선") || kisName.contains("중공업") -> Sector.SHIPBUILDING
-        kisName.contains("운수장비") || kisName.contains("항공") -> Sector.DEFENSE
+        // "운수장비"/"운송장비"는 자동차가 주력. 방산/조선 주요 종목은 SECTOR_OVERRIDE에 직접 매핑돼 여기 안 온다.
+        kisName.contains("운수장비") || kisName.contains("운송장비") || kisName.contains("자동차") -> Sector.AUTOMOBILE
+        kisName.contains("항공")                          -> Sector.DEFENSE
         kisName.contains("반도체")                         -> Sector.SEMICONDUCTOR
         kisName.contains("전기·전자") || kisName.contains("전자") -> Sector.ELECTRONICS
         else                                             -> null
@@ -201,6 +203,7 @@ class MacroImpactService(
         POWER_EQUIP("전력기기"),
         IT_SERVICE("IT서비스"),
         ELECTRONICS("전자/가전"),
+        AUTOMOBILE("자동차"),
     }
 
     /** 섹터 × 지표 민감도 1건. direction: +1 = 지표 상승이 해당 섹터에 우호, -1 = 부담, 0 = 무관. */
@@ -223,6 +226,8 @@ class MacroImpactService(
             "018260" to Sector.IT_SERVICE,    // 삼성에스디에스
             "307950" to Sector.IT_SERVICE,    // 현대오토에버
             "066570" to Sector.ELECTRONICS,   // LG전자
+            "005380" to Sector.AUTOMOBILE,    // 현대차
+            "000270" to Sector.AUTOMOBILE,    // 기아
         )
 
         // 섹터별 매크로 민감도. note 는 근거 한 줄(앱·Claude facts에 그대로 노출).
@@ -256,6 +261,12 @@ class MacroImpactService(
                 Sensitivity("usdkrw", +1, "수출 비중 높아 원화 약세 우호(수입 부품이 일부 상쇄)"),
                 Sensitivity("crude",  -1, "유가 상승 → 물류·부품 운반비 원가 부담"),
                 Sensitivity("copper", -1, "구리 상승 → PCB·배선 부품 원가 부담"),
+            ),
+            Sector.AUTOMOBILE to listOf(
+                Sensitivity("usdkrw", +1, "수출 비중 → 원화 약세 시 해외 매출 환산 이익 증가"),
+                Sensitivity("crude",  -1, "유가 상승 → 소비자 유지비 부담 → 자동차 수요 심리 위축"),
+                Sensitivity("copper", -1, "구리 상승 → 차량 배선·전장부품 원재료 원가 부담"),
+                Sensitivity("rate3y", -1, "금리 상승 → 자동차 할부 이자 증가 → 구매 수요 감소"),
             ),
         )
 

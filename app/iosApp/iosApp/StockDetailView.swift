@@ -13,6 +13,7 @@ struct StockDetailView: View {
     @State private var news: [NewsItem] = []         // 관련 뉴스
     @State private var analysis: Analysis?           // AI 종합 코멘트
     @State private var technicalResult: TechnicalResult?  // 이평·RSI·거래량 추세(2단계)
+    @State private var targetPriceInfo: TargetPriceInfo?   // 컨센서스 목표주가
     @State private var logEntries: [ActionLogEntry] = []  // 이 종목 행동 로그
     @State private var analyzing = false
     @State private var loading = false
@@ -212,6 +213,15 @@ struct StockDetailView: View {
                     valuationRow("PBR", String(format: "%.2f배", q.pbr),
                         "주가 ÷ 주당순자산. 1배면 장부가치 수준 — 낮을수록 자산 대비 저렴.")
                 }
+            }
+            if let tp = targetPriceInfo {
+                if q.per > 0 || q.pbr > 0 || !q.sectorName.isEmpty { Divider() }
+                let upside = Double(tp.price - q.price) / Double(q.price) * 100
+                valuationRow(
+                    "컨센서스 목표주가",
+                    "\(tp.price.formatted())원  \(upside >= 0 ? "▲" : "▼")\(String(format: "%.1f%%", abs(upside)))",
+                    tp.basis
+                )
             }
             if !streaks.isEmpty {
                 if ctx != nil || hasValuation { Divider() }
@@ -524,6 +534,7 @@ struct StockDetailView: View {
         if let daily = try? await api.getDaily(code: item.code, bars: 62) {
             technicalResult = TechnicalIndicators.shared.calculate(bars: daily)
         }
+        targetPriceInfo = try? await api.getTargetPrice(code: item.code)
         loading = false
     }
 

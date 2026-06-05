@@ -11,6 +11,7 @@ import com.haky.edge.model.NewsItem
 import com.haky.edge.model.Quote
 import com.haky.edge.model.SectorIndex
 import com.haky.edge.model.StockInfo
+import com.haky.edge.model.TargetPriceInfo
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -141,6 +142,17 @@ class EdgeApi(
         client.get("$baseUrl/earnings") {
             parameter("codes", codes.joinToString(","))
         }.body()
+
+    /**
+     * 네이버 금융 컨센서스 목표주가. 애널리스트 미커버리지 종목은 null 반환(404).
+     * 당일 백엔드 캐시 — 중복 스크래핑 없음.
+     */
+    @Throws(Exception::class)
+    suspend fun getTargetPrice(code: String): TargetPriceInfo? {
+        return try {
+            client.get("$baseUrl/target-price/$code").body()
+        } catch (_: Exception) { null }
+    }
 
     /** 종목 최근 DART 공시 목록. days: 조회 기간(기본 7일). 없으면 빈 리스트. */
     @Throws(Exception::class)
