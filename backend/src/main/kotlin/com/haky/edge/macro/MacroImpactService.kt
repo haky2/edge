@@ -4,6 +4,7 @@ import com.haky.edge.ai.ClaudeClient
 import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.MacroIndicator
 import com.haky.edge.master.StockMaster
+import com.haky.edge.news.NaverNewsClient
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.util.concurrent.ConcurrentHashMap
@@ -57,6 +58,7 @@ class MacroImpactService(
     private val fearGreed: FearGreedClient,
     private val copper: CopperClient,
     private val ecos: EcosClient,
+    private val naver: NaverNewsClient,
 ) {
     private val cache = ConcurrentHashMap<String, MacroImpact>()
 
@@ -95,11 +97,9 @@ class MacroImpactService(
     /** 종목 1개의 섹터(복수 가능)를 결정하고 지표별 방향 신호를 계산한다. */
     private suspend fun buildStockImpact(code: String, indicators: List<MacroIndicator>): StockImpact {
         val name = master.search(code).firstOrNull { it.code == code }?.name ?: code
-        // 1순위: 수동 오버라이드(정확, 복수 섹터 가능). 없으면 KIS 업종명으로 단일 섹터 자동 추론.
-        val sectors = SECTOR_OVERRIDE[code]
-            ?: runCatching { kis.getPrice(code).sectorName }.getOrNull()
-                ?.let { sn -> listOfNotNull(autoSector(sn)) }
-            ?: emptyList()
+        val kisName = runCatching { kis.getPrice(code).sectorName }.getOrElse { "" }
+        // 수동 오버라이드 → 캐시 → Claude 자동 추론 → KIS 업종명 폴백 순.
+        val sectors = resolveSectors(code, name, kisName)
 
         val sectorLabel = if (sectors.isEmpty()) "기타" else sectors.joinToString("·") { it.label }
 
@@ -191,10 +191,64 @@ class MacroImpactService(
 
     private fun signed(v: Double): String = (if (v >= 0) "+" else "") + "%.2f".format(v)
 
+    // ── 섹터 자동 추론 ────────────────────────────────────────────────────────
+
+    /** 7일 캐시: code → (섹터 목록, 만료 epoch ms). 최초 조회 시 Claude 추론, 이후 캐시 반환. */
+    private val sectorCache = ConcurrentHashMap<String, Pair<List<Sector>, Long>>()
+
+    /**
+     * 종목 섹터 결정. 우선순위: 수동 오버라이드 → 7일 캐시 → Claude 자동 추론 → KIS 업종명 폴백.
+     * Claude 추론이 틀린 경우에만 MANUAL_OVERRIDES에 수동으로 추가한다.
+     */
+    private suspend fun resolveSectors(code: String, name: String, kisName: String): List<Sector> {
+        MANUAL_OVERRIDES[code]?.let { return it }
+        sectorCache[code]?.takeIf { System.currentTimeMillis() < it.second }?.let { return it.first }
+
+        val sectors = runCatching { inferSectors(code, name, kisName) }
+            .getOrElse { listOfNotNull(autoSector(kisName)) }
+        sectorCache[code] = Pair(sectors, System.currentTimeMillis() + SECTOR_CACHE_TTL_MS)
+        return sectors
+    }
+
+    /**
+     * Claude에 회사명·KIS업종명·최근 뉴스 헤드라인을 주고 섹터 목록을 JSON 배열로 추론받는다.
+     * 뉴스를 포함해 "로봇", "AI" 같은 신규 사업도 자동 인식한다.
+     * maxTokens=60 — 배열 하나만 오면 충분하므로 비용이 매우 작다. 7일 캐시라 주 1회 이하.
+     */
+    private suspend fun inferSectors(code: String, name: String, kisName: String): List<Sector> {
+        val headlines = runCatching { naver.search(name, display = 5) }.getOrElse { emptyList() }
+        val newsBullet = if (headlines.isEmpty()) "(뉴스 없음)"
+        else headlines.joinToString("\n") { "- ${it.title}" }
+
+        val enumList = Sector.entries.joinToString("\n") { "- ${it.name}: ${it.description}" }
+        val response = claude.complete(
+            systemPrompt = "너는 한국 주식 섹터 분류 전문가다. 요청한 JSON 배열 형식으로만 응답해. 설명, 마크다운 코드블록 없이 배열만.",
+            userFacts = """
+다음 한국 주식이 아래 섹터들 중 어디에 해당하는지 JSON 배열로만 답해줘. 복수 선택 가능(최대 3개).
+최근 뉴스 헤드라인에서 신규 사업(로봇, AI, 방산 등)이 보이면 반영해줘.
+
+종목: $name ($code)
+KIS 업종명: $kisName
+최근 뉴스:
+$newsBullet
+
+선택 가능한 섹터(영어 코드로 응답):
+$enumList
+
+응답 예시: ["AUTOMOBILE","ROBOT"]
+            """.trimIndent(),
+            maxTokens = 60,
+        )
+        return Regex(""""(\w+)"""").findAll(response)
+            .mapNotNull { mr -> runCatching { Sector.valueOf(mr.groupValues[1]) }.getOrNull() }
+            .toList()
+            .ifEmpty { listOfNotNull(autoSector(kisName)) }
+    }
+
     // ── 도메인 매핑(여기를 고치면 영향 규칙이 바뀐다) ───────────────────────────
 
     /**
-     * KIS 업종명(bstp_kor_isnm)으로 섹터를 추론한다. SECTOR_OVERRIDE 미매핑 종목 폴백용.
+     * KIS 업종명(bstp_kor_isnm)으로 섹터를 추론한다. Claude 추론 실패 시 폴백.
      * 업종명이 여러 섹터에 걸치는 경우(예: "전기·전자"에 반도체+가전 혼재)는 가장 넓은 섹터로 보수 매핑.
      */
     private fun autoSector(kisName: String): Sector? = when {
@@ -211,15 +265,15 @@ class MacroImpactService(
     }
 
     /** 우리 분류 섹터. 한투 업종명이 거칠어(예: '전기·전자'에 반도체+가전 혼재) 매크로 민감도용으로 따로 둔다. */
-    enum class Sector(val label: String) {
-        SEMICONDUCTOR("반도체"),
-        SHIPBUILDING("조선"),
-        DEFENSE("방산"),
-        POWER_EQUIP("전력기기"),
-        IT_SERVICE("IT서비스"),
-        ELECTRONICS("전자/가전"),
-        AUTOMOBILE("자동차"),
-        ROBOT("로봇·AI"),
+    enum class Sector(val label: String, val description: String) {
+        SEMICONDUCTOR("반도체",  "반도체 설계·제조·장비·소재"),
+        SHIPBUILDING("조선",    "조선·해양플랜트·선박"),
+        DEFENSE("방산",         "방산·항공우주·무기체계"),
+        POWER_EQUIP("전력기기", "변압기·전선·전력기기·신재생에너지 인프라"),
+        IT_SERVICE("IT서비스",  "IT서비스·SI·클라우드·소프트웨어·플랫폼"),
+        ELECTRONICS("전자/가전","가전·디스플레이·전자부품"),
+        AUTOMOBILE("자동차",    "자동차 완성차·부품·배터리"),
+        ROBOT("로봇·AI",        "로봇·인공지능·자율주행·스마트팩토리"),
     }
 
     /** 섹터 × 지표 민감도 1건. direction: +1 = 지표 상승이 해당 섹터에 우호, -1 = 부담, 0 = 무관. */
@@ -229,23 +283,11 @@ class MacroImpactService(
         // 영향 방향 계산에 쓰는 지표. fear_greed는 방향 계산 제외(맥락용).
         private val IMPACT_INDICATORS = listOf("usdkrw", "nasdaq", "crude", "copper", "rate3y")
 
-        // 종목코드 → 섹터 목록(복수 가능). 새 종목은 여기에 추가.
-        // 단일 섹터면 listOf(섹터) 하나, 복합 사업이면 [주력섹터, 신규테마섹터] 형태.
-        private val SECTOR_OVERRIDE = mapOf(
-            "000660" to listOf(Sector.SEMICONDUCTOR),           // SK하이닉스
-            "005930" to listOf(Sector.SEMICONDUCTOR),           // 삼성전자
-            "329180" to listOf(Sector.SHIPBUILDING),            // HD현대중공업
-            "047810" to listOf(Sector.DEFENSE),                 // 한국항공우주
-            "012450" to listOf(Sector.DEFENSE),                 // 한화에어로스페이스
-            "267260" to listOf(Sector.POWER_EQUIP),             // HD현대일렉트릭
-            "001440" to listOf(Sector.POWER_EQUIP),             // 대한전선
-            "062040" to listOf(Sector.POWER_EQUIP),             // 산일전기
-            "018260" to listOf(Sector.IT_SERVICE, Sector.ROBOT),// 삼성에스디에스 (IT서비스+AI)
-            "307950" to listOf(Sector.IT_SERVICE),              // 현대오토에버
-            "066570" to listOf(Sector.ELECTRONICS),             // LG전자
-            "005380" to listOf(Sector.AUTOMOBILE, Sector.ROBOT),// 현대차 (자동차+로봇)
-            "000270" to listOf(Sector.AUTOMOBILE),              // 기아
-        )
+        // 섹터 캐시 유효기간: 7일. 사업 방향은 자주 바뀌지 않으므로 충분.
+        private const val SECTOR_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000L
+
+        // Claude 자동 추론이 명확히 틀린 경우에만 여기에 추가(코드 수정 불필요가 기본).
+        private val MANUAL_OVERRIDES = mapOf<String, List<Sector>>()
 
         // 섹터별 매크로 민감도. note 는 근거 한 줄(앱·Claude facts에 그대로 노출).
         private val SENSITIVITY = mapOf(

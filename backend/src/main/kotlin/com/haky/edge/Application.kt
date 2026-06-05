@@ -104,7 +104,7 @@ fun Application.module() {
     val fearGreed = FearGreedClient()
     val copper = CopperClient()
     val ecos = EcosClient(apiKey = System.getenv("ECOS_API_KEY").orEmpty())
-    val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos)
+    val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos, naver)
 
     routing {
         get("/health") { call.respondText("OK") } // 배포/모니터링용 헬스체크
