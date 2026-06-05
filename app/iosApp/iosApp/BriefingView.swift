@@ -2,14 +2,14 @@ import SwiftUI
 import SharedLogic
 
 private enum BriefingTab: String, CaseIterable {
-    case market  = "시장"
     case myStocks = "내 종목"
+    case market  = "시장"
 }
 
 struct BriefingView: View {
     private let api = Db.api
 
-    @State private var selectedTab: BriefingTab = .market
+    @State private var selectedTab: BriefingTab = .myStocks
 
     // quotes 로드 중: 전체 화면 스피너. false가 되면 하이라이트/보유현황 즉시 표시.
     @State private var loading = false
@@ -85,16 +85,16 @@ struct BriefingView: View {
             .listRowBackground(Color(.systemGroupedBackground))
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
 
-            if selectedTab == .market {
-                marketSection
-                sectorSection
-                earningsSection
-                impactSection
-            } else {
+            if selectedTab == .myStocks {
                 highlightSection
                 holdingsSection
                 supplySection
                 dartSection
+            } else {
+                marketSection
+                sectorSection
+                earningsSection
+                impactSection
             }
         }
     }

@@ -95,11 +95,13 @@ class MacroImpactService(
     /** 종목 1개의 섹터를 결정하고 지표별 방향 신호를 계산한다. */
     private suspend fun buildStockImpact(code: String, indicators: List<MacroIndicator>): StockImpact {
         val name = master.search(code).firstOrNull { it.code == code }?.name ?: code
+        // 1순위: 수동 오버라이드(정확). 없으면 KIS 업종명으로 자동 추론(best-effort).
         val sector = SECTOR_OVERRIDE[code]
+            ?: runCatching { kis.getPrice(code).sectorName }.getOrNull()?.let { autoSector(it) }
         val sectorLabel = sector?.label ?: "기타"
 
         if (sector == null) {
-            // 매핑 없는 종목(검색 추가 등): v1은 신호 없이 "-". 폴백 키워드 추론은 오분류 위험이라 안 함.
+            // 업종명으로도 추론 안 되는 종목 → 신호 없음("-"). 새 종목은 SECTOR_OVERRIDE에 추가.
             return StockImpact(code, name, sectorLabel, net = "-", signals = emptyList())
         }
 
@@ -175,6 +177,21 @@ class MacroImpactService(
     private fun signed(v: Double): String = (if (v >= 0) "+" else "") + "%.2f".format(v)
 
     // ── 도메인 매핑(여기를 고치면 영향 규칙이 바뀐다) ───────────────────────────
+
+    /**
+     * KIS 업종명(bstp_kor_isnm)으로 섹터를 추론한다. SECTOR_OVERRIDE 미매핑 종목 폴백용.
+     * 업종명이 여러 섹터에 걸치는 경우(예: "전기·전자"에 반도체+가전 혼재)는 가장 넓은 섹터로 보수 매핑.
+     */
+    private fun autoSector(kisName: String): Sector? = when {
+        kisName.contains("서비스")                         -> Sector.IT_SERVICE
+        kisName.contains("전기가스") || kisName.contains("전력") -> Sector.POWER_EQUIP
+        kisName.contains("철강") || kisName.contains("금속") || kisName.contains("전선") -> Sector.POWER_EQUIP
+        kisName.contains("기계") || kisName.contains("조선") || kisName.contains("중공업") -> Sector.SHIPBUILDING
+        kisName.contains("운수장비") || kisName.contains("항공") -> Sector.DEFENSE
+        kisName.contains("반도체")                         -> Sector.SEMICONDUCTOR
+        kisName.contains("전기·전자") || kisName.contains("전자") -> Sector.ELECTRONICS
+        else                                             -> null
+    }
 
     /** 우리 분류 섹터. 한투 업종명이 거칠어(예: '전기·전자'에 반도체+가전 혼재) 매크로 민감도용으로 따로 둔다. */
     enum class Sector(val label: String) {
