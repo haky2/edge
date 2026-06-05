@@ -92,36 +92,51 @@ class MacroImpactService(
         return result
     }
 
-    /** 종목 1개의 섹터를 결정하고 지표별 방향 신호를 계산한다. */
+    /** 종목 1개의 섹터(복수 가능)를 결정하고 지표별 방향 신호를 계산한다. */
     private suspend fun buildStockImpact(code: String, indicators: List<MacroIndicator>): StockImpact {
         val name = master.search(code).firstOrNull { it.code == code }?.name ?: code
-        // 1순위: 수동 오버라이드(정확). 없으면 KIS 업종명으로 자동 추론(best-effort).
-        val sector = SECTOR_OVERRIDE[code]
-            ?: runCatching { kis.getPrice(code).sectorName }.getOrNull()?.let { autoSector(it) }
-        val sectorLabel = sector?.label ?: "기타"
+        // 1순위: 수동 오버라이드(정확, 복수 섹터 가능). 없으면 KIS 업종명으로 단일 섹터 자동 추론.
+        val sectors = SECTOR_OVERRIDE[code]
+            ?: runCatching { kis.getPrice(code).sectorName }.getOrNull()
+                ?.let { sn -> listOfNotNull(autoSector(sn)) }
+            ?: emptyList()
 
-        if (sector == null) {
-            // 업종명으로도 추론 안 되는 종목 → 신호 없음("-"). 새 종목은 SECTOR_OVERRIDE에 추가.
-            return StockImpact(code, name, sectorLabel, net = "-", signals = emptyList())
+        val sectorLabel = if (sectors.isEmpty()) "기타" else sectors.joinToString("·") { it.label }
+
+        if (sectors.isEmpty()) {
+            return StockImpact(code, name, "기타", net = "-", signals = emptyList())
         }
 
-        val sensitivities = SENSITIVITY[sector].orEmpty()
-        val signals = sensitivities.mapNotNull { sens ->
-            val ind = indicators.firstOrNull { it.key == sens.indicatorKey } ?: return@mapNotNull null
+        // 모든 섹터의 민감도를 합쳐 지표별로 집계한다.
+        // 같은 지표가 여러 섹터에 나오면 방향을 합산 후 부호만 취한다(+1/-1/0).
+        // note: 방향이 모두 같으면 첫 번째 섹터의 설명, 섹터별 방향이 갈리면 각 설명을 병기.
+        val allSens = sectors.flatMap { SENSITIVITY[it].orEmpty() }
+        val signals = allSens.groupBy { it.indicatorKey }.mapNotNull { (key, group) ->
+            val ind = indicators.firstOrNull { it.key == key } ?: return@mapNotNull null
             val rate = ind.changeRate
-            // 종목 영향 방향 = 민감도 부호 × 지표 등락 부호. 민감도 0(무관)이거나 지표 보합이면 0.
+            val paired = group.map { s ->
+                val effDir = when {
+                    s.direction == 0 -> 0
+                    rate > 0.0 -> s.direction
+                    rate < 0.0 -> -s.direction
+                    else -> 0
+                }
+                Pair(s, effDir)
+            }
+            val directionSum = paired.sumOf { it.second }
             val direction = when {
-                sens.direction == 0 -> 0
-                rate > 0.0 -> sens.direction
-                rate < 0.0 -> -sens.direction
+                directionSum > 0 -> 1
+                directionSum < 0 -> -1
                 else -> 0
             }
-            MacroSignal(
-                indicator = ind.label,
-                changeRate = rate,
-                direction = direction,
-                note = sens.note,
-            )
+            // note: 방향이 상충하면 모든 이유 병기. 상충 없으면 실제로 non-zero를 기여한 섹터의 note.
+            val nonZeroSet = paired.map { it.second }.filter { it != 0 }.toSet()
+            val note = when {
+                nonZeroSet.size > 1 -> paired.joinToString(" / ") { it.first.note }
+                nonZeroSet.isEmpty() -> paired.first().first.note
+                else -> paired.firstOrNull { it.second != 0 }?.first?.note ?: paired.first().first.note
+            }
+            MacroSignal(indicator = ind.label, changeRate = rate, direction = direction, note = note)
         }
         val sum = signals.sumOf { it.direction }
         val net = when {
@@ -204,6 +219,7 @@ class MacroImpactService(
         IT_SERVICE("IT서비스"),
         ELECTRONICS("전자/가전"),
         AUTOMOBILE("자동차"),
+        ROBOT("로봇·AI"),
     }
 
     /** 섹터 × 지표 민감도 1건. direction: +1 = 지표 상승이 해당 섹터에 우호, -1 = 부담, 0 = 무관. */
@@ -213,21 +229,22 @@ class MacroImpactService(
         // 영향 방향 계산에 쓰는 지표. fear_greed는 방향 계산 제외(맥락용).
         private val IMPACT_INDICATORS = listOf("usdkrw", "nasdaq", "crude", "copper", "rate3y")
 
-        // 종목코드 → 우리 섹터(관심종목 11개 기준 오버라이드). 새 종목은 여기에 추가.
+        // 종목코드 → 섹터 목록(복수 가능). 새 종목은 여기에 추가.
+        // 단일 섹터면 listOf(섹터) 하나, 복합 사업이면 [주력섹터, 신규테마섹터] 형태.
         private val SECTOR_OVERRIDE = mapOf(
-            "000660" to Sector.SEMICONDUCTOR, // SK하이닉스
-            "005930" to Sector.SEMICONDUCTOR, // 삼성전자
-            "329180" to Sector.SHIPBUILDING,  // HD현대중공업
-            "047810" to Sector.DEFENSE,       // 한국항공우주
-            "012450" to Sector.DEFENSE,       // 한화에어로스페이스
-            "267260" to Sector.POWER_EQUIP,   // HD현대일렉트릭
-            "001440" to Sector.POWER_EQUIP,   // 대한전선
-            "062040" to Sector.POWER_EQUIP,   // 산일전기
-            "018260" to Sector.IT_SERVICE,    // 삼성에스디에스
-            "307950" to Sector.IT_SERVICE,    // 현대오토에버
-            "066570" to Sector.ELECTRONICS,   // LG전자
-            "005380" to Sector.AUTOMOBILE,    // 현대차
-            "000270" to Sector.AUTOMOBILE,    // 기아
+            "000660" to listOf(Sector.SEMICONDUCTOR),           // SK하이닉스
+            "005930" to listOf(Sector.SEMICONDUCTOR),           // 삼성전자
+            "329180" to listOf(Sector.SHIPBUILDING),            // HD현대중공업
+            "047810" to listOf(Sector.DEFENSE),                 // 한국항공우주
+            "012450" to listOf(Sector.DEFENSE),                 // 한화에어로스페이스
+            "267260" to listOf(Sector.POWER_EQUIP),             // HD현대일렉트릭
+            "001440" to listOf(Sector.POWER_EQUIP),             // 대한전선
+            "062040" to listOf(Sector.POWER_EQUIP),             // 산일전기
+            "018260" to listOf(Sector.IT_SERVICE, Sector.ROBOT),// 삼성에스디에스 (IT서비스+AI)
+            "307950" to listOf(Sector.IT_SERVICE),              // 현대오토에버
+            "066570" to listOf(Sector.ELECTRONICS),             // LG전자
+            "005380" to listOf(Sector.AUTOMOBILE, Sector.ROBOT),// 현대차 (자동차+로봇)
+            "000270" to listOf(Sector.AUTOMOBILE),              // 기아
         )
 
         // 섹터별 매크로 민감도. note 는 근거 한 줄(앱·Claude facts에 그대로 노출).
@@ -267,6 +284,11 @@ class MacroImpactService(
                 Sensitivity("crude",  -1, "유가 상승 → 소비자 유지비 부담 → 자동차 수요 심리 위축"),
                 Sensitivity("copper", -1, "구리 상승 → 차량 배선·전장부품 원재료 원가 부담"),
                 Sensitivity("rate3y", -1, "금리 상승 → 자동차 할부 이자 증가 → 구매 수요 감소"),
+            ),
+            Sector.ROBOT to listOf(
+                Sensitivity("nasdaq", +1, "글로벌 AI·기술주 테마와 연동 — 나스닥 강세 시 로봇·AI 섹터 동반 상승"),
+                Sensitivity("rate3y", -1, "성장 기대가 반영된 높은 주가 배수 → 금리 상승 시 할인율 부담 증가"),
+                Sensitivity("usdkrw", +1, "로봇 수출 비중 확대 추세 → 원화 약세 우호"),
             ),
         )
 
