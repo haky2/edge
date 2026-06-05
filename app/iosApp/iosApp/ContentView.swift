@@ -14,11 +14,12 @@ enum Db {
 
 // 관심종목 탭. DB에서 종목 목록을 읽고 백엔드 /quotes로 라이브 시세를 합쳐 표시.
 struct WatchlistView: View {
-    @State private var watchlist: [WatchItem] = []     // DB에서 로드
-    @State private var quotes: [String: Quote] = [:]   // code → 시세
+    @State private var watchlist: [WatchItem] = []
+    @State private var quotes: [String: Quote] = [:]
+    @State private var supplyBadges: [String: [String]] = [:]  // code → ["외인 3일↑", ...]
     @State private var errorText: String?
     @State private var loading = false
-    @State private var showSearch = false              // 검색 시트 표시
+    @State private var showSearch = false
 
     private let api = Db.api
 
@@ -64,13 +65,25 @@ struct WatchlistView: View {
         }
     }
 
-    // 종목 한 줄: 왼쪽 이름/코드, 오른쪽 현재가/등락(상승 빨강·하락 파랑).
+    // 종목 한 줄: 이름/코드+수급배지, 현재가/등락.
     @ViewBuilder
     private func row(_ item: WatchItem) -> some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(item.name).font(.body)
-                Text(item.code).font(.caption2).foregroundColor(.secondary)
+                HStack(spacing: 4) {
+                    Text(item.code).font(.caption2).foregroundColor(.secondary)
+                    if let badges = supplyBadges[item.code] {
+                        ForEach(badges, id: \.self) { badge in
+                            Text(badge)
+                                .font(.system(size: 9, weight: .semibold))
+                                .padding(.horizontal, 5).padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.15))
+                                .foregroundColor(.orange)
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
             }
             Spacer()
             if let q = quotes[item.code] {
@@ -82,7 +95,7 @@ struct WatchlistView: View {
                         .foregroundColor(up ? .red : .blue)
                 }
             } else {
-                Text("—").foregroundColor(.secondary) // 아직 로드 전/실패
+                Text("—").foregroundColor(.secondary)
             }
         }
         .padding(.vertical, 4)
@@ -113,6 +126,26 @@ struct WatchlistView: View {
             errorText = "불러오기 실패: \(error.localizedDescription)\n(백엔드 실행 확인: cd backend && ./run.sh)"
         }
         loading = false
+        Task { await loadSupplyBadges(items: items) }
+    }
+
+    // 수급 배지: 외인/기관 3일 연속 순매수 여부를 백그라운드에서 확인.
+    private func loadSupplyBadges(items: [WatchItem]) async {
+        var result: [String: [String]] = [:]
+        await withTaskGroup(of: (String, [String]).self) { group in
+            for item in items {
+                group.addTask {
+                    guard let flows = try? await self.api.getInvestorFlow(code: item.code, days: 3),
+                          flows.count >= 3 else { return (item.code, []) }
+                    var labels: [String] = []
+                    if flows[0].foreign > 0 && flows[1].foreign > 0 && flows[2].foreign > 0 { labels.append("외인 3일↑") }
+                    if flows[0].institution > 0 && flows[1].institution > 0 && flows[2].institution > 0 { labels.append("기관 3일↑") }
+                    return (item.code, labels)
+                }
+            }
+            for await (code, labels) in group { if !labels.isEmpty { result[code] = labels } }
+        }
+        supplyBadges = result
     }
 }
 

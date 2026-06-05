@@ -1,10 +1,12 @@
 package com.haky.edge.routes
 
+import com.haky.edge.ErrorResponse
 import com.haky.edge.kis.KisClient
 import com.haky.edge.macro.CopperClient
 import com.haky.edge.macro.EcosClient
 import com.haky.edge.macro.FearGreedClient
 import com.haky.edge.macro.MacroImpactService
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
@@ -33,6 +35,14 @@ fun Route.macroImpactRoutes(service: MacroImpactService) {
         val holdings = call.request.queryParameters["holdings"].toCodeList()
         val watchlist = call.request.queryParameters["watchlist"].toCodeList()
         call.respond(service.analyze(holdings, watchlist))
+    }
+
+    // GET /macro-signal/{code}
+    //   - 종목 1개의 섹터 + 지표별 방향 신호. Claude 호출 없음. 상세화면에서 빠르게 조회.
+    get("/macro-signal/{code}") {
+        val code = call.parameters["code"]?.takeIf { it.matches(Regex("""\d{6}""")) }
+            ?: return@get call.respond(HttpStatusCode.BadRequest, ErrorResponse("유효한 종목 코드가 필요합니다"))
+        call.respond(service.stockSignals(code))
     }
 }
 

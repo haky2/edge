@@ -200,6 +200,12 @@ class MacroImpactService(
     suspend fun resolveStockSectors(code: String, name: String, kisName: String): List<Sector> =
         resolveSectors(code, name, kisName)
 
+    /** 종목 1개의 매크로 지표 영향 신호. Claude 호출 없음 — 섹터 결정 + 지표별 방향 계산만. 상세화면용. */
+    suspend fun stockSignals(code: String): StockImpact {
+        val indicators = kis.getMacroIndicators()
+        return buildStockImpact(code, indicators)
+    }
+
     /**
      * 종목 섹터 결정. 우선순위: 수동 오버라이드 → 7일 캐시 → Claude 자동 추론 → KIS 업종명 폴백.
      * Claude 추론이 틀린 경우에만 MANUAL_OVERRIDES에 수동으로 추가한다.

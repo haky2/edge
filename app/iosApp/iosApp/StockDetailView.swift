@@ -1,5 +1,6 @@
 import SwiftUI
 import SharedLogic
+import Charts
 
 // 관심종목 리스트에서 종목을 탭하면 들어오는 상세 화면.
 // 리스트가 이미 받아둔 Quote(스냅샷)로 즉시 표시하고, 진입 시 한 번 최신가로 갱신한다.
@@ -14,7 +15,14 @@ struct StockDetailView: View {
     @State private var analysis: Analysis?           // AI 종합 코멘트
     @State private var technicalResult: TechnicalResult?  // 이평·RSI·거래량 추세(2단계)
     @State private var targetPriceInfo: TargetPriceInfo?   // 컨센서스 목표주가
+    @State private var dailyBars: [DailyBar] = []           // 일봉 (차트용)
     @State private var logEntries: [ActionLogEntry] = []  // 이 종목 행동 로그
+    @State private var dartDisclosures: [DartDisclosure] = []
+    @State private var earningsEntry: EarningsEntry?
+    @State private var stockSignal: StockImpact?
+    @State private var dartExpanded = false
+    @State private var earningsExpanded = false
+    @State private var signalExpanded = false
     @State private var analyzing = false
     @State private var loading = false
     @State private var showEdit = false
@@ -33,23 +41,26 @@ struct StockDetailView: View {
                 Text(item.code).font(.caption).foregroundColor(.secondary)
 
                 if let q = quote {
-                    priceHeader(q)   // 현재가 + 등락
-                    detailCard(q)    // 거래량·시고저·52주
+                    priceHeader(q)      // 현재가 + 등락
+                    priceChartCard(q)   // 가격 차트 + 기본 지표
+                    positionCard(q)  // 내 포지션 + 수익률
+                    aiCommentCard()  // AI 종합 코멘트 (포지션 다음 → 맥락 연결)
                     analysisCard(q)  // 지표 해석 ① 계산 기반(52주 위치·수급 흐름 요약)
-                    if let tr = technicalResult { technicalCard(tr) }  // 이평·RSI·거래량(2단계)
-                    aiCommentCard()  // ② Claude 종합 코멘트(2c)
-                    positionCard(q)  // 내 포지션 + 수익률(1.5)
+                    if let tr = technicalResult { technicalCard(tr) }  // 이평·RSI·거래량
                 } else if loading {
                     ProgressView().padding(.top, 40)
                 }
                 if !flows.isEmpty {
-                    flowCard()       // 수급: 외인/기관/개인 일별 순매수(Phase 2)
+                    flowCard()       // 수급: 외인/기관/개인 일별 순매수
                 }
                 if !news.isEmpty {
-                    newsCard()       // 관련 뉴스 헤드라인(2b)
+                    newsCard()
                 }
+                dartDisclosureSection()
+                earningsDueDateSection()
+                macroSignalSection()
                 if !logEntries.isEmpty {
-                    logCard()        // 행동 로그(매매일지)
+                    logCard()
                 }
             }
             .padding()
@@ -96,19 +107,55 @@ struct StockDetailView: View {
         }
     }
 
-    // 상세 지표 카드
-    private func detailCard(_ q: Quote) -> some View {
-        VStack(spacing: 0) {
-            row("거래량", q.volume.formatted())
-            Divider()
-            row("시가", q.open.formatted())
-            row("고가", q.high.formatted())
-            row("저가", q.low.formatted())
-            Divider()
-            row("52주 최고", q.high52w.formatted())
-            row("52주 최저", q.low52w.formatted())
+    // 가격 차트 + 기본 지표 카드. 일봉 데이터 로드 전엔 숫자만 표시.
+    @ViewBuilder
+    private func priceChartCard(_ q: Quote) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !dailyBars.isEmpty {
+                HStack(spacing: 10) {
+                    chartLegendItem("종가", .primary.opacity(0.85))
+                    chartLegendItem("MA5", .secondary.opacity(0.7))
+                    chartLegendItem("MA20", .orange.opacity(0.8))
+                    chartLegendItem("MA60", .purple.opacity(0.55))
+                }
+                .font(.caption2)
+                .padding(.top, 4)
+                PriceLineChart(bars: dailyBars)
+                    .frame(height: 150)
+                Divider()
+            }
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+                GridRow {
+                    miniStat("거래량", q.volume.formatted())
+                    miniStat("시가", q.open.formatted())
+                }
+                GridRow {
+                    miniStat("고가", q.high.formatted())
+                    miniStat("저가", q.low.formatted())
+                }
+                GridRow {
+                    miniStat("52주 최고", q.high52w.formatted())
+                    miniStat("52주 최저", q.low52w.formatted())
+                }
+            }
+            .padding(.bottom, 4)
         }
         .cardStyle()
+    }
+
+    private func miniStat(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).font(.caption2).foregroundColor(.secondary)
+            Spacer()
+            Text(value).font(.caption2.weight(.medium))
+        }
+    }
+
+    private func chartLegendItem(_ label: String, _ color: Color) -> some View {
+        HStack(spacing: 3) {
+            Rectangle().fill(color).frame(width: 12, height: 2)
+            Text(label).foregroundColor(.secondary)
+        }
     }
 
     // 내 포지션 카드(1.5b/c). 평단가·수량이 있으면 현재가로 수익률/평가손익 계산, 목표·손절은 거리(%)와 도달 여부.
@@ -188,7 +235,7 @@ struct StockDetailView: View {
             Text("지표 해석").font(.subheadline.weight(.semibold)).padding(.top, 8)
 
             if let c = ctx {
-                insight("52주 위치", "\(Int(c.pctInRange52w.rounded()))% · \(rangeLabel(c.pctInRange52w))")
+                rangeGauge(c.pctInRange52w)
                 insight("52주 고점 대비", String(format: "%.1f%%", c.pctFromHigh52w))
                 insight("52주 저점 대비", String(format: "+%.1f%%", c.pctFromLow52w))
             }
@@ -276,6 +323,37 @@ struct StockDetailView: View {
         }
     }
 
+    // 52주 위치 게이지 바. 텍스트 위치 + 컬러 배지 + 진행 바.
+    private func rangeGauge(_ pct: Double) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("52주 위치").foregroundColor(.secondary)
+                Spacer()
+                Text("\(Int(pct.rounded()))%  \(rangeLabel(pct))")
+                    .fontWeight(.medium)
+                    .foregroundColor(gaugeColor(pct))
+            }
+            .font(.caption)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color(.systemFill)).frame(height: 5)
+                    Capsule()
+                        .fill(gaugeColor(pct))
+                        .frame(width: max(5, geo.size.width * pct / 100.0), height: 5)
+                }
+            }
+            .frame(height: 5)
+        }
+    }
+
+    private func gaugeColor(_ pct: Double) -> Color {
+        switch pct {
+        case ..<25: return .blue
+        case ..<75: return .secondary
+        default: return .red
+        }
+    }
+
     // AI 종합 코멘트 카드(2c). 사실(시세·52주·PER·수급·뉴스)을 백엔드가 모아 Claude가 해석.
     // Claude 생성이라 수 초 걸려 별도 로딩. 매매 판단/책임은 사용자 — 참고용 디스클레이머를 항상 붙인다.
     @ViewBuilder
@@ -290,9 +368,16 @@ struct StockDetailView: View {
             .padding(.top, 8)
 
             if let a = analysis {
-                Text(a.comment)
-                    .font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(a.comment.components(separatedBy: "\n\n"), id: \.self) { para in
+                        let trimmed = para.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty {
+                            Text(markdown(trimmed))
+                                .font(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
                 Text("참고용 · \(a.date) 기준 · 투자 판단과 책임은 본인에게 있습니다")
                     .font(.caption2).foregroundColor(.secondary)
                     .padding(.top, 2)
@@ -386,12 +471,29 @@ struct StockDetailView: View {
         return ""
     }
 
-    // 수급 카드(Phase 2). 외인/기관/개인 일별 순매수 수량(주). 순매수=빨강 / 순매도=파랑.
-    // 장후 확정 일별값(백엔드가 미확정 당일은 제외). 큰 수는 만/억으로 축약.
+    // 수급 카드. 상단: 외인·기관 방향 막대 차트(시각적). 하단: 전체 정확한 수치표.
     private func flowCard() -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("수급 · 순매수(주)").font(.subheadline.weight(.semibold))
+            Text("수급 · 순매수").font(.subheadline.weight(.semibold))
                 .padding(.top, 8)
+            Chart(flowChartData) { e in
+                BarMark(x: .value("날짜", e.date), y: .value("순매수", e.shares))
+                    .foregroundStyle(by: .value("투자자", e.investor))
+                    .position(by: .value("투자자", e.investor))
+            }
+            .chartForegroundStyleScale(["외인": Color.orange.opacity(0.85), "기관": Color.teal.opacity(0.85)])
+            .chartXAxis { AxisMarks { _ in AxisValueLabel().font(.caption2) } }
+            .chartYAxis {
+                AxisMarks(values: .automatic(desiredCount: 3)) { v in
+                    if let d = v.as(Double.self) {
+                        AxisValueLabel { Text(flowText(Int64(d))).font(.caption2) }
+                    }
+                    AxisGridLine()
+                }
+            }
+            .chartLegend(position: .top, alignment: .trailing)
+            .frame(height: 110)
+            Divider()
             Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 8) {
                 GridRow {
                     Text("날짜").gridColumnAlignment(.leading)
@@ -413,6 +515,13 @@ struct StockDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardStyle()
+    }
+
+    private var flowChartData: [FlowEntry] {
+        flows.flatMap { f in [
+            FlowEntry(id: "\(f.date)_외인", date: mmdd(f.date), investor: "외인", shares: Double(f.foreign)),
+            FlowEntry(id: "\(f.date)_기관", date: mmdd(f.date), investor: "기관", shares: Double(f.institution)),
+        ]}
     }
 
     private func flowCell(_ n: Int64) -> some View {
@@ -482,6 +591,173 @@ struct StockDetailView: View {
         logEntries = logRepo.getByCode(code: item.code, limit: 5)
     }
 
+    // DART 공시 — 접기 섹션 (30일, 없으면 미표시)
+    @ViewBuilder
+    private func dartDisclosureSection() -> some View {
+        if !dartDisclosures.isEmpty {
+            VStack(spacing: 0) {
+                DisclosureGroup(isExpanded: $dartExpanded) {
+                    ForEach(dartDisclosures, id: \.url) { d in
+                        Divider()
+                        if let url = URL(string: d.url) {
+                            Link(destination: url) {
+                                dartDisclosureRow(d)
+                            }
+                            .foregroundColor(.primary)
+                        } else {
+                            dartDisclosureRow(d)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.text").foregroundColor(.orange)
+                        Text("공시 (\(dartDisclosures.count)건, 30일)")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                }
+                .padding(.vertical, 10)
+            }
+            .cardStyle()
+        }
+    }
+
+    private func dartDisclosureRow(_ d: DartDisclosure) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(d.reportName).font(.caption).lineLimit(2)
+            Text(formattedDate8(d.date)).font(.caption2).foregroundColor(.secondary)
+        }
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // 실적 일정 — 접기 섹션
+    @ViewBuilder
+    private func earningsDueDateSection() -> some View {
+        if let e = earningsEntry {
+            let days = Int(e.daysUntil)
+            VStack(spacing: 0) {
+                DisclosureGroup(isExpanded: $earningsExpanded) {
+                    Divider()
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(e.reportName).font(.caption)
+                            Text("제출 기한: \(formattedDate8(e.dueDate))")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Text(ddayBadge(days))
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(ddayBadgeColor(days).opacity(0.15))
+                            .foregroundColor(ddayBadgeColor(days))
+                            .clipShape(Capsule())
+                    }
+                    .padding(.vertical, 8)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "calendar").foregroundColor(.blue)
+                        Text("실적 일정")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text(ddayBadge(days))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundColor(ddayBadgeColor(days))
+                    }
+                }
+                .padding(.vertical, 10)
+            }
+            .cardStyle()
+        }
+    }
+
+    private func ddayBadge(_ days: Int) -> String {
+        switch days {
+        case 0:    return "D-day"
+        case 1...: return "D-\(days)"
+        default:   return "D+\(abs(days))"
+        }
+    }
+    private func ddayBadgeColor(_ days: Int) -> Color {
+        switch days {
+        case ..<14: return .red
+        case ..<30: return .orange
+        default:    return .secondary
+        }
+    }
+
+    // 지표 영향 — 접기 섹션 (섹터 + 지표별 우호/부담)
+    @ViewBuilder
+    private func macroSignalSection() -> some View {
+        if let sig = stockSignal {
+            VStack(spacing: 0) {
+                DisclosureGroup(isExpanded: $signalExpanded) {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("섹터: \(sig.sectorLabel)").font(.caption).foregroundColor(.secondary)
+                            Spacer()
+                            netBadgeDetail(sig.net)
+                        }
+                        .padding(.top, 4)
+                        if sig.signals.isEmpty {
+                            Text("매핑된 섹터 없음 (미지원 종목)").font(.caption2).foregroundColor(.secondary)
+                        } else {
+                            ForEach(sig.signals, id: \.indicator) { s in
+                                let dir = Int(s.direction)
+                                HStack(alignment: .top, spacing: 6) {
+                                    Text(signalArrow(dir))
+                                        .font(.caption2)
+                                        .foregroundColor(directionColor(dir))
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("\(s.indicator) \(signedPct(s.changeRate))%")
+                                            .font(.caption2.weight(.medium))
+                                        Text(s.note).font(.caption2).foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.bottom, 8)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chart.line.uptrend.xyaxis").foregroundColor(.teal)
+                        Text("지표 영향")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        if sig.net != "-" { netBadgeDetail(sig.net) }
+                    }
+                }
+                .padding(.vertical, 10)
+            }
+            .cardStyle()
+        }
+    }
+
+    private func netBadgeDetail(_ net: String) -> some View {
+        let color: Color = net == "우호적" ? .red : (net == "부담" ? .blue : .secondary)
+        return Text(net)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(color.opacity(0.15))
+            .foregroundColor(color)
+            .clipShape(Capsule())
+    }
+
+    private func signalArrow(_ d: Int) -> String {
+        d > 0 ? "↑" : (d < 0 ? "↓" : "→")
+    }
+    private func directionColor(_ d: Int) -> Color {
+        d > 0 ? .red : (d < 0 ? .blue : .secondary)
+    }
+    private func signedPct(_ v: Double) -> String {
+        (v >= 0 ? "+" : "") + String(format: "%.2f", v)
+    }
+
+    private func formattedDate8(_ d: String) -> String {
+        guard d.count == 8 else { return d }
+        return "\(d.prefix(4)).\(d.dropFirst(4).prefix(2)).\(d.suffix(2))"
+    }
+
     // 행동 로그 카드. 이 종목의 최근 기록(최대 5건). 있을 때만 표시.
     private func logCard() -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -526,16 +802,32 @@ struct StockDetailView: View {
         return fmt.string(from: date)
     }
 
+    private func markdown(_ s: String) -> AttributedString {
+        (try? AttributedString(
+            markdown: s,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(s)
+    }
+
     private func load() async {
         loading = true
         if let q = try? await api.getQuote(code: item.code) { quote = q }
         flows = (try? await api.getInvestorFlow(code: item.code, days: 5)) ?? []
         news = (try? await api.getNews(stockName: item.name, display: 5)) ?? []
         if let daily = try? await api.getDaily(code: item.code, bars: 62) {
+            dailyBars = daily
             technicalResult = TechnicalIndicators.shared.calculate(bars: daily)
         }
         targetPriceInfo = try? await api.getTargetPrice(code: item.code)
         loading = false
+
+        // DART·실적·지표영향은 느린 네트워크 이후 병렬 로드 (접기 기본이라 늦어도 무방)
+        async let dartTask   = api.getDartDisclosures(code: item.code, days: 30)
+        async let earnsTask  = api.getEarnings(codes: [item.code])
+        async let signalTask = api.getStockSignals(code: item.code)
+        dartDisclosures = (try? await dartTask) ?? []
+        earningsEntry   = (try? await earnsTask)?.first
+        stockSignal     = try? await signalTask
     }
 
     private func loadAnalysis() async {
@@ -617,5 +909,113 @@ struct ActionLogSheetView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - 차트 헬퍼 타입
+
+private struct FlowEntry: Identifiable {
+    let id: String
+    let date: String
+    let investor: String
+    let shares: Double
+}
+
+// 종가 + 이평선 미니 라인 차트. bars[0] = 최신, reversed 후 최근 30개 표시.
+// MA5·MA20은 시계열 라인, MA60은 현재값 기준선(RuleMark).
+private struct PriceLineChart: View {
+    let bars: [DailyBar]
+
+    private struct CPoint: Identifiable {
+        let id: Int; let close: Double
+    }
+    private struct MAPoint: Identifiable {
+        let id: Int; let value: Double
+    }
+
+    private var orderedBars: [DailyBar] { Array(bars.reversed()) }
+
+    private var closePts: [CPoint] {
+        let all = orderedBars
+        let start = max(0, all.count - 30)
+        return all[start...].enumerated().map { i, b in CPoint(id: i, close: Double(b.close)) }
+    }
+
+    private func maPts(period: Int) -> [MAPoint] {
+        let all = orderedBars
+        let displayStart = max(0, all.count - 30)
+        var result: [MAPoint] = []
+        for i in displayStart..<all.count {
+            guard i >= period - 1 else { continue }
+            let sum = all[(i - period + 1)...i].reduce(0) { $0 + Double($1.close) }
+            result.append(MAPoint(id: i - displayStart, value: sum / Double(period)))
+        }
+        return result
+    }
+
+    private var currentMA60: Double? {
+        let all = orderedBars
+        guard all.count >= 60 else { return nil }
+        return all.suffix(60).reduce(0.0) { $0 + Double($1.close) } / 60.0
+    }
+
+    var body: some View {
+        let ma5  = maPts(period: 5)
+        let ma20 = maPts(period: 20)
+        let allY = closePts.map(\.close) + ma5.map(\.value) + ma20.map(\.value)
+        let yMin = (allY.min() ?? 0) * 0.997
+
+        Chart {
+            ForEach(closePts) { p in
+                AreaMark(x: .value("x", p.id), yStart: .value("", yMin), yEnd: .value("종가", p.close))
+                    .foregroundStyle(LinearGradient(colors: [Color.blue.opacity(0.18), Color.clear], startPoint: .top, endPoint: .bottom))
+            }
+            .interpolationMethod(.monotone)
+            ForEach(closePts) { p in
+                LineMark(x: .value("x", p.id), y: .value("종가", p.close))
+                    .foregroundStyle(Color.primary.opacity(0.85))
+                    .lineStyle(StrokeStyle(lineWidth: 2))
+            }
+            .interpolationMethod(.monotone)
+            ForEach(ma5) { p in
+                LineMark(x: .value("x", p.id), y: .value("MA5", p.value))
+                    .foregroundStyle(Color.secondary.opacity(0.6))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+            }
+            .interpolationMethod(.monotone)
+            ForEach(ma20) { p in
+                LineMark(x: .value("x", p.id), y: .value("MA20", p.value))
+                    .foregroundStyle(Color.orange.opacity(0.8))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5))
+            }
+            .interpolationMethod(.monotone)
+            if let ma60 = currentMA60 {
+                RuleMark(y: .value("MA60", ma60))
+                    .foregroundStyle(Color.purple.opacity(0.5))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    .annotation(position: .trailing, alignment: .center) {
+                        Text("MA60").font(.system(size: 8)).foregroundColor(.purple.opacity(0.7))
+                    }
+            }
+        }
+        .chartXAxis(.hidden)
+        .chartYAxis {
+            AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { v in
+                if let d = v.as(Double.self), d > 0 {
+                    AxisValueLabel {
+                        Text(priceYLabel(d)).font(.system(size: 9)).foregroundStyle(Color.secondary)
+                    }
+                }
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.3, dash: [3, 3]))
+            }
+        }
+        .chartLegend(.hidden)
+    }
+
+    private func priceYLabel(_ v: Double) -> String {
+        let n = Int(v)
+        if n >= 1_000_000 { return "\(n / 10_000)만" }
+        if n >= 10_000    { return "\(n / 1_000)천" }
+        return n.formatted()
     }
 }

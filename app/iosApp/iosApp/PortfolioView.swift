@@ -1,5 +1,6 @@
 import SwiftUI
 import SharedLogic
+import Charts
 
 // Phase 3 — 내 자산 탭. 평단가·수량이 입력된 종목만 모아 현재가로 평가금액·손익을 집계한다.
 // 데이터 입력은 각 종목 상세(WatchlistView → StockDetailView)에서 하고, 여기선 집계만.
@@ -59,7 +60,7 @@ struct PortfolioView: View {
         }
     }
 
-    // 총 투자금·평가금액·손익·수익률 집계 카드
+    // 총 투자금·평가금액·손익·수익률 집계 카드 + 종목 비중 도넛
     private var summaryCard: some View {
         let invested   = rows.reduce(0.0) { $0 + $1.invested }
         let evaluated  = rows.reduce(0.0) { $0 + $1.evaluated }
@@ -67,7 +68,8 @@ struct PortfolioView: View {
         let totalRate  = invested == 0 ? 0.0 : totalPnl / invested * 100
         let up         = totalPnl >= 0
 
-        return VStack(spacing: 10) {
+        return VStack(spacing: 12) {
+            // 숫자 요약
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("총 평가금액").font(.caption).foregroundColor(.secondary)
@@ -90,6 +92,40 @@ struct PortfolioView: View {
                 Text("총 투자금").font(.caption).foregroundColor(.secondary)
                 Spacer()
                 Text("\(Int(invested).formatted())원").font(.caption)
+            }
+
+            // 종목 비중 도넛
+            if rows.count > 1 {
+                Divider()
+                HStack(alignment: .center, spacing: 16) {
+                    Chart(rows, id: \.item.code) { row in
+                        SectorMark(
+                            angle: .value("비중", row.evaluated),
+                            innerRadius: .ratio(0.55),
+                            angularInset: 1.5
+                        )
+                        .cornerRadius(3)
+                        .foregroundStyle(by: .value("종목", row.item.name))
+                    }
+                    .chartLegend(.hidden)
+                    .frame(width: 100, height: 100)
+
+                    // 간단 레전드
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(rows.sorted { $0.evaluated > $1.evaluated }, id: \.item.code) { row in
+                            let pct = evaluated == 0 ? 0 : row.evaluated / evaluated * 100
+                            HStack(spacing: 4) {
+                                Circle().frame(width: 8, height: 8)
+                                    .foregroundStyle(.secondary)  // Charts가 색 할당
+                                Text(row.item.name).font(.caption2).lineLimit(1)
+                                Spacer()
+                                Text(String(format: "%.1f%%", pct)).font(.caption2.monospacedDigit())
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
             }
         }
         .padding()

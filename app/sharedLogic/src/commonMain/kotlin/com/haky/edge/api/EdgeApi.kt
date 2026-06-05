@@ -7,6 +7,7 @@ import com.haky.edge.model.EarningsEntry
 import com.haky.edge.model.InvestorFlow
 import com.haky.edge.model.MacroImpact
 import com.haky.edge.model.MacroIndicator
+import com.haky.edge.model.StockImpact
 import com.haky.edge.model.NewsItem
 import com.haky.edge.model.Quote
 import com.haky.edge.model.SectorBriefing
@@ -164,6 +165,11 @@ class EdgeApi(
             client.get("$baseUrl/target-price/$code").body()
         } catch (_: Exception) { null }
     }
+
+    /** 종목 1개의 매크로 지표 영향 신호. Claude 없이 섹터+방향 계산만. 상세화면 "지표 영향" 섹션용. */
+    @Throws(Exception::class)
+    suspend fun getStockSignals(code: String): StockImpact =
+        client.get("$baseUrl/macro-signal/$code").body()
 
     /** 종목 최근 DART 공시 목록. days: 조회 기간(기본 7일). 없으면 빈 리스트. */
     @Throws(Exception::class)

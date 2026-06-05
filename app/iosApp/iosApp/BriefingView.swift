@@ -49,6 +49,13 @@ struct BriefingView: View {
     @State private var sectorBriefingComment = ""
     @State private var sectorSpotlight: [SpotlightStock] = []
 
+    // 접기/펼치기 상태 (기본 접힘)
+    @State private var dartExpanded = false
+    @State private var earningsExpanded = false
+    @State private var impactExpanded = false
+    @State private var marketExpanded = false
+    @State private var sectorExpanded = false
+
     // 하이라이트·보유현황용: 쿼츠 로드 후 저장 (spotlight NavigationLink에서도 재사용)
     @State private var allItemsLoaded: [WatchItem] = []
     @State private var quoteMapLoaded: [String: Quote] = [:]
@@ -113,16 +120,24 @@ struct BriefingView: View {
 
     @ViewBuilder
     private var marketSection: some View {
-        Section("시장 지표") {
-            if macroLoading {
+        Section {
+            Button { withAnimation { marketExpanded.toggle() } } label: {
                 HStack {
-                    ProgressView().scaleEffect(0.8)
-                    Text("확인 중…").font(.footnote).foregroundColor(.secondary)
+                    Text("시장 지표").font(.headline)
+                    Spacer()
+                    Image(systemName: marketExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
                 }
-            } else if macroItems.isEmpty {
-                Text("불러오기 실패").font(.footnote).foregroundColor(.secondary)
-            } else {
-                ForEach(macroItems, id: \.key) { macroRow($0) }
+            }
+            .foregroundColor(.primary)
+            if macroLoading {
+                HStack { ProgressView().scaleEffect(0.8); Text("확인 중…").font(.footnote).foregroundColor(.secondary) }
+            } else if marketExpanded {
+                if macroItems.isEmpty {
+                    Text("불러오기 실패").font(.footnote).foregroundColor(.secondary)
+                } else {
+                    ForEach(macroItems, id: \.key) { macroRow($0) }
+                }
             }
         }
     }
@@ -173,20 +188,53 @@ struct BriefingView: View {
         return .secondary
     }
 
-    // MARK: - 섹션: 섹터 동향
+    // MARK: - 섹션: 섹터 동향 (관심종목 관련 섹터만)
+
+    // KRX 업종 레이블 → 우리 커스텀 섹터 레이블 매핑
+    private let krxToCustom: [String: [String]] = [
+        "전기전자": ["반도체", "전자/가전", "로봇·AI"],
+        "기계":     ["조선", "방산"],
+        "운수장비":  ["자동차", "로봇·AI"],
+        "전기가스업": ["전력기기"],
+        "서비스업":  ["IT서비스", "로봇·AI"],
+        "철강금속":  ["전력기기", "조선"],
+    ]
+
+    // 관심/보유 종목의 섹터 레이블 집합 (impactHoldings/Watch에서 추출)
+    private var userSectorLabels: Set<String> {
+        let all = (impactHoldings + impactWatch)
+            .flatMap { $0.sectorLabel.components(separatedBy: "·") }
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        return Set(all).filter { !$0.isEmpty }
+    }
+
+    private func isRelevant(_ s: SectorIndex) -> Bool {
+        let labels = userSectorLabels
+        guard !labels.isEmpty else { return true }  // 영향 미로드 시 전체 표시
+        return krxToCustom[s.label]?.contains(where: { labels.contains($0) }) ?? false
+    }
 
     @ViewBuilder
     private var sectorSection: some View {
-        Section("섹터 동향") {
-            if sectorLoading {
+        let filtered = sectorItems.filter { isRelevant($0) }
+        Section {
+            Button { withAnimation { sectorExpanded.toggle() } } label: {
                 HStack {
-                    ProgressView().scaleEffect(0.8)
-                    Text("확인 중…").font(.footnote).foregroundColor(.secondary)
+                    Text("섹터 동향 (내 종목 관련)").font(.headline)
+                    Spacer()
+                    Image(systemName: sectorExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
                 }
-            } else if sectorItems.isEmpty {
-                Text("불러오기 실패").font(.footnote).foregroundColor(.secondary)
-            } else {
-                ForEach(sectorItems, id: \.key) { sectorRow($0) }
+            }
+            .foregroundColor(.primary)
+            if sectorLoading {
+                HStack { ProgressView().scaleEffect(0.8); Text("확인 중…").font(.footnote).foregroundColor(.secondary) }
+            } else if sectorExpanded {
+                if filtered.isEmpty {
+                    Text("관련 섹터 없음").font(.footnote).foregroundColor(.secondary)
+                } else {
+                    ForEach(filtered, id: \.key) { sectorRow($0) }
+                }
             }
         }
     }
@@ -222,7 +270,12 @@ struct BriefingView: View {
             } else if sectorBriefingComment.isEmpty {
                 Text("불러오기 실패").font(.footnote).foregroundColor(.secondary)
             } else {
-                Text(markdown(sectorBriefingComment)).font(.callout)
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(sectorBriefingComment.components(separatedBy: "\n\n"), id: \.self) { para in
+                        let t = para.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !t.isEmpty { Text(markdown(t)).font(.callout).fixedSize(horizontal: false, vertical: true) }
+                    }
+                }
             }
         }
         // 주목 종목 — 코멘트 준비됐을 때만 표시
@@ -268,16 +321,24 @@ struct BriefingView: View {
 
     @ViewBuilder
     private var earningsSection: some View {
-        Section("실적 일정 (D-90 이내)") {
-            if earningsLoading {
+        Section {
+            Button { withAnimation { earningsExpanded.toggle() } } label: {
                 HStack {
-                    ProgressView().scaleEffect(0.8)
-                    Text("확인 중…").font(.footnote).foregroundColor(.secondary)
+                    Text("실적 일정 (D-90 이내)").font(.headline)
+                    Spacer()
+                    Image(systemName: earningsExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
                 }
-            } else if earningsItems.isEmpty {
-                Text("90일 이내 예정 없음").font(.footnote).foregroundColor(.secondary)
-            } else {
-                ForEach(earningsItems, id: \.code) { earningsRow($0) }
+            }
+            .foregroundColor(.primary)
+            if earningsLoading {
+                HStack { ProgressView().scaleEffect(0.8); Text("확인 중…").font(.footnote).foregroundColor(.secondary) }
+            } else if earningsExpanded {
+                if earningsItems.isEmpty {
+                    Text("90일 이내 예정 없음").font(.footnote).foregroundColor(.secondary)
+                } else {
+                    ForEach(earningsItems, id: \.code) { earningsRow($0) }
+                }
             }
         }
     }
@@ -321,31 +382,41 @@ struct BriefingView: View {
 
     @ViewBuilder
     private var impactSection: some View {
-        // 종합 코멘트
-        Section("내 종목 영향 (오늘)") {
-            if impactLoading {
+        Section {
+            Button { withAnimation { impactExpanded.toggle() } } label: {
                 HStack {
-                    ProgressView().scaleEffect(0.8)
-                    Text("AI가 해석 중…").font(.footnote).foregroundColor(.secondary)
-                }
-            } else if impactComment.isEmpty {
-                Text("불러오기 실패").font(.footnote).foregroundColor(.secondary)
-            } else {
-                Text(markdown(impactComment)).font(.callout)
-                Text("※ 참고용 해석입니다. 투자 판단·책임은 본인에게 있습니다.")
-                    .font(.caption2).foregroundColor(.secondary)
-            }
-        }
-        // 보유/관심 종목별 방향(코멘트가 준비됐을 때만)
-        if !impactLoading && !impactComment.isEmpty {
-            if !impactHoldings.isEmpty {
-                Section("보유 — 지표 영향") {
-                    ForEach(impactHoldings, id: \.code) { impactRow($0) }
+                    Text("내 종목 영향 (오늘)").font(.headline)
+                    Spacer()
+                    Image(systemName: impactExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
                 }
             }
-            if !impactWatch.isEmpty {
-                Section("관심 — 지표 영향") {
-                    ForEach(impactWatch, id: \.code) { impactRow($0) }
+            .foregroundColor(.primary)
+            if impactLoading {
+                HStack { ProgressView().scaleEffect(0.8); Text("AI가 해석 중…").font(.footnote).foregroundColor(.secondary) }
+            } else if impactExpanded {
+                if impactComment.isEmpty {
+                    Text("불러오기 실패").font(.footnote).foregroundColor(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(impactComment.components(separatedBy: "\n\n"), id: \.self) { para in
+                            let trimmed = para.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !trimmed.isEmpty {
+                                Text(markdown(trimmed)).font(.callout)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                    if !impactHoldings.isEmpty {
+                        Text("보유 종목").font(.caption.weight(.semibold)).foregroundColor(.secondary)
+                            .padding(.top, 4)
+                        ForEach(impactHoldings, id: \.code) { impactRow($0) }
+                    }
+                    if !impactWatch.isEmpty {
+                        Text("관심 종목").font(.caption.weight(.semibold)).foregroundColor(.secondary)
+                            .padding(.top, 4)
+                        ForEach(impactWatch, id: \.code) { impactRow($0) }
+                    }
                 }
             }
         }
@@ -409,12 +480,18 @@ struct BriefingView: View {
 
     @ViewBuilder
     private var highlightSection: some View {
-        Section("오늘 하이라이트") {
-            if topGainers.isEmpty && topLosers.isEmpty {
-                Text("변동 종목 없음").font(.footnote).foregroundColor(.secondary)
-            } else {
-                ForEach(topGainers, id: \.item.code) { quoteLink($0) }
-                ForEach(topLosers,  id: \.item.code) { quoteLink($0) }
+        if topGainers.isEmpty && topLosers.isEmpty {
+            // 변동 없으면 섹션 자체 숨김
+        } else {
+            if !topGainers.isEmpty {
+                Section("오늘 상승") {
+                    ForEach(topGainers, id: \.item.code) { quoteLink($0) }
+                }
+            }
+            if !topLosers.isEmpty {
+                Section("오늘 하락") {
+                    ForEach(topLosers, id: \.item.code) { quoteLink($0) }
+                }
             }
         }
     }
@@ -440,50 +517,35 @@ struct BriefingView: View {
         }
     }
 
-    // MARK: - 섹션: 보유현황
+    // MARK: - 섹션: 보유현황 (요약 1줄 — 상세는 내 자산 탭)
 
     @ViewBuilder
     private var holdingsSection: some View {
-        if holdings.isEmpty {
-            Section("보유현황") {
-                Text("평단가를 입력한 종목이 없어요")
-                    .font(.footnote).foregroundColor(.secondary)
-            }
-        } else {
+        if !holdings.isEmpty {
             let invested  = holdings.reduce(0.0) { $0 + $1.invested }
             let evaluated = holdings.reduce(0.0) { $0 + $1.evaluated }
             let totalPnl  = evaluated - invested
             let totalRate = invested == 0 ? 0.0 : totalPnl / invested * 100
             let up        = totalPnl >= 0
-
-            Section {
-                VStack(spacing: 6) {
-                    HStack {
-                        Text("총 평가금액").font(.caption).foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(Int(evaluated).formatted())원").font(.subheadline.weight(.semibold))
+            Section("보유현황") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("\(holdings.count)개 종목").font(.caption).foregroundColor(.secondary)
+                        Text("\(Int(evaluated).formatted())원")
+                            .font(.body.weight(.semibold))
                     }
-                    HStack {
-                        Text("총 손익").font(.caption).foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(up ? "+" : "")\(Int(totalPnl).formatted())원  \(up ? "+" : "")\(String(format: "%.2f", totalRate))%")
-                            .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text("\(up ? "+" : "")\(Int(totalPnl).formatted())원")
+                            .font(.body.weight(.semibold))
                             .foregroundColor(up ? .red : .blue)
+                        Text("\(up ? "+" : "")\(String(format: "%.2f", totalRate))%")
+                            .font(.caption).foregroundColor(up ? .red : .blue)
                     }
                 }
-                .padding(.vertical, 4)
-            } header: {
-                Text("보유현황 (\(holdings.count)개)")
-            }
-
-            Section {
-                ForEach(holdings, id: \.item.code) { row in
-                    NavigationLink {
-                        StockDetailView(item: row.item, quote: row.quote, api: api)
-                    } label: {
-                        holdingRow(row)
-                    }
-                }
+                .padding(.vertical, 2)
+                Text("종목별 상세는 '내 자산' 탭에서 확인하세요")
+                    .font(.caption2).foregroundColor(.secondary)
             }
         }
     }
@@ -555,24 +617,29 @@ struct BriefingView: View {
 
     @ViewBuilder
     private var dartSection: some View {
-        Section("최근 공시 (7일)") {
-            if dartLoading {
+        Section {
+            Button { withAnimation { dartExpanded.toggle() } } label: {
                 HStack {
-                    ProgressView().scaleEffect(0.8)
-                    Text("확인 중…").font(.footnote).foregroundColor(.secondary)
+                    Text("최근 공시 (7일)").font(.headline)
+                    Spacer()
+                    Image(systemName: dartExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
                 }
-            } else if dartItems.isEmpty {
-                Text("공시 없음").font(.footnote).foregroundColor(.secondary)
-            } else {
-                ForEach(dartItems.indices, id: \.self) { i in
-                    let item = dartItems[i]
-                    if let url = URL(string: item.url) {
-                        Link(destination: url) {
+            }
+            .foregroundColor(.primary)
+            if dartLoading {
+                HStack { ProgressView().scaleEffect(0.8); Text("확인 중…").font(.footnote).foregroundColor(.secondary) }
+            } else if dartExpanded {
+                if dartItems.isEmpty {
+                    Text("공시 없음").font(.footnote).foregroundColor(.secondary)
+                } else {
+                    ForEach(dartItems.indices, id: \.self) { i in
+                        let item = dartItems[i]
+                        if let url = URL(string: item.url) {
+                            Link(destination: url) { dartRow(item) }.foregroundColor(.primary)
+                        } else {
                             dartRow(item)
                         }
-                        .foregroundColor(.primary)
-                    } else {
-                        dartRow(item)
                     }
                 }
             }
