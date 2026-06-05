@@ -3,14 +3,22 @@ package com.haky.edge
 import com.haky.edge.ai.AnalysisService
 import com.haky.edge.ai.ClaudeClient
 import com.haky.edge.ai.ClaudeException
+import com.haky.edge.dart.DartClient
+import com.haky.edge.dart.DartException
 import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.KisException
+import com.haky.edge.macro.FearGreedClient
+import com.haky.edge.macro.MacroImpactService
 import com.haky.edge.master.StockMaster
 import com.haky.edge.news.NaverNewsClient
 import com.haky.edge.news.NewsException
 import com.haky.edge.routes.analysisRoutes
 import com.haky.edge.routes.chartRoutes
+import com.haky.edge.routes.dartRoutes
+import com.haky.edge.routes.earningsRoutes
 import com.haky.edge.routes.investorRoutes
+import com.haky.edge.routes.macroImpactRoutes
+import com.haky.edge.routes.macroRoutes
 import com.haky.edge.routes.newsRoutes
 import com.haky.edge.routes.quoteRoutes
 import com.haky.edge.routes.searchRoutes
@@ -58,7 +66,8 @@ fun Application.module() {
             // KisException = 외부(한투) 호출이 잘못된 경우 → 502 Bad Gateway(우리 서버가 아닌 상류 문제).
             // 그 외 = 우리 코드의 버그 → 500. 앱이 이 구분으로 "재시도 vs 버그제보"를 판단할 수 있다.
             val status = when (cause) {
-                is KisException, is NewsException, is ClaudeException -> HttpStatusCode.BadGateway
+                is KisException, is NewsException, is ClaudeException,
+                is DartException -> HttpStatusCode.BadGateway
                 else -> HttpStatusCode.InternalServerError
             }
             call.respond(status, ErrorResponse(cause.message ?: cause.toString()))
@@ -85,14 +94,21 @@ fun Application.module() {
         model = System.getenv("CLAUDE_MODEL") ?: "claude-sonnet-4-6",
     )
     val analysis = AnalysisService(kis, naver, master, claude)
+    val fearGreed = FearGreedClient()
+    val macroImpact = MacroImpactService(kis, master, claude, fearGreed)
+    val dart = DartClient(apiKey = System.getenv("DART_API_KEY").orEmpty())
 
     routing {
         get("/health") { call.respondText("OK") } // 배포/모니터링용 헬스체크
         quoteRoutes(kis)
         chartRoutes(kis)
         investorRoutes(kis)
+        macroRoutes(kis, fearGreed)
+        macroImpactRoutes(macroImpact)
         newsRoutes(naver)
         searchRoutes(master)
         analysisRoutes(analysis)
+        dartRoutes(dart)
+        earningsRoutes(dart)
     }
 }

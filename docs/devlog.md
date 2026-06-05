@@ -6,6 +6,133 @@
 
 ---
 
+## 2026-06-05 — Phase 3: 실적 캘린더 v1
+
+**한 일**
+- 백엔드 `GET /earnings?codes=`: DART pblntf_ty=A(정기공시)로 최근 18개월 조회 → 최근 보고서 종류 파악 → 법정 마감일 계산(분기/반기 45일·사업 90일 기준). 당일 캐시(date+code 키). D-90 이내만 반환, daysUntil 오름차순.
+  - 다음 예정 계산 규칙: 분기(03) → 반기(06, 8/14), 반기(06) → 분기(09, 11/14), 분기(09) → 사업(12, 3/31), 사업(12) → 분기(03, 5/15).
+- SharedLogic `EarningsEntry` 모델 + `EdgeApi.getEarnings()`.
+- `BriefingView` "실적 일정 (D-90 이내)" 섹션: daysUntil 오름차순 표시, D-14 빨강/D-30 주황/이상 회색 배지. 시장 지표 아래, 매크로 영향 위에 배치.
+
+**막힌 점·배운 것**
+- `toCodeList()`가 MacroRoutes.kt에 `private`라 EarningsRoutes.kt에서 접근 불가 → 파일 내 재선언.
+- Kotlin `Int` → Swift `Int32` 브리지 → `Int(e.daysUntil)` 변환 필요.
+
+**검증**: 백엔드 빌드 OK. `/earnings?codes=018260,329180,...` 5개 전부 반기보고서(2026.06) D-70. iOS BUILD SUCCEEDED. → iOS 시뮬 수동 확인 필요.
+
+**다음**: 다음 슬라이스 논의.
+
+---
+
+## 2026-06-05 — Phase 3: 매크로 v2 (WTI유가 + 공포탐욕지수)
+
+**한 일**
+- **WTI유가**: `MACRO_SPECS`에 `MacroSpec("crude", "WTI유가", OVERSEAS, "N", "CL")` 추가. `"C"`는 잘못된 MRKT코드 → `"N"`이 정답(상품선물도 해외지수 코드로 조회됨). `requestOverseas` output1 필드 그대로 재사용.
+- **공포탐욕지수**: `FearGreedClient` 신규 작성 — CNN `https://production.dataviz.cnn.io/index/fearandgreed/graphdata`. 봇 차단(418 teapot) → User-Agent/Accept-Language/Referer 브라우저 헤더 필요. score/previous_close로 change·changeRate 계산. rating을 한국어(탐욕/공포/중립/극단적 탐욕/극단적 공포)로 변환해 `tag` 필드에 담아 반환. 30분 인메모리 캐시.
+- `MacroIndicator`에 `tag: String = ""` 추가(백엔드·KMP 공유 모델 동시). F&G만 tag 사용, 나머지는 빈 문자열.
+- `/macro` 라우트: KIS 7개(기존 6 + WTI) + FearGreedClient 1개 합산 반환(F&G 실패 시에도 KIS분만 내려감).
+- `MacroImpactService`: `IMPACT_INDICATORS`에 `"crude"` 추가. 방향 계산 섹터별 WTI 민감도 추가(반도체 -1/조선 +1/전력기기 +1/전자 -1). F&G는 방향 계산 제외, Claude facts 맥락용으로만 포함. `FearGreedClient`를 생성자 인자로 받도록 변경.
+- `BriefingView`: `macroRow`에 tag 배지 추가(공포=파랑/탐욕=빨강/중립=회색). F&G 값은 `"%.1f"` 포맷(0–100 점수, 천단위 불필요).
+
+**막힌 점·배운 것**
+- WTI 한투 코드: `FID_COND_MRKT_DIV_CODE="C"`가 아니라 `"N"`. curl 직접 테스트로 확인.
+- CNN F&G API: 단순 curl은 "I'm a teapot. You're a bot." 반환 → User-Agent/Referer 필수.
+
+**검증**: 백엔드 빌드 OK. `/macro` 8개 전부 정상(WTI 85.10 +0.27%, F&G 54.7 중립). `/macro-impact` crude 신호 정확(SK하이닉스 WTI→부담, 조선 WTI→우호). iOS BUILD SUCCEEDED. → iOS 시뮬 수동 확인 필요.
+
+**다음**: 다음 슬라이스 논의.
+
+---
+
+## 2026-06-05 — Phase 3: 매크로 지표 v1 (시장 지표)
+
+**한 일**
+- 백엔드 `GET /macro`: 한투 키로 바로 되는 6개만 v1 — 코스피·코스닥(국내 업종지수) + 원/달러·다우·나스닥·S&P500(해외 지수/환율).
+  - 국내: `inquire-index-price` (tr_id `FHPUP02100000`, MRKT=U, ISCD 0001/1001).
+  - 해외: `inquire-daily-chartprice` (tr_id `FHKST03030100`, MRKT N=지수/X=환율, ISCD `FX@KRW`/`.DJI`/`COMP`/`SPX`). 현재값은 output1(요약)에서.
+  - `KisClient.getMacroIndicators()`: 6개 `async`+`awaitAll` 병렬, 개별 실패는 `runCatching`으로 제외(섹션 통째로 안 죽음). 전일대비·등락률은 `prdy_vrss_sign`(4·5=하락→−1)으로 부호 적용 → 원본에 부호가 있든 없든 `abs×sign`이라 안전.
+  - `MacroSpec`/`MacroKind`/`MacroRaw` 내부 표현으로 국내·해외 응답을 부호 적용 전 공통 형태로 통일.
+- SharedLogic: `MacroIndicator` 모델 + `EdgeApi.getMacro()`.
+- `BriefingView`: 최상단 "시장 지표" 섹션. quotes와 무관해 `async let macroTask`로 독립 병렬, 섹션 내부 스피너. 보합=회색/상승 빨강/하락 파랑, 값은 `%,.2f`.
+
+**막힌 점·배운 것**
+- 코스피·코스닥 전일대비가 0으로 와서 필드명 의심 → raw 응답 임시 로그로 확인: 필드명(`bstp_nmix_prdy_vrss`/`bstp_nmix_prdy_ctrt`/`prdy_vrss_sign`) 다 정상, **08시 장 시작 전이라 한투가 vrss="0.00", sign="3"(보합)을 주는 게 맞음**. 09시 개장 후 채워짐. (코스피 값 8639도 실값 — 응답의 연중고점 8933.62/20260602 필드로 교차확인.) 디버그 로그는 제거.
+- 해외(원/달러·미국지수)는 등락률·부호까지 한 번에 정상.
+
+**검증**: 백엔드 컴파일 + `curl /macro` 6개 전부 정상. iOS `BUILD SUCCEEDED`. → iOS 시뮬 수동 확인 + 09시 개장 후 국내지수 등락 표시 확인 남음.
+
+**다음**: 매크로 v2(유가·구리·국채금리 ECOS·공포탐욕지수) 또는 매크로→포트폴리오 영향 해석 / 실적 캘린더 / 섹터 대시보드.
+
+---
+
+## 2026-06-05 — Phase 3: 매크로 → 내 종목 영향 해석 v1
+
+**한 일**
+- 포맷 버그 수정: 시장 지표 값이 화면에 `,.2f`로 깨져 나옴 → Swift `String(format:)`은 천단위(`%,`) 플래그 미지원이 원인. `NumberFormatter(.decimal)`로 교체(파일 레벨 1회 생성).
+- 백엔드 `GET /macro-impact?holdings=&watchlist=` + `MacroImpactService`:
+  - 도메인 매핑(한 곳에 모음): 우리 분류 `Sector` enum + 종목→섹터 `SECTOR_OVERRIDE`(관심종목 11개) + 섹터×지표 `SENSITIVITY`(direction +1/0/-1 + 근거 한 줄).
+  - 종목별 영향 방향 = **민감도 부호 × 지표 등락 부호** 계산(사실). net = 신호 합의 부호로 우호/부담/중립. → Claude는 보유/관심 구분 종합 해석만(사실/해석 분리, 환각가드).
+  - v1 영향 지표 = 원/달러·나스닥(유가·구리·금리는 v2에서 추가되면 SENSITIVITY만 확장).
+  - 캐시: `(날짜+종목집합+영향지표 등락 0.5%반올림)` → 등락 의미변화 시 재생성, 그 외 당일 공유.
+- SharedLogic `MacroImpact`/`StockImpact`/`MacroSignal` + `EdgeApi.getMacroImpact()`.
+- `BriefingView` "내 종목 영향" 섹션: Claude 코멘트(마크다운 렌더로 **굵게**·줄바꿈 살림) + 디스클레이머 + 보유/관심 종목 행(섹터·net 배지·지표별 신호). impact는 코드만 필요해 quotes와 독립 병렬(`async let`).
+
+**막힌 점·배운 것**
+- Kotlin 리스트의 `.indices`를 Swift `ForEach`에 쓰면 `indices(where:)` 오버로드로 잘못 해석됨 → `ForEach(list, id: \.someField)`로 회피.
+- Kotlin `Int`는 Swift에 `Int32`로 브리지 → `Int(sig.direction)`로 변환 후 헬퍼에 전달.
+
+**검증**: `curl /macro-impact` 정상(첫 13.4초 → 캐시 0.17초). 빈 보유·매핑없는 종목(net "-") 방어 OK. 신호 계산 정확(SK하이닉스 환율+/나스닥− → 중립, 한국항공우주 → 우호적). iOS `BUILD SUCCEEDED`. → iOS 시뮬 수동 확인 남음.
+
+**다음**: 매크로 v2(ECOS 금리·유가·공포탐욕) / 실적 캘린더 / 섹터 대시보드.
+
+---
+
+## 2026-06-04 — Phase 3: DART 공시 v1
+
+**한 일**
+- 백엔드 `DartClient`: DART `corpCode.xml` ZIP 최초 1회 다운로드 → SAX 파싱 → `stock_code→corp_code` 전체 맵 인메모리 캐시(Mutex) → `/list.json` 공시 목록.
+  - 함정: DART `CORPCODE.xml`의 개별 기업 항목 태그가 `<corp>` 가 아닌 `<list>`. SAX endElement 조건 수정으로 해결.
+  - `/company.json` 은 `corp_code` 가 필수라 `stock_code` 조회 불가 → corpCode.xml 전체 맵 방식으로 대체.
+- `GET /dart/{code}?days=7` 라우트. `DartException` → 기존 StatusPages 502.
+- `.env.example`에 `DART_API_KEY` 항목 추가.
+- SharedLogic: `DartDisclosure` 모델 + `EdgeApi.getDartDisclosures()`.
+- `BriefingView`: "최근 공시(7일)" 섹션 추가. 관심종목 전체 `/dart` 병렬(`withTaskGroup`) → 최신순 10건. supply·dart `async let` 동시 진행. 날짜 YY.MM.DD 포맷. Link → Safari.
+
+**검증**: curl(삼성전자 10건, 삼성에스디에스 6건) + iOS 시뮬 확인 완료.
+
+**다음**: 매크로 지표 / 실적 캘린더 / Phase 3 기타 항목.
+
+---
+
+## 2026-06-04 — Phase 3: 브리핑 탭 UX 개선
+
+**한 일**
+- `loading` / `supplyLoading` 분리: quotes 완료 시 하이라이트·보유현황 즉시 표시, 수급 섹션만 내부 스피너("확인 중…") 유지.
+- 수급 섹션 로딩 중 "해당 종목 없음" 오표시 수정 → `supplyLoading` 체크로 구분.
+- 하이라이트 섹션 항상 표시 + 빈 상태(보합) "변동 종목 없음" 메시지 추가.
+- 툴바: 로딩 중 새로고침 버튼 → 작은 `ProgressView`로 교체.
+
+**검증**: `BUILD SUCCEEDED`.
+
+**다음**: iOS 시뮬 수동 확인 / Phase 3 남은 항목.
+
+---
+
+## 2026-06-04 — Phase 3: 브리핑 탭 v1
+
+**한 일**
+- `BriefingView.swift` 신규 생성. 3섹션 구성:
+  - **오늘 하이라이트**: 관심종목 `/quotes` 전체 로드 → 등락률 상위 2개(상승) + 하위 2개(하락) 표시.
+  - **보유현황**: 평단·수량 입력 종목 PnL 집계 카드 + 종목별 손익 리스트. PortfolioView와 공통 데이터 구조.
+  - **수급주목**: `/investor` 를 `withTaskGroup` 병렬 호출 → 외인 or 기관 3일 연속 순매수 종목 badge 표시.
+- `ContentView` TabView에 `BriefingView` 탭 추가 (`newspaper` 아이콘).
+
+**검증**: `BUILD SUCCEEDED` (iPhone 17 Pro Simulator).
+
+**다음**: iOS 시뮬 수동 확인 / Phase 3 남은 항목: 매크로 지표·DART 공시·실적 캘린더 / 데일리 브리핑 고도화.
+
+---
+
 ## 2026-06-04 — Phase 3: 하단 탭바 + 내 자산 탭
 
 **한 일**

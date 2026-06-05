@@ -143,5 +143,59 @@ data class KisDailyBar(
     @SerialName("acml_vol") val volume: String = "0",
 )
 
+// ── 매크로 지표(지수·환율) ────────────────────────────────────────────
+// 브리핑 "시장 지표" 섹션용. 한투 키로 바로 되는 것만 v1: 코스피·코스닥(국내 업종지수),
+// 원/달러 환율·미국 주요지수(다우/나스닥/S&P, 해외 기간별시세). 유가·구리·국채·공포탐욕은 v2(별도 소스).
+
+/** 앱에 내려주는 정규화된 매크로 지표 1건. change/changeRate 는 부호 포함(상승 +, 하락 −). */
+@Serializable
+data class MacroIndicator(
+    val key: String,        // "kospi","kosdaq","usdkrw","dow","nasdaq","sp500","crude","fear_greed"
+    val label: String,      // "코스피", "원/달러" 등 표시용
+    val value: Double,      // 현재 지수/환율/점수
+    val change: Double,     // 전일 대비 (부호 포함)
+    val changeRate: Double, // 등락률 % (부호 포함)
+    val tag: String = "",   // 부가 라벨. 공포탐욕지수는 "탐욕"/"공포" 등 텍스트 등급, 나머지 지표는 빈 문자열.
+)
+
+/**
+ * 국내 업종 현재지수(inquire-index-price, tr_id FHPUP02100000) 응답.
+ * 전일대비(bstp_nmix_prdy_vrss)·등락률(bstp_nmix_prdy_ctrt)은 부호가 없을 수 있어,
+ * prdy_vrss_sign(1상한 2상승 3보합 4하한 5하락)으로 부호를 적용한다.
+ */
+@Serializable
+data class KisIndexResponse(
+    @SerialName("rt_cd") val rtCd: String = "",
+    @SerialName("msg1") val msg1: String = "",
+    val output: KisIndexOutput? = null,
+)
+
+@Serializable
+data class KisIndexOutput(
+    @SerialName("bstp_nmix_prpr") val price: String = "0",        // 지수 현재가
+    @SerialName("bstp_nmix_prdy_vrss") val change: String = "0",  // 전일 대비
+    @SerialName("prdy_vrss_sign") val sign: String = "3",         // 전일대비 부호(1~5)
+    @SerialName("bstp_nmix_prdy_ctrt") val changeRate: String = "0", // 등락률
+)
+
+/**
+ * 해외 지수/환율 기간별시세(inquire-daily-chartprice, tr_id FHKST03030100) 응답.
+ * 현재값·전일대비 정보는 output1(요약 객체)에 담긴다(output2는 일자별 배열로 여기선 안 씀).
+ */
+@Serializable
+data class KisOverseasResponse(
+    @SerialName("rt_cd") val rtCd: String = "",
+    @SerialName("msg1") val msg1: String = "",
+    @SerialName("output1") val output1: KisOverseasOutput? = null,
+)
+
+@Serializable
+data class KisOverseasOutput(
+    @SerialName("ovrs_nmix_prpr") val price: String = "0",       // 현재가(지수/환율)
+    @SerialName("ovrs_nmix_prdy_vrss") val change: String = "0", // 전일 대비
+    @SerialName("prdy_vrss_sign") val sign: String = "3",        // 전일대비 부호(1~5)
+    @SerialName("prdy_ctrt") val changeRate: String = "0",       // 등락률
+)
+
 /** 한투 연동 중 발생한 오류(상류 문제)를 일반 버그와 구분하기 위한 예외 — StatusPages에서 502로 매핑된다. */
 class KisException(message: String) : RuntimeException(message)

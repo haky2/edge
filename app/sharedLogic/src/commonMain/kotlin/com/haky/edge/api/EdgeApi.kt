@@ -2,7 +2,11 @@ package com.haky.edge.api
 
 import com.haky.edge.model.Analysis
 import com.haky.edge.model.DailyBar
+import com.haky.edge.model.DartDisclosure
+import com.haky.edge.model.EarningsEntry
 import com.haky.edge.model.InvestorFlow
+import com.haky.edge.model.MacroImpact
+import com.haky.edge.model.MacroIndicator
 import com.haky.edge.model.NewsItem
 import com.haky.edge.model.Quote
 import com.haky.edge.model.StockInfo
@@ -99,6 +103,42 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getAnalysis(code: String): Analysis =
         client.get("$baseUrl/analysis/$code").body()
+
+    /**
+     * 매크로 지표(코스피·코스닥·원/달러·다우·나스닥·S&P500). 브리핑 "시장 지표" 섹션용.
+     * 개별 지표 실패는 백엔드에서 제외돼 6개 미만이 올 수 있다.
+     */
+    @Throws(Exception::class)
+    suspend fun getMacro(): List<MacroIndicator> =
+        client.get("$baseUrl/macro").body()
+
+    /**
+     * 매크로 → 내 종목 영향 분석. 보유/관심 종목 코드를 넘기면 종목별 영향(계산) + Claude 종합 해석.
+     * Claude 호출이라 첫 생성은 수 초 걸리고 백엔드가 당일 캐시한다. 둘 다 비어도 호출은 됨(빈 결과).
+     */
+    @Throws(Exception::class)
+    suspend fun getMacroImpact(holdings: List<String>, watchlist: List<String>): MacroImpact =
+        client.get("$baseUrl/macro-impact") {
+            parameter("holdings", holdings.joinToString(","))
+            parameter("watchlist", watchlist.joinToString(","))
+        }.body()
+
+    /**
+     * 관심종목의 다음 정기공시 예정일 목록(분기/반기/사업보고서). daysUntil 오름차순.
+     * DART pblntf_ty=A 기반. D-90 이내만 반환. 없으면 빈 리스트.
+     */
+    @Throws(Exception::class)
+    suspend fun getEarnings(codes: List<String>): List<EarningsEntry> =
+        client.get("$baseUrl/earnings") {
+            parameter("codes", codes.joinToString(","))
+        }.body()
+
+    /** 종목 최근 DART 공시 목록. days: 조회 기간(기본 7일). 없으면 빈 리스트. */
+    @Throws(Exception::class)
+    suspend fun getDartDisclosures(code: String, days: Int = 7): List<DartDisclosure> =
+        client.get("$baseUrl/dart/$code") {
+            parameter("days", days)
+        }.body()
 
     /**
      * 포지션 기반 개인화 코멘트. 평단·수량·목표가·손절가를 Claude에 전달해 내 포지션 기준 해석 제공.

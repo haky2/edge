@@ -116,7 +116,6 @@ struct WatchlistView: View {
     }
 }
 
-// 앱 루트: 하단 탭바 (관심종목 / 내 자산). Phase 3에서 브리핑 탭 추가 예정.
 struct ContentView: View {
     var body: some View {
         TabView {
@@ -124,6 +123,8 @@ struct ContentView: View {
                 .tabItem { Label("관심종목", systemImage: "star") }
             PortfolioView()
                 .tabItem { Label("내 자산", systemImage: "chart.pie") }
+            BriefingView()
+                .tabItem { Label("브리핑", systemImage: "newspaper") }
         }
     }
 }

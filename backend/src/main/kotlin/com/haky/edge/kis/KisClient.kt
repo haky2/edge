@@ -12,6 +12,9 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -229,6 +232,99 @@ class KisClient(
         }.body()
     }
 
+    /**
+     * 브리핑 "시장 지표"용 매크로 지표를 모아서 반환(코스피·코스닥·원/달러·다우·나스닥·S&P500).
+     * 각 지표는 서로 다른 한투 엔드포인트라 병렬로 부르고, 개별 실패는 무시하고(섹션 통째로 죽지 않게)
+     * 성공분만 SPEC 순서대로 돌려준다. 모두 실패하면 빈 리스트가 된다.
+     */
+    suspend fun getMacroIndicators(): List<MacroIndicator> = coroutineScope {
+        MACRO_SPECS
+            .map { spec -> async { runCatching { fetchMacro(spec) }.getOrNull() } }
+            .awaitAll()
+            .filterNotNull()
+    }
+
+    /** 매크로 지표 1건 조회. getPrice 와 동일한 동시성 제한 + rt_cd 백오프 재시도. */
+    private suspend fun fetchMacro(spec: MacroSpec): MacroIndicator {
+        val accessToken = token()
+        var lastMsg = ""
+        repeat(MAX_ATTEMPTS) { attempt ->
+            val raw = rateLimiter.withPermit {
+                when (spec.kind) {
+                    MacroKind.DOMESTIC -> requestIndex(spec.iscd, accessToken)
+                    MacroKind.OVERSEAS -> requestOverseas(spec.mrktDiv, spec.iscd, accessToken)
+                }
+            }
+            if (raw.rtCd == "0") {
+                // 전일대비·등락률은 부호가 없을 수 있어 prdy_vrss_sign 으로 부호를 입힌다.
+                // (원본에 이미 부호가 있어도 abs×sign 이라 결과는 동일 → 어느 쪽이든 안전)
+                val mul = signMultiplier(raw.sign)
+                return MacroIndicator(
+                    key = spec.key,
+                    label = spec.label,
+                    value = raw.price.toDoubleSafe(),
+                    change = kotlin.math.abs(raw.change.toDoubleSafe()) * mul,
+                    changeRate = kotlin.math.abs(raw.changeRate.toDoubleSafe()) * mul,
+                )
+            }
+            lastMsg = raw.msg.ifBlank { "rt_cd=${raw.rtCd}" }
+            if (attempt < MAX_ATTEMPTS - 1) delay(BACKOFF_MS * (attempt + 1))
+        }
+        throw KisException("한투 매크로 조회 실패(${spec.key}): $lastMsg")
+    }
+
+    /** 국내 업종 현재지수(코스피=0001, 코스닥=1001) 1회 호출 → 정규화 raw. */
+    private suspend fun requestIndex(iscd: String, accessToken: String): MacroRaw {
+        val r: KisIndexResponse =
+            http.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-index-price") {
+                header("authorization", "Bearer $accessToken")
+                header("appkey", appKey)
+                header("appsecret", appSecret)
+                header("tr_id", "FHPUP02100000") // 국내업종 현재지수
+                header("custtype", "P")
+                parameter("FID_COND_MRKT_DIV_CODE", "U") // U=업종
+                parameter("FID_INPUT_ISCD", iscd)
+            }.body()
+        val o = r.output
+        return MacroRaw(
+            price = o?.price ?: "0",
+            change = o?.change ?: "0",
+            sign = o?.sign ?: "3",
+            changeRate = o?.changeRate ?: "0",
+            rtCd = r.rtCd,
+            msg = r.msg1,
+        )
+    }
+
+    /** 해외 지수/환율 기간별시세 1회 호출 → 정규화 raw. output1(요약)에서 현재값을 읽는다. */
+    private suspend fun requestOverseas(mrktDiv: String, iscd: String, accessToken: String): MacroRaw {
+        // 해외장은 주말·휴장이 있어 end=오늘, start=10일 전으로 넉넉히 둔다(output1 요약값만 쓰므로 범위는 여유면 충분).
+        val today = java.time.LocalDate.now().toString().replace("-", "")
+        val startDate = java.time.LocalDate.now().minusDays(10).toString().replace("-", "")
+        val r: KisOverseasResponse =
+            http.get("$baseUrl/uapi/overseas-price/v1/quotations/inquire-daily-chartprice") {
+                header("authorization", "Bearer $accessToken")
+                header("appkey", appKey)
+                header("appsecret", appSecret)
+                header("tr_id", "FHKST03030100") // 해외주식 종목/지수/환율 기간별시세
+                header("custtype", "P")
+                parameter("FID_COND_MRKT_DIV_CODE", mrktDiv) // N=해외지수, X=환율
+                parameter("FID_INPUT_ISCD", iscd)
+                parameter("FID_INPUT_DATE_1", startDate)
+                parameter("FID_INPUT_DATE_2", today)
+                parameter("FID_PERIOD_DIV_CODE", "D") // D=일
+            }.body()
+        val o = r.output1
+        return MacroRaw(
+            price = o?.price ?: "0",
+            change = o?.change ?: "0",
+            sign = o?.sign ?: "3",
+            changeRate = o?.changeRate ?: "0",
+            rtCd = r.rtCd,
+            msg = r.msg1,
+        )
+    }
+
     /** 일별 투자자 수급 HTTP 호출 1회. tr_id = 주식현재가 투자자. */
     private suspend fun requestInvestor(code: String, accessToken: String): KisInvestorResponse =
         http.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-investor") {
@@ -276,6 +372,49 @@ private fun KisInvestorRow.toInvestorFlow() = InvestorFlow(
 // 한투 값은 문자열이고 가끔 빈 문자열이 오기도 해서, 파싱 실패 시 0으로 안전 처리한다.
 private fun String.toLongSafe(): Long = trim().toLongOrNull() ?: 0L
 private fun String.toDoubleSafe(): Double = trim().toDoubleOrNull() ?: 0.0
+
+// ── 매크로 지표 정의/헬퍼 ─────────────────────────────────────────────
+
+/** 매크로 지표를 어떤 엔드포인트로 부를지 구분. 국내 업종지수 vs 해외 지수/환율. */
+private enum class MacroKind { DOMESTIC, OVERSEAS }
+
+/** 매크로 지표 1개의 호출 사양. mrktDiv 는 해외(N=지수, X=환율)에서만 의미가 있다. */
+private data class MacroSpec(
+    val key: String,
+    val label: String,
+    val kind: MacroKind,
+    val mrktDiv: String,
+    val iscd: String,
+)
+
+/** 국내/해외 응답을 부호 적용 전 공통 형태로 모은 중간 표현. */
+private data class MacroRaw(
+    val price: String,
+    val change: String,
+    val sign: String,
+    val changeRate: String,
+    val rtCd: String,
+    val msg: String,
+)
+
+/** prdy_vrss_sign: 1상한 2상승 3보합 4하한 5하락 → 하락(4,5)이면 −1, 그 외 +1. */
+private fun signMultiplier(sign: String): Int = when (sign.trim()) {
+    "4", "5" -> -1
+    else -> 1
+}
+
+// 노출 지표: 코스피·코스닥(국내 업종지수) + 원/달러·다우·나스닥·S&P500·WTI유가(해외 기간별시세).
+// WTI: FID_COND_MRKT_DIV_CODE="C"(상품선물), FID_INPUT_ISCD="CL"(경질원유).
+// 공포탐욕지수(fear_greed)는 CNN 별도 소스라 FearGreedClient에서 추가한다.
+private val MACRO_SPECS = listOf(
+    MacroSpec("kospi", "코스피", MacroKind.DOMESTIC, "U", "0001"),
+    MacroSpec("kosdaq", "코스닥", MacroKind.DOMESTIC, "U", "1001"),
+    MacroSpec("usdkrw", "원/달러", MacroKind.OVERSEAS, "X", "FX@KRW"),
+    MacroSpec("dow", "다우", MacroKind.OVERSEAS, "N", ".DJI"),
+    MacroSpec("nasdaq", "나스닥", MacroKind.OVERSEAS, "N", "COMP"),
+    MacroSpec("sp500", "S&P500", MacroKind.OVERSEAS, "N", "SPX"),
+    MacroSpec("crude", "WTI유가", MacroKind.OVERSEAS, "N", "CL"), // 상품선물도 FID_COND_MRKT_DIV_CODE=N으로 조회됨
+)
 
 /** 토큰 파일 캐시 형식. expiryMs = 만료 시각(epoch millis). */
 @Serializable
