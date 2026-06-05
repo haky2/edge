@@ -7,6 +7,8 @@ import com.haky.edge.dart.DartClient
 import com.haky.edge.dart.DartException
 import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.KisException
+import com.haky.edge.macro.CopperClient
+import com.haky.edge.macro.EcosClient
 import com.haky.edge.macro.FearGreedClient
 import com.haky.edge.macro.MacroImpactService
 import com.haky.edge.master.StockMaster
@@ -96,7 +98,9 @@ fun Application.module() {
     )
     val analysis = AnalysisService(kis, naver, master, claude)
     val fearGreed = FearGreedClient()
-    val macroImpact = MacroImpactService(kis, master, claude, fearGreed)
+    val copper = CopperClient()
+    val ecos = EcosClient(apiKey = System.getenv("ECOS_API_KEY").orEmpty())
+    val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos)
     val dart = DartClient(apiKey = System.getenv("DART_API_KEY").orEmpty())
 
     routing {
@@ -104,7 +108,7 @@ fun Application.module() {
         quoteRoutes(kis)
         chartRoutes(kis)
         investorRoutes(kis)
-        macroRoutes(kis, fearGreed)
+        macroRoutes(kis, fearGreed, copper, ecos)
         macroImpactRoutes(macroImpact)
         newsRoutes(naver)
         searchRoutes(master)
