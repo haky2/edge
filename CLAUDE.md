@@ -127,7 +127,9 @@
   - 매핑 없는 종목(검색 추가 등)은 net "-"·신호 없음(폴백 키워드 추론은 오분류 위험이라 안 함). 새 종목은 `SECTOR_OVERRIDE`에 추가.
 - [x] **실적 캘린더 v1** ✅ 백엔드 `GET /earnings?codes=` — DART pblntf_ty=A(정기공시) 최근 18개월 → 다음 예정일 법정마감 계산. 당일 캐시. SharedLogic `EarningsEntry` + `getEarnings()`. 브리핑 "실적 일정(D-90 이내)" 섹션(D-14빨강/D-30주황 배지). iOS BUILD SUCCEEDED + curl 검증(5종목 반기보고서 D-70). 시뮬 확인 필요.
 - [x] **섹터 대시보드 v1** ✅ 백엔드 `GET /sectors` — KOSPI 업종지수 6개(전기전자·기계·운수장비·전기가스업·서비스업·철강금속, inquire-index-price FHPUP02100000, MRKT=U). `SectorRoutes.kt` + `KisClient.getSectorIndices()`. SharedLogic `SectorIndex` + `EdgeApi.getSectors()`. 브리핑 시장 탭 "섹터 동향" 섹션(시장 지표 아래·실적 일정 위). iOS BUILD SUCCEEDED + curl 검증(6개 정상). 시뮬 확인 필요.
+- [x] **종목 분석 facts 강화 A+B** ✅ `AnalysisService`에 (A) 일봉 기반 가격흐름 서사(고점 대비 낙폭·상한가 수준 급등·연속 등락) + 뉴스 description 주입 & 유사기사 자카드 클러스터링(대표 8건·"외 N건"), (B) DART 연간 재무(매출·영업익·순익 YoY, `DartClient.getFinancials`, fnlttSinglAcnt 11011, 연결 우선). SYSTEM_PROMPT를 촉매→펀더멘털 대조→현재 위치 흐름으로 개편. **`Analysis` 모델 불변 → 앱 변경 없음**, 코멘트만 풍부해짐. LG CNS 검증 OK. **facts 강화로 Sonnet 충분**(Opus 전환 시 분석 1회 ~5배 비용).
 - Claude 섹터 분석 + 주목 종목 추천
+- (검토 중) 분석 C: Claude 웹검색 도구로 실시간 촉매(예: 인물 방한 일정) 보강 — 검색 건당 별도 과금·지연 증가라 비용 검토 후 결정
 
 ### Phase 4 — 학습 / 통계
 - 관심종목 행동 로그 (조회/관심등록/매수여부/결과)
