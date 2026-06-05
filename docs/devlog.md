@@ -6,6 +6,21 @@
 
 ---
 
+## 2026-06-05 — 브리핑 UX + 매크로 영향 섹터 자동 추론
+
+**한 일**
+- BriefingView: 기본 탭을 "내 종목"으로 변경(enum 순서도 내 종목→시장).
+- MacroImpactService.autoSector: SECTOR_OVERRIDE 미매핑 종목 폴백. KIS getPrice() 추가 호출 → sectorName(업종명)으로 섹터 추론(서비스업→IT_SERVICE, 전기가스업→POWER_EQUIP, 기계/조선→SHIPBUILDING, 운수장비→DEFENSE, 전기·전자→ELECTRONICS). LG CNS(064400) "영향 매핑 준비 중" 해소.
+
+**막힌 점·배운 것**
+- "전기·전자" 업종명에 반도체·가전이 혼재 → 보수적으로 ELECTRONICS 매핑. 정확도 필요 시 SECTOR_OVERRIDE에 직접 추가.
+
+**검증**: 백엔드 빌드 OK. LG CNS `/macro-impact` → IT서비스 자동 추론, 원/달러·국고채3년 신호 정상. iOS BUILD SUCCESSFUL.
+
+**다음**: 컨센서스 목표주가 — 네이버 금융 스크래핑(NaverTargetPriceClient, 당일 캐시), AnalysisService facts 주입. Sonnet.
+
+---
+
 ## 2026-06-05 — Phase 3: 종목 분석 facts 강화 (A: 가격흐름·뉴스 / B: DART 재무)
 
 **한 일 (슬라이스 A)**
