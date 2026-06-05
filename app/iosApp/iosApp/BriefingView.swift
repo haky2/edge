@@ -44,6 +44,15 @@ struct BriefingView: View {
     @State private var sectorLoading = false
     @State private var sectorItems: [SectorIndex] = []
 
+    // 섹터 분석 (Claude 코멘트 + 주목 종목)
+    @State private var sectorBriefingLoading = false
+    @State private var sectorBriefingComment = ""
+    @State private var sectorSpotlight: [SpotlightStock] = []
+
+    // 하이라이트·보유현황용: 쿼츠 로드 후 저장 (spotlight NavigationLink에서도 재사용)
+    @State private var allItemsLoaded: [WatchItem] = []
+    @State private var quoteMapLoaded: [String: Quote] = [:]
+
     var body: some View {
         NavigationStack {
             Group {
@@ -56,7 +65,7 @@ struct BriefingView: View {
             .navigationTitle("브리핑")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    if loading || supplyLoading || dartLoading || macroLoading || impactLoading || earningsLoading || sectorLoading {
+                    if loading || supplyLoading || dartLoading || macroLoading || impactLoading || earningsLoading || sectorLoading || sectorBriefingLoading {
                         ProgressView().scaleEffect(0.8)
                     } else {
                         Button { Task { await load() } } label: {
@@ -93,6 +102,7 @@ struct BriefingView: View {
             } else {
                 marketSection
                 sectorSection
+                sectorBriefingSection
                 earningsSection
                 impactSection
             }
@@ -194,6 +204,61 @@ struct BriefingView: View {
                     .font(.body.weight(.semibold))
                 Text("\(arrow) \(String(format: "%.2f", abs(s.changeRate)))%")
                     .font(.caption).foregroundColor(color)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    // MARK: - 섹션: 섹터 분석 (Claude)
+
+    @ViewBuilder
+    private var sectorBriefingSection: some View {
+        Section("섹터 분석") {
+            if sectorBriefingLoading {
+                HStack {
+                    ProgressView().scaleEffect(0.8)
+                    Text("AI가 분석 중…").font(.footnote).foregroundColor(.secondary)
+                }
+            } else if sectorBriefingComment.isEmpty {
+                Text("불러오기 실패").font(.footnote).foregroundColor(.secondary)
+            } else {
+                Text(markdown(sectorBriefingComment)).font(.callout)
+            }
+        }
+        // 주목 종목 — 코멘트 준비됐을 때만 표시
+        if !sectorBriefingLoading && !sectorSpotlight.isEmpty {
+            Section("오늘 주목 종목") {
+                ForEach(sectorSpotlight, id: \.code) { stock in
+                    let item = allItemsLoaded.first { $0.code == stock.code }
+                    let quote = quoteMapLoaded[stock.code]
+                    if let item {
+                        NavigationLink {
+                            StockDetailView(item: item, quote: quote, api: api)
+                        } label: {
+                            spotlightRow(stock, quote: quote)
+                        }
+                    } else {
+                        spotlightRow(stock, quote: nil)
+                    }
+                }
+            }
+        }
+    }
+
+    private func spotlightRow(_ stock: SpotlightStock, quote: Quote?) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(stock.name).font(.body)
+                Text(stock.sectorLabel).font(.caption2).foregroundColor(.secondary)
+            }
+            Spacer()
+            if let q = quote {
+                let up = q.changeRate >= 0
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(q.price.formatted())원").font(.body.weight(.semibold))
+                    Text("\(up ? "▲" : "▼") \(String(format: "%.2f", abs(q.changeRate)))%")
+                        .font(.caption).foregroundColor(up ? .red : .blue)
+                }
             }
         }
         .padding(.vertical, 2)
@@ -537,6 +602,7 @@ struct BriefingView: View {
         impactLoading = true
         earningsLoading = true
         sectorLoading = true
+        sectorBriefingLoading = true
         errorText = nil
         supplyRows = []
         dartItems = []
@@ -546,15 +612,18 @@ struct BriefingView: View {
         impactWatch = []
         earningsItems = []
         sectorItems = []
+        sectorBriefingComment = ""
+        sectorSpotlight = []
 
         let allItems = Db.watchlist.all()
         let codes = allItems.map { $0.code }
 
-        // 시장 지표·섹터·실적일정·매크로 영향은 관심종목 코드만 있으면 되므로 quotes와 독립 병렬.
-        async let macroTask: Void    = buildMacro()
-        async let sectorTask: Void   = buildSectors()
-        async let earningsTask: Void = buildEarnings(codes: codes)
-        async let impactTask: Void   = buildImpact(allItems: allItems)
+        // 시장 지표·섹터·실적일정·매크로 영향·섹터 브리핑은 quotes와 독립 병렬.
+        async let macroTask: Void           = buildMacro()
+        async let sectorTask: Void          = buildSectors()
+        async let earningsTask: Void        = buildEarnings(codes: codes)
+        async let impactTask: Void          = buildImpact(allItems: allItems)
+        async let sectorBriefingTask: Void  = buildSectorBriefing(codes: codes)
 
         let quotes: [Quote]
         do {
@@ -564,23 +633,32 @@ struct BriefingView: View {
             loading = false
             supplyLoading = false
             dartLoading = false
-            _ = await (macroTask, sectorTask, earningsTask, impactTask)
+            _ = await (macroTask, sectorTask, earningsTask, impactTask, sectorBriefingTask)
             return
         }
         let quoteMap = Dictionary(uniqueKeysWithValues: quotes.map { ($0.code, $0) })
 
-        // quotes 완료 → 하이라이트/보유현황 즉시 반영
+        // quotes 완료 → 하이라이트/보유현황 즉시 반영. allItems·quoteMap을 state에 저장(섹터 브리핑 spotlight에서 재사용).
+        allItemsLoaded = allItems
+        quoteMapLoaded = quoteMap
         buildHighlights(allItems: allItems, quoteMap: quoteMap)
         buildHoldings(allItems: allItems, quoteMap: quoteMap)
         loading = false
 
-        // supply·dart·macro·impact는 섹션 내부 스피너 유지하며 병렬 진행
+        // supply·dart·macro·impact·sectorBriefing은 섹션 내부 스피너 유지하며 병렬 진행
         async let supplyTask: Void = buildSupply(allItems: allItems, quoteMap: quoteMap)
         async let dartTask: Void   = buildDart(codes: codes, allItems: allItems)
-        _ = await (supplyTask, dartTask, macroTask, sectorTask, earningsTask, impactTask)
+        _ = await (supplyTask, dartTask, macroTask, sectorTask, earningsTask, impactTask, sectorBriefingTask)
 
         supplyLoading = false
         dartLoading = false
+    }
+
+    private func buildSectorBriefing(codes: [String]) async {
+        defer { sectorBriefingLoading = false }
+        guard let result = try? await api.getSectorBriefing(codes: codes) else { return }
+        sectorBriefingComment = result.comment
+        sectorSpotlight = result.spotlight
     }
 
     private func buildMacro() async {

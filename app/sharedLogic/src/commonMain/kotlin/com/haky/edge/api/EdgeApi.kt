@@ -9,6 +9,7 @@ import com.haky.edge.model.MacroImpact
 import com.haky.edge.model.MacroIndicator
 import com.haky.edge.model.NewsItem
 import com.haky.edge.model.Quote
+import com.haky.edge.model.SectorBriefing
 import com.haky.edge.model.SectorIndex
 import com.haky.edge.model.StockInfo
 import com.haky.edge.model.TargetPriceInfo
@@ -132,6 +133,16 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getSectors(): List<SectorIndex> =
         client.get("$baseUrl/sectors").body()
+
+    /**
+     * 오늘 섹터 트렌드 분석 + 관심종목 중 주목 종목. 브리핑 시장 탭 "섹터 분석" 섹션용.
+     * Claude 호출이라 첫 생성은 수 초 걸리고 백엔드가 당일 캐시한다.
+     */
+    @Throws(Exception::class)
+    suspend fun getSectorBriefing(codes: List<String>): SectorBriefing =
+        client.get("$baseUrl/sector-briefing") {
+            parameter("codes", codes.joinToString(","))
+        }.body()
 
     /**
      * 관심종목의 다음 정기공시 예정일 목록(분기/반기/사업보고서). daysUntil 오름차순.

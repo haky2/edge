@@ -196,6 +196,10 @@ class MacroImpactService(
     /** 7일 캐시: code → (섹터 목록, 만료 epoch ms). 최초 조회 시 Claude 추론, 이후 캐시 반환. */
     private val sectorCache = ConcurrentHashMap<String, Pair<List<Sector>, Long>>()
 
+    /** SectorBriefingService에서 재사용: 종목 코드·이름·KIS업종명으로 섹터 목록 반환. */
+    suspend fun resolveStockSectors(code: String, name: String, kisName: String): List<Sector> =
+        resolveSectors(code, name, kisName)
+
     /**
      * 종목 섹터 결정. 우선순위: 수동 오버라이드 → 7일 캐시 → Claude 자동 추론 → KIS 업종명 폴백.
      * Claude 추론이 틀린 경우에만 MANUAL_OVERRIDES에 수동으로 추가한다.

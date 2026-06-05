@@ -6,6 +6,26 @@
 
 ---
 
+## 2026-06-05 — Phase 3: Claude 섹터 분석 + 주목 종목 추천
+
+**한 일**
+- 백엔드 `SectorBriefingService`: 섹터지수 6개 + MacroImpactService 섹터 캐시 재사용. 강세 섹터(+0.5%↑)∩관심종목 교집합을 알고리즘으로 spotlight 결정(LLM 환각 없음). Claude는 2~3문단 해석만 담당. (날짜+codes+섹터등락 0.5% 반올림) 당일 캐시.
+- 백엔드 `GET /sector-briefing?codes=...` + `Application.kt` 등록.
+- `MacroImpactService.resolveStockSectors()` public 노출 (SectorBriefingService에서 섹터 캐시 재사용).
+- SharedLogic `SectorBriefing`/`SpotlightStock` 모델 + `EdgeApi.getSectorBriefing()`.
+- `BriefingView` 시장 탭: sectorSection 아래 "섹터 분석" (Claude 코멘트) + "오늘 주목 종목" (강세 섹터 종목, NavigationLink). `allItemsLoaded`/`quoteMapLoaded` state 추가(spotlight 네비게이션용). `sectorBriefingTask` 기존 병렬 로드 패턴에 합류.
+- CLAUDE.md: UI/UX 전반 개선 스텝 추가.
+
+**막힌 점·배운 것**
+- spotlight 알고리즘: sector_0014(전기전자)는 반도체+전자 혼재 → SEMICONDUCTOR+ELECTRONICS 양쪽 매핑. sector_0028(서비스업)은 IT서비스+로봇 매핑. 완벽하진 않지만 `macroImpact.resolveStockSectors()`가 종목별로 더 정밀하게 분류하므로 교집합 정확도 충분.
+- Claude에게 JSON 구조 반환 요구 대신 comment는 plain text + spotlight는 알고리즘 계산으로 분리 → JSON 파싱 오류·환각 위험 제거.
+
+**검증**: 백엔드 BUILD SUCCESSFUL. iOS BUILD SUCCEEDED.
+
+**다음**: UI/UX 전반 개선 — 브리핑·상세화면·관심종목 리스트 디자인 점검. 또는 다른 슬라이스.
+
+---
+
 ## 2026-06-05 — 브리핑 UX + 매크로 영향 섹터 자동 추론
 
 **한 일**

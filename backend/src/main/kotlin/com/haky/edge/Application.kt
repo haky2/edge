@@ -11,6 +11,7 @@ import com.haky.edge.macro.CopperClient
 import com.haky.edge.macro.EcosClient
 import com.haky.edge.macro.FearGreedClient
 import com.haky.edge.macro.MacroImpactService
+import com.haky.edge.macro.SectorBriefingService
 import com.haky.edge.master.StockMaster
 import com.haky.edge.news.NaverNewsClient
 import com.haky.edge.news.NaverTargetPriceClient
@@ -25,6 +26,7 @@ import com.haky.edge.routes.macroRoutes
 import com.haky.edge.routes.newsRoutes
 import com.haky.edge.routes.quoteRoutes
 import com.haky.edge.routes.searchRoutes
+import com.haky.edge.routes.sectorBriefingRoutes
 import com.haky.edge.routes.sectorRoutes
 import com.haky.edge.routes.targetPriceRoutes
 import io.ktor.client.HttpClient
@@ -105,6 +107,7 @@ fun Application.module() {
     val copper = CopperClient()
     val ecos = EcosClient(apiKey = System.getenv("ECOS_API_KEY").orEmpty())
     val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos, naver)
+    val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
 
     routing {
         get("/health") { call.respondText("OK") } // 배포/모니터링용 헬스체크
@@ -119,6 +122,7 @@ fun Application.module() {
         dartRoutes(dart)
         earningsRoutes(dart)
         sectorRoutes(kis)
+        sectorBriefingRoutes(sectorBriefing)
         targetPriceRoutes(naverTargetPrice)
     }
 }
