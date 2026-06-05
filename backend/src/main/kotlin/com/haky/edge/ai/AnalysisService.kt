@@ -1,5 +1,7 @@
 package com.haky.edge.ai
 
+import com.haky.edge.dart.DartClient
+import com.haky.edge.dart.FinancialSummary
 import com.haky.edge.kis.DailyBar
 import com.haky.edge.kis.InvestorFlow
 import com.haky.edge.kis.KisClient
@@ -31,7 +33,7 @@ data class Position(
 /**
  * 종목 종합 코멘트 생성(② Claude 층).
  *
- * 원칙: **사실은 우리가 수집(시세·52주·PER·수급·가격흐름·뉴스) → Claude 는 해석만.** 수치 날조 금지, 참고용.
+ * 원칙: **사실은 우리가 수집(시세·52주·PER·수급·가격흐름·재무·뉴스) → Claude 는 해석만.** 수치 날조 금지, 참고용.
  * 비용: 같은 종목·같은 날은 1회만 생성하고 인메모리 캐시로 공유(CLAUDE.md 비용 정책).
  *   - position 없음: (code,date) 공유 캐시 — 전 유저 동일 코멘트.
  *   - position 있음: (code,date,avgPrice,qty) 별도 캐시 — 포지션별로 개인화.
@@ -41,6 +43,7 @@ class AnalysisService(
     private val naver: NaverNewsClient,
     private val master: StockMaster,
     private val claude: ClaudeClient,
+    private val dart: DartClient,
 ) {
     private data class Cached(val analysis: Analysis)
     private val cache = ConcurrentHashMap<String, Cached>()
@@ -58,11 +61,12 @@ class AnalysisService(
         val flows = kis.getInvestorFlow(code, days = 5)
         val name = master.search(code).firstOrNull { it.code == code }?.name ?: code
         val bars = runCatching { kis.getDailyChart(code, bars = 20) }.getOrElse { emptyList() }
+        val financials = runCatching { dart.getFinancials(code) }.getOrNull()
         // 비슷한 뉴스가 도배되는 날(예: 특정 이슈)이 많아, 넉넉히 받아 유사 건을 묶고 대표 N건만 쓴다.
         val rawNews = runCatching { naver.search(name, display = 30) }.getOrElse { emptyList() }
         val news = dedupeNews(rawNews, limit = 8)
 
-        val facts = buildFacts(code, name, quote, bars, flows, news, position)
+        val facts = buildFacts(code, name, quote, bars, financials, flows, news, position)
         val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 1280)
 
         val analysis = Analysis(code = code, name = name, date = today, comment = comment)
@@ -76,6 +80,7 @@ class AnalysisService(
         name: String,
         q: Quote,
         bars: List<DailyBar>,
+        financials: FinancialSummary?,
         flows: List<InvestorFlow>,
         news: List<NewsCluster>,
         position: Position? = null,
@@ -96,6 +101,9 @@ class AnalysisService(
 
         // 최근 가격 흐름 서사(일봉 계산) — "상한가 두 번 치고 며칠째 급락" 같은 흐름을 사실로 제공.
         priceActionSummary(bars)?.let { sb.appendLine().append(it) }
+
+        // 회사 재무(DART 연간) — 급등락이 펀더멘털 성장에 근거하는지 판단할 근거.
+        financialSummaryText(financials)?.let { sb.appendLine().append(it) }
 
         if (flows.isNotEmpty()) {
             sb.appendLine("수급(일별 순매수 수량, +매수/-매도):")
@@ -192,6 +200,38 @@ class AnalysisService(
         return sb.toString()
     }
 
+    /**
+     * 연간 재무 요약을 사람이 읽는 텍스트로(단위 억원, 전년比 YoY 포함).
+     * 매출·영업이익·순이익 중 있는 것만 적는다. 전부 없으면 null.
+     */
+    private fun financialSummaryText(f: FinancialSummary?): String? {
+        if (f == null) return null
+        val lines = buildList {
+            financeLine("매출액", f.revenue, f.revenuePrev)?.let { add(it) }
+            financeLine("영업이익", f.operatingProfit, f.operatingProfitPrev)?.let { add(it) }
+            financeLine("당기순이익", f.netIncome, f.netIncomePrev)?.let { add(it) }
+        }
+        if (lines.isEmpty()) return null
+        val basis = if (f.consolidated) "연결" else "별도"
+        val sb = StringBuilder()
+        sb.appendLine("회사 재무(DART $basis 사업보고서 ${f.fiscalYear}년, 단위 억원):")
+        lines.forEach { sb.appendLine("  $it") }
+        return sb.toString()
+    }
+
+    /** "매출액 1,234억 (전년 1,000억, YoY +23.4%)" 형태. 당기 없으면 null. */
+    private fun financeLine(label: String, cur: Long?, prev: Long?): String? {
+        if (cur == null) return null
+        val curEok = cur / 100_000_000
+        val sb = StringBuilder("$label ${"%,d".format(curEok)}억")
+        if (prev != null && prev != 0L) {
+            val prevEok = prev / 100_000_000
+            val yoy = (cur - prev).toDouble() / kotlin.math.abs(prev) * 100
+            sb.append(" (전년 ${"%,d".format(prevEok)}억, YoY ${if (yoy >= 0) "+" else ""}${"%.1f".format(yoy)}%)")
+        }
+        return sb.toString()
+    }
+
     // ── 유사 뉴스 클러스터링 ───────────────────────────────────────────────
     // 같은 이슈로 도배된 기사를 한 건으로 묶되, 제목이 비슷해도 요약(description)에 유의미한
     // 추가 정보가 있으면 별건으로 둔다(사용자 요구). 최신순 입력 → 대표 limit 건 반환.
@@ -243,7 +283,7 @@ class AnalysisService(
             규칙(반드시 지킬 것):
             1. 아래 user 메시지의 "사실 데이터"에 있는 값만 근거로 삼는다. 거기 없는 수치(목표가, 컨센서스, 실적 전망 등)를 절대 지어내지 마라. 모르면 모른다고 하거나 언급하지 않는다.
             2. 시세·밸류에이션(PER/PBR)·최근 가격 흐름·수급(외국인/기관/개인)·뉴스를 종합해 "지금 이 종목을 어떻게 봐야 하나"를 5~8문장으로 설명한다.
-            3. 가능하면 다음 흐름으로 엮어라: ① 최근 주가가 왜 이렇게 움직였나(뉴스 요약에서 촉매를 찾아 가격 흐름과 연결) → ② 그 촉매가 일시적 기대인지 펀더멘털 변화인지 → ③ 그래서 지금 위치를 어떻게 볼지. 뉴스 요약에 회사의 사업·성장동력 단서가 있으면 적극 활용하라.
+            3. 가능하면 다음 흐름으로 엮어라: ① 최근 주가가 왜 이렇게 움직였나(뉴스 요약에서 촉매를 찾아 가격 흐름과 연결) → ② 그 촉매가 일시적 기대인지 펀더멘털 변화인지(회사 재무의 매출·이익 추세와 대조) → ③ 그래서 지금 위치를 어떻게 볼지. 뉴스 요약에 회사의 사업·성장동력 단서가 있으면 적극 활용하라. "회사 재무" 섹션이 있으면 밸류에이션(PER/PBR)·주가 기대감이 실적 성장으로 뒷받침되는지 함께 짚어라.
             4. 사실과 해석을 자연스럽게 잇되, 데이터로 뒷받침되지 않는 단정은 피한다. "~로 보인다", "~일 수 있다" 같은 신중한 표현을 쓴다.
             5. "지금 사라/팔라"처럼 매매를 단정하지 마라.
             6. 한국어로, 군더더기 없이. 과장·홍보성 표현 금지. 불릿이 아니라 자연스러운 문단으로.

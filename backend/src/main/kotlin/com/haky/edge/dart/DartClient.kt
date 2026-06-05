@@ -128,6 +128,66 @@ class DartClient(private val apiKey: String) {
         return entry
     }
 
+    // 재무 요약 캐시. 연간 재무는 거의 안 바뀌므로 날짜 단위로 캐싱.
+    private val financialsCache = ConcurrentHashMap<String, FinancialSummary>() // "date|code" → summary
+
+    /**
+     * 종목의 최근 연간 재무 요약(매출·영업이익·순이익 + 전년 동기)을 반환.
+     * DART fnlttSinglAcnt.json(사업보고서 reprt_code=11011)으로 당기/전기 금액을 읽는다.
+     * 연결(CFS) 우선, 없으면 별도(OFS). 최근 연도부터 역순으로 시도(연간보고서는 다음해 3월 제출).
+     * 매핑 없는 종목·API 실패·계정 없음 시 null(분석은 재무 없이 진행).
+     */
+    suspend fun getFinancials(stockCode: String): FinancialSummary? {
+        if (apiKey.isBlank()) return null
+        val today = LocalDate.now().toString()
+        financialsCache["$today|$stockCode"]?.let { return it }
+
+        ensureCorpCodeMap()
+        val corpCode = corpCodeMap?.get(stockCode) ?: return null
+
+        val thisYear = LocalDate.now().year
+        for (year in (thisYear - 1) downTo (thisYear - 3)) {
+            val resp = runCatching {
+                http.get("https://opendart.fss.or.kr/api/fnlttSinglAcnt.json") {
+                    parameter("crtfc_key", apiKey)
+                    parameter("corp_code", corpCode)
+                    parameter("bsns_year", year.toString())
+                    parameter("reprt_code", "11011")  // 사업보고서(연간)
+                }.body<DartFinanceResponse>()
+            }.getOrNull() ?: continue
+            if (resp.status != "000") continue
+            val rows = resp.list ?: continue
+            val summary = buildFinancialSummary(rows, year) ?: continue
+            financialsCache["$today|$stockCode"] = summary
+            return summary
+        }
+        return null
+    }
+
+    /** fnlttSinglAcnt 행에서 연결(없으면 별도) 매출·영업이익·순이익의 당기/전기를 추출. */
+    private fun buildFinancialSummary(rows: List<DartFinanceRow>, year: Int): FinancialSummary? {
+        // 연결(CFS) 우선, 없으면 별도(OFS).
+        val consolidated = rows.any { it.fsDiv == "CFS" }
+        val scoped = rows.filter { it.fsDiv == (if (consolidated) "CFS" else "OFS") }
+
+        fun find(vararg names: String): DartFinanceRow? = scoped.firstOrNull { r ->
+            names.any { r.accountName.replace(" ", "").contains(it) }
+        }
+        val rev = find("매출액", "수익(매출액)", "영업수익")
+        val op  = find("영업이익")
+        val net = find("당기순이익", "분기순이익", "반기순이익")
+        // 매출·영업이익 둘 다 못 찾으면 의미 없는 데이터로 보고 건너뜀.
+        if (rev == null && op == null) return null
+
+        return FinancialSummary(
+            fiscalYear = year,
+            consolidated = consolidated,
+            revenue = rev?.thisAmount(), revenuePrev = rev?.prevAmount(),
+            operatingProfit = op?.thisAmount(), operatingProfitPrev = op?.prevAmount(),
+            netIncome = net?.thisAmount(), netIncomePrev = net?.prevAmount(),
+        )
+    }
+
     private fun isPeriodicReport(name: String) =
         name.contains("분기보고서") || name.contains("반기보고서") || name.contains("사업보고서")
 
@@ -221,6 +281,20 @@ data class EarningsEntry(
     val daysUntil: Int,
 )
 
+// ── 재무 요약(분석 facts용, 내부 사용) ──────────────────────────────────────
+
+/**
+ * 최근 연간 재무 요약. 금액 단위는 원(DART 원본). null = 해당 계정 없음.
+ * prev = 직전 사업연도 동일 계정(전년比 계산용).
+ */
+data class FinancialSummary(
+    val fiscalYear: Int,
+    val consolidated: Boolean,        // true=연결(CFS), false=별도(OFS)
+    val revenue: Long?, val revenuePrev: Long?,
+    val operatingProfit: Long?, val operatingProfitPrev: Long?,
+    val netIncome: Long?, val netIncomePrev: Long?,
+)
+
 // ── 앱에 내려주는 공시 1건 ──────────────────────────────────────────────────
 
 @Serializable
@@ -247,5 +321,25 @@ private data class DartListItem(
     @SerialName("rcept_no")   val rceptNo: String = "",
     @SerialName("rcept_dt")   val rceptDt: String = "",
 )
+
+@Serializable
+private data class DartFinanceResponse(
+    val status: String = "",
+    val message: String = "",
+    val list: List<DartFinanceRow>? = null,
+)
+
+@Serializable
+private data class DartFinanceRow(
+    @SerialName("fs_div")          val fsDiv: String = "",        // CFS=연결, OFS=별도
+    @SerialName("sj_div")          val sjDiv: String = "",        // BS/IS/CIS/CF
+    @SerialName("account_nm")      val accountName: String = "",  // "매출액","영업이익","당기순이익"
+    @SerialName("thstrm_amount")   val thisAmount: String = "",   // 당기금액
+    @SerialName("frmtrm_amount")   val prevAmount: String = "",   // 전기금액
+) {
+    // DART 금액은 콤마 포함 문자열("1,234,567"), 음수·빈값 가능 → 안전 파싱.
+    fun thisAmount(): Long? = thisAmount.replace(",", "").trim().toLongOrNull()
+    fun prevAmount(): Long? = prevAmount.replace(",", "").trim().toLongOrNull()
+}
 
 class DartException(message: String) : RuntimeException(message)
