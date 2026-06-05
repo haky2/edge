@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-06-05 — Phase 3: 매크로 v3 (구리 + 국고채3년)
+
+**한 일**
+- **구리(CopperClient)**: KIS Open API는 HG(구리선물)를 지원하지 않음(rt_cd=0이지만 price=0으로 반환). Yahoo Finance 비공개 API(`query1.finance.yahoo.com/v8/finance/chart/HG=F`)로 COMEX 구리선물 조회. 30분 캐시. 실패 시 null(섹션 유지).
+- **국고채3년(EcosClient)**: ECOS Open API `817Y002/D/010300000`로 국고채 3년 금리 조회. ECOS_API_KEY 없으면 skip(graceful). 당일 자정까지 캐시. `.env`에 `ECOS_API_KEY=` 추가(ecos.bok.or.kr 무료 발급 필요).
+- **MacroImpactService**: copper·rate3y를 IMPACT_INDICATORS에 추가. 전력기기·전자에 구리 민감도(-1, 원재료 부담), 반도체·조선·전력기기·IT서비스에 금리 민감도(-1, 성장주/부채 부담) 추가.
+- **MacroRoutes**: CopperClient·EcosClient 주입해 `/macro` 응답에 병합.
+
+**막힌 점·배운 것**
+- KIS HG코드: 어떤 ISCD 변형(HG/COPPER/4HGc1)이든 rt_cd=0에 price=0 반환 → KIS가 구리 선물을 미지원.
+- Yahoo Finance: `HG=F` 5일 range로 `regularMarketPrice`·`chartPreviousClose` 바로 읽어서 changeRate 계산 가능. User-Agent 헤더 필요.
+- session limit이 걸려 작업이 중간에 끊겼으나 이어서 완료.
+
+**검증**: 백엔드 빌드 OK. `/macro` 구리 6.41 -1.76% 정상. `/macro-impact` 전력기기에 구리 신호 정확. iOS BUILD SUCCESSFUL. → iOS 시뮬 수동 확인 필요.
+
+**다음**: 다음 슬라이스 논의.
+
+---
+
 ## 2026-06-05 — Phase 3: 섹터 대시보드 v1
 
 **한 일**
