@@ -8,6 +8,7 @@ import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.Quote
 import com.haky.edge.master.StockMaster
 import com.haky.edge.news.NaverNewsClient
+import com.haky.edge.news.NaverTargetPriceClient
 import com.haky.edge.news.NewsItem
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
@@ -44,6 +45,7 @@ class AnalysisService(
     private val master: StockMaster,
     private val claude: ClaudeClient,
     private val dart: DartClient,
+    private val naverTargetPrice: NaverTargetPriceClient,
 ) {
     private data class Cached(val analysis: Analysis)
     private val cache = ConcurrentHashMap<String, Cached>()
@@ -62,11 +64,12 @@ class AnalysisService(
         val name = master.search(code).firstOrNull { it.code == code }?.name ?: code
         val bars = runCatching { kis.getDailyChart(code, bars = 20) }.getOrElse { emptyList() }
         val financials = runCatching { dart.getFinancials(code) }.getOrNull()
+        val consensusTarget = runCatching { naverTargetPrice.getTargetPrice(code) }.getOrNull()
         // 비슷한 뉴스가 도배되는 날(예: 특정 이슈)이 많아, 넉넉히 받아 유사 건을 묶고 대표 N건만 쓴다.
         val rawNews = runCatching { naver.search(name, display = 30) }.getOrElse { emptyList() }
         val news = dedupeNews(rawNews, limit = 8)
 
-        val facts = buildFacts(code, name, quote, bars, financials, flows, news, position)
+        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, position)
         val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 1280)
 
         val analysis = Analysis(code = code, name = name, date = today, comment = comment)
@@ -83,11 +86,19 @@ class AnalysisService(
         financials: FinancialSummary?,
         flows: List<InvestorFlow>,
         news: List<NewsCluster>,
+        consensusTarget: Long?,
         position: Position? = null,
     ): String {
         val sb = StringBuilder()
         sb.appendLine("종목: $name ($code)")
         sb.appendLine("현재가: ${q.price}원 (전일대비 ${q.change}, ${q.changeRate}%)")
+        if (consensusTarget != null && consensusTarget > 0) {
+            val upside = (consensusTarget - q.price).toDouble() / q.price * 100
+            sb.appendLine(
+                "애널리스트 컨센서스 목표주가: ${"%,d".format(consensusTarget)}원" +
+                    " (현재가 대비 ${if (upside >= 0) "+" else ""}${"%.1f".format(upside)}%)"
+            )
+        }
         if (q.high52w > q.low52w && q.high52w > 0) {
             val pos = (q.price - q.low52w).toDouble() / (q.high52w - q.low52w) * 100
             val fromHigh = (q.price - q.high52w).toDouble() / q.high52w * 100

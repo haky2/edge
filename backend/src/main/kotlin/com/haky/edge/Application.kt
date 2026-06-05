@@ -13,6 +13,7 @@ import com.haky.edge.macro.FearGreedClient
 import com.haky.edge.macro.MacroImpactService
 import com.haky.edge.master.StockMaster
 import com.haky.edge.news.NaverNewsClient
+import com.haky.edge.news.NaverTargetPriceClient
 import com.haky.edge.news.NewsException
 import com.haky.edge.routes.analysisRoutes
 import com.haky.edge.routes.chartRoutes
@@ -97,7 +98,8 @@ fun Application.module() {
         model = System.getenv("CLAUDE_MODEL") ?: "claude-sonnet-4-6",
     )
     val dart = DartClient(apiKey = System.getenv("DART_API_KEY").orEmpty())
-    val analysis = AnalysisService(kis, naver, master, claude, dart)
+    val naverTargetPrice = NaverTargetPriceClient()
+    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice)
     val fearGreed = FearGreedClient()
     val copper = CopperClient()
     val ecos = EcosClient(apiKey = System.getenv("ECOS_API_KEY").orEmpty())
