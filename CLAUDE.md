@@ -126,7 +126,7 @@
 - [x] **매크로 → 내 종목 영향 해석 v1** ✅ 백엔드 `GET /macro-impact?holdings=&watchlist=` — `MacroImpactService`: 섹터(우리 분류)×지표 민감도 하드코딩(`SENSITIVITY`) + 종목→섹터 오버라이드(`SECTOR_OVERRIDE`, 관심종목 11개). 종목별 영향 방향 = [민감도 부호 × 지표 등락 부호] **계산**(사실) → Claude는 보유/관심 구분 종합 해석만(환각가드, 참고용). v1 영향 지표=원/달러·나스닥(유가·금리는 v2). `(날짜+종목집합+등락 0.5%반올림)` 캐시(13.4초→0.17초 적중). SharedLogic `MacroImpact`/`StockImpact`/`MacroSignal` + `EdgeApi.getMacroImpact()`. 브리핑 탭 "내 종목 영향" 섹션(Claude 코멘트 마크다운 렌더 + 보유/관심별 종목 행: 섹터·net 배지·지표 신호). **BUILD SUCCEEDED + curl 검증**(캐시·빈보유·매핑없는종목 방어 포함). iOS 시뮬 수동 확인 필요.
   - 매핑 없는 종목(검색 추가 등)은 net "-"·신호 없음(폴백 키워드 추론은 오분류 위험이라 안 함). 새 종목은 `SECTOR_OVERRIDE`에 추가.
 - [x] **실적 캘린더 v1** ✅ 백엔드 `GET /earnings?codes=` — DART pblntf_ty=A(정기공시) 최근 18개월 → 다음 예정일 법정마감 계산. 당일 캐시. SharedLogic `EarningsEntry` + `getEarnings()`. 브리핑 "실적 일정(D-90 이내)" 섹션(D-14빨강/D-30주황 배지). iOS BUILD SUCCEEDED + curl 검증(5종목 반기보고서 D-70). 시뮬 확인 필요.
-- 섹터 모멘텀 대시보드 (업종별 등락률/거래량)
+- [x] **섹터 대시보드 v1** ✅ 백엔드 `GET /sectors` — KOSPI 업종지수 6개(전기전자·기계·운수장비·전기가스업·서비스업·철강금속, inquire-index-price FHPUP02100000, MRKT=U). `SectorRoutes.kt` + `KisClient.getSectorIndices()`. SharedLogic `SectorIndex` + `EdgeApi.getSectors()`. 브리핑 시장 탭 "섹터 동향" 섹션(시장 지표 아래·실적 일정 위). iOS BUILD SUCCEEDED + curl 검증(6개 정상). 시뮬 확인 필요.
 - Claude 섹터 분석 + 주목 종목 추천
 
 ### Phase 4 — 학습 / 통계

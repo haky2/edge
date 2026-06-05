@@ -6,6 +6,23 @@
 
 ---
 
+## 2026-06-05 — Phase 3: 섹터 대시보드 v1
+
+**한 일**
+- 백엔드 `GET /sectors`: `KisClient.getSectorIndices()` — KOSPI 업종지수 6개(전기전자·기계·운수장비·전기가스업·서비스업·철강금속) 병렬 조회(`inquire-index-price`, FHPUP02100000, MRKT=U). `SectorRoutes.kt` 신규. `Application.kt` 라우트 등록.
+- `KisModels.kt`에 `SectorIndex` DTO 추가.
+- SharedLogic `SectorIndex` 모델 + `EdgeApi.getSectors()`.
+- `BriefingView` 시장 탭 "섹터 동향" 섹션: 시장 지표 아래·실적 일정 위에 배치. 상승 빨강/하락 파랑. macroTask와 독립 병렬 로드.
+
+**막힌 점·배운 것**
+- 기존에 KOSPI(0001)/KOSDAQ(1001)에 쓰던 `requestIndex` + `MRKT=U` 코드가 업종지수에도 그대로 동작. ISCD 코드 체계 확인(0014=전기전자, 0013=기계, 0016=운수장비, 0018=전기가스업, 0028=서비스업, 0012=철강금속).
+
+**검증**: 백엔드 빌드 OK. `curl /sectors` 6개 전부 정상(전기전자 1628.36 -4.11% 등). iOS BUILD SUCCEEDED. → iOS 시뮬 수동 확인 필요.
+
+**다음**: 다음 슬라이스 논의.
+
+---
+
 ## 2026-06-05 — Phase 3: 실적 캘린더 v1
 
 **한 일**

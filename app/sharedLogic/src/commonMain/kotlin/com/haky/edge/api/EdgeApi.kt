@@ -9,6 +9,7 @@ import com.haky.edge.model.MacroImpact
 import com.haky.edge.model.MacroIndicator
 import com.haky.edge.model.NewsItem
 import com.haky.edge.model.Quote
+import com.haky.edge.model.SectorIndex
 import com.haky.edge.model.StockInfo
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -122,6 +123,14 @@ class EdgeApi(
             parameter("holdings", holdings.joinToString(","))
             parameter("watchlist", watchlist.joinToString(","))
         }.body()
+
+    /**
+     * KOSPI 주요 업종지수(전기전자·기계·운수장비·전기가스업·서비스업·철강금속). 브리핑 "섹터 동향" 섹션용.
+     * 개별 업종 실패는 백엔드에서 제외돼 6개 미만이 올 수 있다.
+     */
+    @Throws(Exception::class)
+    suspend fun getSectors(): List<SectorIndex> =
+        client.get("$baseUrl/sectors").body()
 
     /**
      * 관심종목의 다음 정기공시 예정일 목록(분기/반기/사업보고서). daysUntil 오름차순.

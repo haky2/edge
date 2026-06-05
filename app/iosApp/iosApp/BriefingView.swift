@@ -40,6 +40,10 @@ struct BriefingView: View {
     @State private var earningsLoading = false
     @State private var earningsItems: [EarningsEntry] = []
 
+    // 섹터 동향
+    @State private var sectorLoading = false
+    @State private var sectorItems: [SectorIndex] = []
+
     var body: some View {
         NavigationStack {
             Group {
@@ -52,7 +56,7 @@ struct BriefingView: View {
             .navigationTitle("브리핑")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    if loading || supplyLoading || dartLoading || macroLoading || impactLoading || earningsLoading {
+                    if loading || supplyLoading || dartLoading || macroLoading || impactLoading || earningsLoading || sectorLoading {
                         ProgressView().scaleEffect(0.8)
                     } else {
                         Button { Task { await load() } } label: {
@@ -83,6 +87,7 @@ struct BriefingView: View {
 
             if selectedTab == .market {
                 marketSection
+                sectorSection
                 earningsSection
                 impactSection
             } else {
@@ -156,6 +161,42 @@ struct BriefingView: View {
         if tag.contains("공포") { return .blue }
         if tag.contains("탐욕") { return .red }
         return .secondary
+    }
+
+    // MARK: - 섹션: 섹터 동향
+
+    @ViewBuilder
+    private var sectorSection: some View {
+        Section("섹터 동향") {
+            if sectorLoading {
+                HStack {
+                    ProgressView().scaleEffect(0.8)
+                    Text("확인 중…").font(.footnote).foregroundColor(.secondary)
+                }
+            } else if sectorItems.isEmpty {
+                Text("불러오기 실패").font(.footnote).foregroundColor(.secondary)
+            } else {
+                ForEach(sectorItems, id: \.key) { sectorRow($0) }
+            }
+        }
+    }
+
+    private func sectorRow(_ s: SectorIndex) -> some View {
+        let flat = s.changeRate == 0
+        let up = s.changeRate > 0
+        let color: Color = flat ? .secondary : (up ? .red : .blue)
+        let arrow = flat ? "–" : (up ? "▲" : "▼")
+        return HStack {
+            Text(s.label).font(.body)
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(sectorValueFormatter.string(from: NSNumber(value: s.value)) ?? String(format: "%.2f", s.value))
+                    .font(.body.weight(.semibold))
+                Text("\(arrow) \(String(format: "%.2f", abs(s.changeRate)))%")
+                    .font(.caption).foregroundColor(color)
+            }
+        }
+        .padding(.vertical, 2)
     }
 
     // MARK: - 섹션: 실적 일정
@@ -495,6 +536,7 @@ struct BriefingView: View {
         macroLoading = true
         impactLoading = true
         earningsLoading = true
+        sectorLoading = true
         errorText = nil
         supplyRows = []
         dartItems = []
@@ -503,12 +545,14 @@ struct BriefingView: View {
         impactHoldings = []
         impactWatch = []
         earningsItems = []
+        sectorItems = []
 
         let allItems = Db.watchlist.all()
         let codes = allItems.map { $0.code }
 
-        // 시장 지표·실적일정·매크로 영향은 관심종목 코드만 있으면 되므로 quotes와 독립 병렬.
+        // 시장 지표·섹터·실적일정·매크로 영향은 관심종목 코드만 있으면 되므로 quotes와 독립 병렬.
         async let macroTask: Void    = buildMacro()
+        async let sectorTask: Void   = buildSectors()
         async let earningsTask: Void = buildEarnings(codes: codes)
         async let impactTask: Void   = buildImpact(allItems: allItems)
 
@@ -520,7 +564,7 @@ struct BriefingView: View {
             loading = false
             supplyLoading = false
             dartLoading = false
-            _ = await (macroTask, earningsTask, impactTask)
+            _ = await (macroTask, sectorTask, earningsTask, impactTask)
             return
         }
         let quoteMap = Dictionary(uniqueKeysWithValues: quotes.map { ($0.code, $0) })
@@ -533,7 +577,7 @@ struct BriefingView: View {
         // supply·dart·macro·impact는 섹션 내부 스피너 유지하며 병렬 진행
         async let supplyTask: Void = buildSupply(allItems: allItems, quoteMap: quoteMap)
         async let dartTask: Void   = buildDart(codes: codes, allItems: allItems)
-        _ = await (supplyTask, dartTask, macroTask, earningsTask, impactTask)
+        _ = await (supplyTask, dartTask, macroTask, sectorTask, earningsTask, impactTask)
 
         supplyLoading = false
         dartLoading = false
@@ -543,6 +587,12 @@ struct BriefingView: View {
         defer { macroLoading = false }
         guard let items = try? await api.getMacro() else { return }
         macroItems = items
+    }
+
+    private func buildSectors() async {
+        defer { sectorLoading = false }
+        guard let items = try? await api.getSectors() else { return }
+        sectorItems = items
     }
 
     private func buildEarnings(codes: [String]) async {
@@ -629,6 +679,15 @@ struct BriefingView: View {
 }
 
 // MARK: - 포맷터
+
+// 업종지수 값 표시용(천단위 구분 + 소수 2자리).
+private let sectorValueFormatter: NumberFormatter = {
+    let f = NumberFormatter()
+    f.numberStyle = .decimal
+    f.minimumFractionDigits = 2
+    f.maximumFractionDigits = 2
+    return f
+}()
 
 // 지수·환율 값 표시용(천단위 구분 + 소수 2자리). 매 호출 생성 비용을 피해 파일 레벨 1회 생성.
 private let macroValueFormatter: NumberFormatter = {

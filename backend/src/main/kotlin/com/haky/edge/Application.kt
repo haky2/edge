@@ -22,6 +22,7 @@ import com.haky.edge.routes.macroRoutes
 import com.haky.edge.routes.newsRoutes
 import com.haky.edge.routes.quoteRoutes
 import com.haky.edge.routes.searchRoutes
+import com.haky.edge.routes.sectorRoutes
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.http.HttpStatusCode
@@ -110,5 +111,6 @@ fun Application.module() {
         analysisRoutes(analysis)
         dartRoutes(dart)
         earningsRoutes(dart)
+        sectorRoutes(kis)
     }
 }

@@ -337,6 +337,38 @@ class KisClient(
             parameter("FID_INPUT_ISCD", code)
         }.body()
 
+    /**
+     * 브리핑 "섹터 동향"용 KOSPI 업종지수 조회.
+     * getMacroIndicators 와 동일한 패턴 — 병렬 조회, 개별 실패 무시.
+     */
+    suspend fun getSectorIndices(): List<SectorIndex> = coroutineScope {
+        SECTOR_SPECS
+            .map { spec -> async { runCatching { fetchSector(spec) }.getOrNull() } }
+            .awaitAll()
+            .filterNotNull()
+    }
+
+    private suspend fun fetchSector(spec: SectorSpec): SectorIndex {
+        val accessToken = token()
+        var lastMsg = ""
+        repeat(MAX_ATTEMPTS) { attempt ->
+            val raw = rateLimiter.withPermit { requestIndex(spec.iscd, accessToken) }
+            if (raw.rtCd == "0") {
+                val mul = signMultiplier(raw.sign)
+                return SectorIndex(
+                    key = "sector_${spec.iscd}",
+                    label = spec.label,
+                    value = raw.price.toDoubleSafe(),
+                    change = kotlin.math.abs(raw.change.toDoubleSafe()) * mul,
+                    changeRate = kotlin.math.abs(raw.changeRate.toDoubleSafe()) * mul,
+                )
+            }
+            lastMsg = raw.msg.ifBlank { "rt_cd=${raw.rtCd}" }
+            if (attempt < MAX_ATTEMPTS - 1) delay(BACKOFF_MS * (attempt + 1))
+        }
+        throw KisException("한투 업종지수 조회 실패(${spec.iscd}): $lastMsg")
+    }
+
     companion object {
         private const val MAX_ATTEMPTS = 4
         private const val BACKOFF_MS = 250L
@@ -419,3 +451,18 @@ private val MACRO_SPECS = listOf(
 /** 토큰 파일 캐시 형식. expiryMs = 만료 시각(epoch millis). */
 @Serializable
 private data class TokenCache(val token: String, val expiryMs: Long)
+
+// ── 섹터 대시보드 정의 ─────────────────────────────────────────────────
+
+private data class SectorSpec(val iscd: String, val label: String)
+
+// KOSPI 업종지수 코드(FID_INPUT_ISCD). inquire-index-price(FHPUP02100000, MRKT=U) 로 조회.
+// 우리 포트폴리오 관련 6개 업종 선별.
+private val SECTOR_SPECS = listOf(
+    SectorSpec("0014", "전기전자"),   // SK하이닉스·삼성전자·LG전자
+    SectorSpec("0013", "기계"),       // HD현대중공업·한화에어로스페이스
+    SectorSpec("0016", "운수장비"),   // KAI·항공우주
+    SectorSpec("0018", "전기가스업"), // HD현대일렉트릭·산일전기
+    SectorSpec("0028", "서비스업"),   // 삼성에스디에스·현대오토에버
+    SectorSpec("0012", "철강금속"),   // 대한전선
+)

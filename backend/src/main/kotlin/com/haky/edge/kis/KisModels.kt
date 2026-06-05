@@ -197,5 +197,18 @@ data class KisOverseasOutput(
     @SerialName("prdy_ctrt") val changeRate: String = "0",       // 등락률
 )
 
+// ── 섹터 대시보드 ─────────────────────────────────────────────────────
+// 브리핑 "섹터 동향" 섹션용. KOSPI 업종별 현재 지수 + 등락률.
+
+/** 앱에 내려주는 업종지수 1건. change/changeRate 는 부호 포함(상승 +, 하락 −). */
+@Serializable
+data class SectorIndex(
+    val key: String,        // "sector_0014" 등 (ISCD 기반)
+    val label: String,      // "전기전자", "기계" 등 표시용
+    val value: Double,      // 현재 지수
+    val change: Double,     // 전일 대비
+    val changeRate: Double, // 등락률 %
+)
+
 /** 한투 연동 중 발생한 오류(상류 문제)를 일반 버그와 구분하기 위한 예외 — StatusPages에서 502로 매핑된다. */
 class KisException(message: String) : RuntimeException(message)
