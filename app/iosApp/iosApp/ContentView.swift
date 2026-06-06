@@ -90,15 +90,21 @@ struct WatchlistView: View {
             Spacer()
             if let pts = sparklines[item.code], pts.count >= 2 {
                 let up = quotes[item.code].map { $0.changeRate >= 0 } ?? (pts.last! >= pts.first!)
-                Chart {
-                    ForEach(Array(pts.enumerated()), id: \.offset) { i, v in
-                        LineMark(x: .value("d", i), y: .value("p", v))
-                            .foregroundStyle(up ? Color.red : Color.blue)
+                let change7d = (pts.last! - pts.first!) / pts.first! * 100
+                VStack(spacing: 2) {
+                    Chart {
+                        ForEach(Array(pts.enumerated()), id: \.offset) { i, v in
+                            LineMark(x: .value("d", i), y: .value("p", v))
+                                .foregroundStyle(up ? Color.red : Color.blue)
+                        }
                     }
+                    .chartXAxis(.hidden)
+                    .chartYAxis(.hidden)
+                    .frame(width: 56, height: 26)
+                    Text(String(format: "%+.1f%%", change7d))
+                        .font(.system(size: 9))
+                        .foregroundColor(change7d >= 0 ? .red : .blue)
                 }
-                .chartXAxis(.hidden)
-                .chartYAxis(.hidden)
-                .frame(width: 56, height: 28)
                 .padding(.trailing, 8)
             }
             if let q = quotes[item.code] {

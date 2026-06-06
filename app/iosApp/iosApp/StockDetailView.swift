@@ -241,7 +241,10 @@ struct StockDetailView: View {
                             .font(.system(size: 10)).foregroundColor(.secondary)
                     }
                 }
-                let (emoji, title, desc) = volPriceSignal(priceUp: priceUp, ratio: volRatio)
+                let intradayPos: Double? = q.high > q.low
+                    ? Double(q.price - q.low) / Double(q.high - q.low) : nil
+                let (emoji, title, desc) = volPriceSignal(priceUp: priceUp, ratio: volRatio,
+                                                          intradayPos: intradayPos)
                 HStack(alignment: .top, spacing: 8) {
                     Text(emoji).font(.title3)
                     VStack(alignment: .leading, spacing: 2) {
@@ -265,22 +268,45 @@ struct StockDetailView: View {
         }
     }
 
-    private func volPriceSignal(priceUp: Bool, ratio: Double) -> (String, String, String) {
-        let hot = ratio >= 1.5
-        let ratioStr = String(format: "%.1f", ratio)
-        switch (priceUp, hot) {
-        case (true, true):
+    private func volPriceSignal(priceUp: Bool, ratio: Double, intradayPos: Double?) -> (String, String, String) {
+        let r = String(format: "%.1f", ratio)
+        // 거래량 4티어
+        enum VolTier { case surge, high, normal, low }
+        let tier: VolTier = ratio >= 2.5 ? .surge : ratio >= 1.5 ? .high : ratio >= 0.7 ? .normal : .low
+
+        // 장중 위치 부가 설명
+        let posNote: String = {
+            guard let p = intradayPos else { return "" }
+            if p >= 0.75 { return " 고가권에서 마감해 강세가 끝까지 유지됐어요." }
+            if p <= 0.25 { return " 저가권에서 마감해 낙폭을 회복하지 못했어요." }
+            return ""
+        }()
+
+        switch (priceUp, tier) {
+        case (true, .surge):
+            return ("🚀", "폭발적 매수세",
+                "평소의 \(r)배 거래량이 터지며 올랐어요. 기관·세력의 대량 매수가 들어왔을 가능성이 높아요. 다음 날 추가 상승인지 차익실현인지가 핵심이에요.\(posNote)")
+        case (true, .high):
             return ("📈", "강한 매수세",
-                    "거래량이 평소의 \(ratioStr)배로 급증하고 가격도 올랐어요. 상승에 힘이 실린 날이에요.")
-        case (true, false):
+                "거래량이 \(r)배로 실리며 가격이 올랐어요. 상승에 힘이 있는 날이에요. 거래량이 계속 동반되는지 확인해 보세요.\(posNote)")
+        case (true, .normal):
             return ("↗️", "조심스러운 상승",
-                    "가격은 올랐지만 거래량이 많지 않아요. 상승이 지속될지 한 번 더 확인해 보는 게 좋아요.")
-        case (false, true):
+                "거래량 없이 올랐어요. 매수 주체가 약해 다음 날 되돌릴 수 있어요. 내일 거래량이 늘며 가격이 버텨주는지가 포인트예요.\(posNote)")
+        case (true, .low):
+            return ("🌤️", "거래위축 상승",
+                "평소보다 거래가 적은데 올랐어요. 매도 압력이 약해 오른 것으로, 추세로 이어지려면 거래량이 동반돼야 해요.\(posNote)")
+        case (false, .surge):
+            return ("💥", "투매성 하락",
+                "평소의 \(r)배 거래량이 터지며 내렸어요. 대량 매도가 출회된 날이에요. 악재 확인이 필요하고, 단기 반등을 노린 저가 매수가 들어올 수도 있어요.\(posNote)")
+        case (false, .high):
             return ("📉", "강한 매도세",
-                    "거래량이 평소의 \(ratioStr)배로 급증하고 가격도 내렸어요. 하락에 힘이 실린 날이에요.")
-        case (false, false):
+                "거래량이 \(r)배로 실리며 가격이 내렸어요. 하락에 힘이 실린 날이에요. 지지선을 이탈했는지 확인해 보세요.\(posNote)")
+        case (false, .normal):
+            return ("↘️", "완만한 하락",
+                "평범한 거래량에 소폭 내렸어요. 뚜렷한 악재보다는 차익실현이나 관망 분위기예요. 거래량이 터지지 않으면 추세 하락은 아닐 수 있어요.\(posNote)")
+        case (false, .low):
             return ("😴", "소강 하락",
-                    "거래량도 적고 가격도 소폭 내렸어요. 뚜렷한 세력 없이 관망하는 분위기예요.")
+                "거래도 적고 가격도 내렸어요. 뚜렷한 매도 주체 없이 관심이 식는 신호일 수 있어요. 거래량이 줄면서 하락하는 패턴은 장기 추세 약화 시그널이에요.\(posNote)")
         }
     }
 
