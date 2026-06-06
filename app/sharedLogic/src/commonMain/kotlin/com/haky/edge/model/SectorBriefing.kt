@@ -8,6 +8,7 @@ data class SectorBriefing(
     val date: String,
     val comment: String,              // Claude 섹터 트렌드 해석
     val spotlight: List<SpotlightStock>, // 오늘 강세 섹터에 속한 관심종목
+    val generatedAt: String = "",     // 캐시 최초 생성 시각 HH:mm (KST)
 )
 
 /** 섹터 브리핑 주목 종목 1건. */

@@ -20,6 +20,7 @@ data class MacroImpact(
     val indicators: List<MacroIndicator>, // 오늘 시장 지표(브리핑 표시와 동일)
     val holdings: List<StockImpact>,   // 보유 종목별 영향
     val watchlist: List<StockImpact>,  // 관심(미보유) 종목별 영향
+    val generatedAt: String = "",      // 캐시 최초 생성 시각 HH:mm (KST)
 )
 
 /** 종목 1개에 대한 매크로 영향(계산 기반, LLM 아님). */
@@ -83,12 +84,15 @@ class MacroImpactService(
         val facts = buildFacts(indicators, holdingImpacts, watchImpacts)
         val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 1536)
 
+        val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
         val result = MacroImpact(
             date = today,
             comment = comment,
             indicators = indicators,
             holdings = holdingImpacts,
             watchlist = watchImpacts,
+            generatedAt = now,
         )
         cache[cacheKey] = result
         return result

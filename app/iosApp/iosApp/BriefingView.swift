@@ -26,6 +26,7 @@ struct BriefingView: View {
     @State private var impactComment = ""
     @State private var impactHoldings: [StockImpact] = []
     @State private var impactWatch: [StockImpact] = []
+    @State private var impactGeneratedAt = ""      // 캐시 최초 생성 시각 HH:mm
 
     @State private var topGainers: [QuoteRow] = []
     @State private var topLosers: [QuoteRow] = []
@@ -48,6 +49,7 @@ struct BriefingView: View {
     @State private var sectorBriefingLoading = false
     @State private var sectorBriefingComment = ""
     @State private var sectorSpotlight: [SpotlightStock] = []
+    @State private var sectorBriefingGeneratedAt = ""  // 캐시 최초 생성 시각 HH:mm
 
     // 접기/펼치기 상태 (기본 접힘)
     @State private var dartExpanded = false
@@ -125,7 +127,10 @@ struct BriefingView: View {
         Section {
             Button { withAnimation { marketExpanded.toggle() } } label: {
                 HStack {
-                    Text("시장 지표").font(.headline)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("시장 지표").font(.headline)
+                        Text("전일 대비 · 수초 폴링").font(.caption2).foregroundColor(.secondary)
+                    }
                     Spacer()
                     Image(systemName: marketExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption).foregroundColor(.secondary)
@@ -272,8 +277,14 @@ struct BriefingView: View {
             } else if sectorBriefingComment.isEmpty {
                 Text("불러오기 실패").font(.footnote).foregroundColor(.secondary)
             } else {
-                aiCommentToggle(expanded: sectorBriefingExpanded) { withAnimation { sectorBriefingExpanded.toggle() } }
-                if sectorBriefingExpanded { proseBlock(sectorBriefingComment) }
+                VStack(alignment: .leading, spacing: 4) {
+                    aiCommentToggle(expanded: sectorBriefingExpanded) { withAnimation { sectorBriefingExpanded.toggle() } }
+                    if !sectorBriefingGeneratedAt.isEmpty {
+                        Text("오늘 \(sectorBriefingGeneratedAt) 생성 (당일 캐시)")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    if sectorBriefingExpanded { proseBlock(sectorBriefingComment) }
+                }
             }
         }
         // 주목 종목 — 코멘트 준비됐을 때만 표시
@@ -411,8 +422,14 @@ struct BriefingView: View {
                 }
                 // AI 코멘트(프로즈)는 길어서 기본 접힘 — 가독성 위해.
                 if !impactComment.isEmpty {
-                    aiCommentToggle(expanded: impactExpanded) { withAnimation { impactExpanded.toggle() } }
-                    if impactExpanded { proseBlock(impactComment) }
+                    VStack(alignment: .leading, spacing: 4) {
+                        aiCommentToggle(expanded: impactExpanded) { withAnimation { impactExpanded.toggle() } }
+                        if !impactGeneratedAt.isEmpty {
+                            Text("오늘 \(impactGeneratedAt) 생성 (당일 캐시)")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                        if impactExpanded { proseBlock(impactComment) }
+                    }
                 }
             }
         }
@@ -605,7 +622,7 @@ struct BriefingView: View {
 
     @ViewBuilder
     private var supplySection: some View {
-        Section("수급주목 (3일 연속 순매수)") {
+        Section("수급주목 (3일 연속 순매수 · 전일 확정)") {
             if supplyLoading {
                 HStack {
                     ProgressView().scaleEffect(0.8)
@@ -710,10 +727,12 @@ struct BriefingView: View {
         impactComment = ""
         impactHoldings = []
         impactWatch = []
+        impactGeneratedAt = ""
         earningsItems = []
         sectorItems = []
         sectorBriefingComment = ""
         sectorSpotlight = []
+        sectorBriefingGeneratedAt = ""
 
         let allItems = Db.watchlist.all()
         let codes = allItems.map { $0.code }
@@ -759,6 +778,7 @@ struct BriefingView: View {
         guard let result = try? await api.getSectorBriefing(codes: codes) else { return }
         sectorBriefingComment = result.comment
         sectorSpotlight = result.spotlight
+        sectorBriefingGeneratedAt = result.generatedAt
     }
 
     private func buildMacro() async {
@@ -788,6 +808,7 @@ struct BriefingView: View {
         impactComment = impact.comment
         impactHoldings = impact.holdings
         impactWatch = impact.watchlist
+        impactGeneratedAt = impact.generatedAt
     }
 
     private func buildHighlights(allItems: [WatchItem], quoteMap: [String: Quote]) {

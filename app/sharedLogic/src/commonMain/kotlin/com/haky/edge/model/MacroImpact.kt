@@ -13,6 +13,7 @@ data class MacroImpact(
     val indicators: List<MacroIndicator>,
     val holdings: List<StockImpact>,
     val watchlist: List<StockImpact>,
+    val generatedAt: String = "",  // 캐시 최초 생성 시각 HH:mm (KST)
 )
 
 /** 종목 1개에 대한 매크로 영향(계산 기반). net: "우호적"/"부담"/"중립"/"-"(매핑 없음). */

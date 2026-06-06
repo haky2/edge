@@ -15,6 +15,7 @@ data class SectorBriefing(
     val date: String,
     val comment: String,              // Claude 섹터 트렌드 해석 + 관심종목 연결 코멘트
     val spotlight: List<SpotlightStock>, // 오늘 강세 섹터에 속한 관심종목 (알고리즘 계산)
+    val generatedAt: String = "",     // 캐시 최초 생성 시각 HH:mm (KST)
 )
 
 /** 주목 종목 1건. 앱 표시용으로 이름·섹터 라벨 포함. */
@@ -76,7 +77,9 @@ class SectorBriefingService(
         val facts = buildFacts(sectorIndices, stockSectors, spotlight)
         val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 768)
 
-        val result = SectorBriefing(today, comment, spotlight)
+        val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+        val result = SectorBriefing(today, comment, spotlight, generatedAt = now)
         cache[cacheKey] = result
         return result
     }

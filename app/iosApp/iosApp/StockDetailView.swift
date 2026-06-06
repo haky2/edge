@@ -378,7 +378,7 @@ struct StockDetailView: View {
                         }
                     }
                 }
-                Text("참고용 · \(a.date) 기준 · 투자 판단과 책임은 본인에게 있습니다")
+                Text(aiCommentFreshLabel(a) + " · 투자 판단과 책임은 본인에게 있습니다")
                     .font(.caption2).foregroundColor(.secondary)
                     .padding(.top, 2)
             } else if analyzing {
@@ -474,8 +474,12 @@ struct StockDetailView: View {
     // 수급 카드. 상단: 외인·기관 방향 막대 차트(시각적). 하단: 전체 정확한 수치표.
     private func flowCard() -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("수급 · 순매수").font(.subheadline.weight(.semibold))
-                .padding(.top, 8)
+            HStack(spacing: 6) {
+                Text("수급 · 순매수").font(.subheadline.weight(.semibold))
+                Spacer()
+                dataTag("전일 확정")
+            }
+            .padding(.top, 8)
             Chart(flowChartData) { e in
                 BarMark(x: .value("날짜", e.date), y: .value("순매수", e.shares))
                     .foregroundStyle(by: .value("투자자", e.investor))
@@ -544,6 +548,36 @@ struct StockDetailView: View {
         let m = d.dropFirst(4).prefix(2)
         let day = d.suffix(2)
         return "\(m)/\(day)"
+    }
+
+    // "참고용 · 오늘 09:32 생성" 또는 "참고용 · 2026-06-06 기준" 형태.
+    private func aiCommentFreshLabel(_ a: Analysis) -> String {
+        if !a.generatedAt.isEmpty {
+            let todayStr = todayDateString()
+            if todayStr == a.date {
+                return "참고용 · 오늘 \(a.generatedAt) 생성"
+            } else {
+                return "참고용 · \(a.date) \(a.generatedAt) 생성"
+            }
+        }
+        return "참고용 · \(a.date) 기준"
+    }
+
+    // "전일 확정", "실시간" 등 데이터 출처를 나타내는 작은 pill 태그.
+    private func dataTag(_ label: String) -> some View {
+        Text(label)
+            .font(.caption2)
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(Color(.systemFill))
+            .cornerRadius(4)
+    }
+
+    private func todayDateString() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "Asia/Seoul")
+        return f.string(from: Date())
     }
 
     // 뉴스 카드(2b). 종목명으로 네이버 검색한 최신 헤드라인. 탭하면 Safari로 원문 이동.

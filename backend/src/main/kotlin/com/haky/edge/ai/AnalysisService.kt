@@ -19,8 +19,9 @@ import java.util.concurrent.ConcurrentHashMap
 data class Analysis(
     val code: String,
     val name: String,
-    val date: String,    // 생성 기준일 (YYYY-MM-DD)
+    val date: String,       // 생성 기준일 (YYYY-MM-DD)
     val comment: String,
+    val generatedAt: String = "",  // 캐시 최초 생성 시각 HH:mm (KST)
 )
 
 /** 개인 포지션 정보. avgPrice·qty 가 있을 때만 생성. targetPrice·stopPrice 는 0.0 = 미입력. */
@@ -72,7 +73,9 @@ class AnalysisService(
         val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, position)
         val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 1800)
 
-        val analysis = Analysis(code = code, name = name, date = today, comment = comment)
+        val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+        val analysis = Analysis(code = code, name = name, date = today, comment = comment, generatedAt = now)
         cache[key] = Cached(analysis)
         return analysis
     }

@@ -10,6 +10,7 @@ import kotlinx.serialization.Serializable
 data class Analysis(
     val code: String,
     val name: String,
-    val date: String,    // 생성 기준일 YYYY-MM-DD
+    val date: String,       // 생성 기준일 YYYY-MM-DD
     val comment: String,
+    val generatedAt: String = "",  // 캐시 최초 생성 시각 HH:mm (KST)
 )
