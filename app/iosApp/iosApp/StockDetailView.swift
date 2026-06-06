@@ -309,16 +309,6 @@ struct StockDetailView: View {
             }
             .font(.caption2)
 
-            // 2행: 기준선 아이콘 (값은 차트 좌측 y축에 표시)
-            if target != nil || avg != nil || stop != nil {
-                HStack(spacing: 8) {
-                    if target != nil { legendMark("목표", "arrowtriangle.up.fill", .red) }
-                    if avg    != nil { legendMark("평단", "circle.fill", .green) }
-                    if stop   != nil { legendMark("손절", "arrowtriangle.down.fill", .blue) }
-                    Spacer()
-                }
-                .font(.caption2)
-            }
 
             if trendLineHelpExpanded {
                 Text("추세선(주황 점선): 최근 20거래일 종가 평균. 현재가가 위면 단기 상승추세, 아래면 하락추세.\n고저 폭(회색 띠): 각 날의 하루 중 가격 변동 범위(고가~저가).")
