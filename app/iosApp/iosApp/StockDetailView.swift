@@ -23,6 +23,8 @@ struct StockDetailView: View {
     @State private var dartExpanded = false
     @State private var earningsExpanded = false
     @State private var signalExpanded = false
+    @State private var indicatorHelpExpanded = false   // 기술적 지표 설명 접기
+    @State private var valuationHelpExpanded = false    // PER/PBR 설명 접기
     @State private var analyzing = false
     @State private var loading = false
     @State private var showEdit = false
@@ -46,7 +48,7 @@ struct StockDetailView: View {
                     positionCard(q)  // 내 포지션 + 수익률
                     aiCommentCard()  // AI 종합 코멘트 (포지션 다음 → 맥락 연결)
                     analysisCard(q)  // 지표 해석 ① 계산 기반(52주 위치·수급 흐름 요약)
-                    if let tr = technicalResult { technicalCard(tr) }  // 이평·RSI·거래량
+                    if let tr = technicalResult { technicalCard(tr, price: Double(q.price)) }  // 이평·RSI·거래량
                 } else if loading {
                     ProgressView().padding(.top, 40)
                 }
@@ -276,11 +278,27 @@ struct StockDetailView: View {
                 }
                 if q.per > 0 {
                     valuationRow("PER", String(format: "%.2f배", q.per),
-                        "주가 ÷ 주당순이익. 이익 대비 주가 수준 — 낮을수록 이익 대비 저렴, 성장 기대가 크면 높게 형성됨.")
+                        "내 돈을 몇 년 모으면 이 회사를 통째로 살 수 있나 — 낮을수록 이익 대비 싼 편이에요. 성장 기대가 크면 높게 매겨져요.",
+                        expandable: true)
                 }
                 if q.pbr > 0 {
                     valuationRow("PBR", String(format: "%.2f배", q.pbr),
-                        "주가 ÷ 주당순자산. 1배면 장부가치 수준 — 낮을수록 자산 대비 저렴.")
+                        "회사가 가진 재산(장부가치) 대비 주가예요. 1배면 딱 장부가치 수준, 낮을수록 자산 대비 싼 편.",
+                        expandable: true)
+                }
+                if q.per > 0 || q.pbr > 0 {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { valuationHelpExpanded.toggle() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "info.circle")
+                            Text(valuationHelpExpanded ? "설명 접기" : "PER·PBR이 뭐죠?")
+                            Image(systemName: valuationHelpExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 9))
+                        }
+                        .font(.caption2).foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             if let tp = targetPriceInfo {
@@ -323,7 +341,9 @@ struct StockDetailView: View {
     }
 
     // 밸류에이션 한 줄: 위에 라벨·값, 아래에 "무슨 뜻인지" 짧은 설명(회색 caption).
-    private func valuationRow(_ label: String, _ value: String, _ meaning: String) -> some View {
+    // expandable=true면 설명을 ⓘ 토글(valuationHelpExpanded)로 접어둔다.
+    @ViewBuilder
+    private func valuationRow(_ label: String, _ value: String, _ meaning: String, expandable: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(label).foregroundColor(.secondary)
@@ -331,7 +351,10 @@ struct StockDetailView: View {
                 Text(value).fontWeight(.medium)
             }
             .font(.caption)
-            Text(meaning).font(.caption2).foregroundColor(.secondary)
+            if !expandable || valuationHelpExpanded {
+                Text(meaning).font(.caption2).foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -416,69 +439,178 @@ struct StockDetailView: View {
         .cardStyle()
     }
 
-    // 기술적 지표 카드. 이평선(MA5/20/60)·RSI14·거래량 비율 표시. 계산만, 판단 없음.
-    // null = 일봉 데이터 부족(해당 항목 숨김).
-    private func technicalCard(_ r: TechnicalResult) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    // 기술적 지표 카드. 한눈에 보는 시각 요약(추세 신호등 + RSI 게이지 + 거래량) 먼저,
+    // 자세한 숫자·용어 설명은 ⓘ로 접어둔다(타고 들어가기). 계산만, 판단 없음.
+    private func technicalCard(_ r: TechnicalResult, price: Double) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
             Text("기술적 지표").font(.subheadline.weight(.semibold)).padding(.top, 8)
 
-            if let v = r.ma5?.doubleValue {
-                technicalRow("MA5", "\(Int(v.rounded()).formatted()) 원",
-                    "최근 5일 종가 평균. 현재가가 이 선 위면 단기 상승 추세.")
-            }
-            if let v = r.ma20?.doubleValue {
-                technicalRow("MA20", "\(Int(v.rounded()).formatted()) 원",
-                    "최근 20일 종가 평균(중기 추세선). 골든크로스·데드크로스의 기준선.")
-            }
-            if let v = r.ma60?.doubleValue {
-                technicalRow("MA60", "\(Int(v.rounded()).formatted()) 원",
-                    "최근 60일(약 3개월) 종가 평균. 장기 추세 방향을 보는 데 주로 사용.")
-            }
-
-            if r.ma5 != nil || r.ma20 != nil || r.ma60 != nil {
-                if r.rsi14 != nil || r.volumeRatio != nil { Divider() }
-            }
-
-            if let v = r.rsi14?.doubleValue {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text("RSI14").foregroundColor(.secondary)
-                        Spacer()
-                        Text(String(format: "%.1f", v))
-                            .fontWeight(.medium)
-                            .foregroundColor(rsiColor(v))
-                        if !rsiLabel(v).isEmpty {
-                            Text("· \(rsiLabel(v))").font(.caption2).foregroundColor(rsiColor(v))
-                        }
-                    }
-                    .font(.caption)
-                    Text("0~100 모멘텀 지표. 70 이상이면 단기 과매수(조정 가능성), 30 이하면 과매도(반등 가능성).")
-                        .font(.caption2).foregroundColor(.secondary)
+            // ── 시각 요약: 추세 신호등 + RSI 게이지 ──
+            HStack(alignment: .top, spacing: 16) {
+                trendSignal(r, price: price)
+                if r.rsi14 != nil {
+                    Divider().frame(height: 44)
+                    rsiGauge(r.rsi14!.doubleValue)
                 }
             }
 
+            // ── 거래량 ──
             if let v = r.volumeRatio?.doubleValue {
-                technicalRow("거래량(20일 평균 대비)", String(format: "%.1f배", v),
-                    "오늘 거래량 ÷ 최근 20일 평균. 2배 이상이면 거래 급증 — 큰 재료나 수급 변화가 있을 때 나타남.",
-                    valueColor: v >= 2.0 ? .orange : .primary)
+                volumeBadge(v)
             }
+
+            // ── 접이식 설명 ──
+            indicatorHelp(r, price: price)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 6)
         .cardStyle()
     }
 
-    // 기술적 지표 한 행: 라벨·값 + 아래에 설명 한 줄.
-    private func technicalRow(_ label: String, _ value: String, _ desc: String, valueColor: Color = .primary) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(label).foregroundColor(.secondary)
-                Spacer()
-                Text(value).fontWeight(.medium).foregroundColor(valueColor)
+    // 추세 신호등: MA5/MA20/MA60 각각 현재가가 위면 빨강(상승)·아래면 파랑(하락) 점.
+    private func trendSignal(_ r: TechnicalResult, price: Double) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("추세").font(.caption2).foregroundColor(.secondary)
+            HStack(spacing: 12) {
+                trendDot("MA5",  r.ma5?.doubleValue,  price)
+                trendDot("MA20", r.ma20?.doubleValue, price)
+                trendDot("MA60", r.ma60?.doubleValue, price)
             }
-            .font(.caption)
-            Text(desc).font(.caption2).foregroundColor(.secondary)
         }
+    }
+
+    // 이평선 한 칸: 위 점(색) + 아래 라벨. 현재가≥선이면 빨강↑, 미만이면 파랑↓.
+    @ViewBuilder
+    private func trendDot(_ label: String, _ ma: Double?, _ price: Double) -> some View {
+        let above: Bool? = ma.map { price >= $0 }
+        VStack(spacing: 3) {
+            Circle()
+                .fill(above == nil ? Color(.systemFill) : (above! ? Color.red : Color.blue))
+                .frame(width: 14, height: 14)
+                .overlay {
+                    if let ab = above {
+                        Image(systemName: ab ? "arrow.up" : "arrow.down")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                }
+            Text(label).font(.system(size: 9)).foregroundColor(.secondary)
+        }
+    }
+
+    // RSI 게이지: 0~100 바 + 30/70 구간 마커 + 현재 위치. 숫자보다 위치가 직관적.
+    private func rsiGauge(_ v: Double) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Text("RSI").font(.caption2).foregroundColor(.secondary)
+                Text(String(format: "%.0f", v)).font(.caption.weight(.semibold)).foregroundColor(rsiColor(v))
+                if !rsiLabel(v).isEmpty {
+                    Text(rsiLabel(v)).font(.system(size: 9)).foregroundColor(rsiColor(v))
+                }
+            }
+            GeometryReader { geo in
+                let w = geo.size.width
+                ZStack(alignment: .leading) {
+                    // 3구간 배경: 과매도(파랑)·중립(회색)·과매수(빨강)
+                    HStack(spacing: 0) {
+                        Rectangle().fill(Color.blue.opacity(0.18)).frame(width: w * 0.3)
+                        Rectangle().fill(Color(.systemFill).opacity(0.5))
+                        Rectangle().fill(Color.red.opacity(0.18)).frame(width: w * 0.3)
+                    }
+                    .frame(height: 6)
+                    .clipShape(Capsule())
+                    // 현재 위치 마커
+                    Circle()
+                        .fill(rsiColor(v))
+                        .frame(width: 10, height: 10)
+                        .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 1.5))
+                        .offset(x: max(0, min(w - 10, w * CGFloat(v) / 100 - 5)))
+                }
+            }
+            .frame(height: 10)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // 거래량 배지: 평소 대비 배수. 2배 이상이면 주황 강조 + 불꽃.
+    private func volumeBadge(_ v: Double) -> some View {
+        let hot = v >= 2.0
+        return HStack(spacing: 6) {
+            Image(systemName: hot ? "flame.fill" : "chart.bar.fill")
+                .font(.caption2)
+                .foregroundColor(hot ? .orange : .secondary)
+            Text("거래량 평소의 \(String(format: "%.1f", v))배")
+                .font(.caption)
+                .foregroundColor(hot ? .orange : .primary)
+            if hot { Text("거래 급증").font(.system(size: 9)).foregroundColor(.orange) }
+            Spacer()
+        }
+    }
+
+    // 접이식 지표 설명. 평소엔 ⓘ 한 줄, 탭하면 각 지표 뜻을 친근하게 풀어준다.
+    @ViewBuilder
+    private func indicatorHelp(_ r: TechnicalResult, price: Double) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { indicatorHelpExpanded.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "info.circle")
+                    Text(indicatorHelpExpanded ? "설명 접기" : "이게 무슨 뜻이죠?")
+                    Image(systemName: indicatorHelpExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9))
+                }
+                .font(.caption2).foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+
+            if indicatorHelpExpanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    helpItem("추세 신호등",
+                        "최근 5·20·60일 평균값보다 지금 주가가 위에 있으면 빨강↑(오름세), 아래면 파랑↓(내림세)예요. 셋 다 빨강이면 단기·중기·장기 모두 상승 흐름.")
+                    if let v = r.rsi14?.doubleValue {
+                        helpItem("RSI \(String(format: "%.0f", v))",
+                            "주가가 얼마나 달아올랐는지 0~100으로 보는 막대예요. 70 넘으면 좀 과열(🔴), 30 밑이면 너무 식음(🔵). 지금은 \(rsiPlainLabel(v)).")
+                    }
+                    if let v = r.volumeRatio?.doubleValue {
+                        helpItem("거래량 \(String(format: "%.1f", v))배",
+                            "오늘 거래량을 최근 20일 평균과 비교한 거예요. 2배 넘으면 평소보다 사람이 확 몰린 것 — 큰 뉴스나 수급 변화 신호일 수 있어요.")
+                    }
+                    // 정확한 이평선 값(참고용)
+                    if r.ma5 != nil || r.ma20 != nil || r.ma60 != nil {
+                        Divider()
+                        HStack(spacing: 10) {
+                            if let v = r.ma5?.doubleValue  { maValueChip("5일", v) }
+                            if let v = r.ma20?.doubleValue { maValueChip("20일", v) }
+                            if let v = r.ma60?.doubleValue { maValueChip("60일", v) }
+                        }
+                    }
+                }
+                .padding(.top, 8)
+            }
+        }
+    }
+
+    private func helpItem(_ title: String, _ body: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption.weight(.semibold))
+            Text(body).font(.caption2).foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func maValueChip(_ label: String, _ v: Double) -> some View {
+        VStack(spacing: 1) {
+            Text(label).font(.system(size: 9)).foregroundColor(.secondary)
+            Text("\(Int(v.rounded()).formatted())").font(.caption2.weight(.medium).monospacedDigit())
+        }
+    }
+
+    // RSI를 말로: 과매수권/과매도권/중립.
+    private func rsiPlainLabel(_ v: Double) -> String {
+        if v >= 70 { return "좀 달아오른 편이에요" }
+        if v <= 30 { return "많이 식은 편이에요" }
+        return "적당한 편이에요"
     }
 
     private func rsiColor(_ v: Double) -> Color {
