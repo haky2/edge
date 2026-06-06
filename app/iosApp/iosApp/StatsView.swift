@@ -171,7 +171,7 @@ struct StatsView: View {
                     Text("현재가 확인 중…").font(.footnote).foregroundColor(.secondary)
                 }
             } else if missedRows.isEmpty {
-                Text("없음 (관심 후 미매수 종목 없어요)").font(.footnote).foregroundColor(.secondary)
+                Text("관심만 하고 매수하지 않은 종목이 없어요").font(.footnote).foregroundColor(.secondary)
             } else {
                 ForEach(missedRows) { row in
                     missedRow(row)

@@ -174,7 +174,7 @@ struct BriefingView: View {
                 }
             }
             if m.key == "fear_greed" {
-                Text("CNN이 산출하는 시장 심리 지수. 0=극단적 공포 · 50=중립 · 100=극단적 탐욕.")
+                Text("CNN이 매일 산출하는 시장 심리 지수예요. 0에 가까울수록 공포, 100에 가까울수록 탐욕이에요.")
                     .font(.caption2).foregroundColor(.secondary)
             }
         }
@@ -238,7 +238,7 @@ struct BriefingView: View {
                 HStack { ProgressView().scaleEffect(0.8); Text("확인 중…").font(.footnote).foregroundColor(.secondary) }
             } else if sectorExpanded {
                 if filtered.isEmpty {
-                    Text("관련 섹터 없음").font(.footnote).foregroundColor(.secondary)
+                    Text("관련 섹터가 없어요").font(.footnote).foregroundColor(.secondary)
                 } else {
                     ForEach(filtered, id: \.key) { sectorRow($0) }
                 }
@@ -275,7 +275,7 @@ struct BriefingView: View {
                     Text("AI가 분석 중…").font(.footnote).foregroundColor(.secondary)
                 }
             } else if sectorBriefingComment.isEmpty {
-                Text("불러오기 실패").font(.footnote).foregroundColor(.secondary)
+                Text("불러오지 못했어요").font(.footnote).foregroundColor(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     aiCommentToggle(expanded: sectorBriefingExpanded) { withAnimation { sectorBriefingExpanded.toggle() } }
@@ -344,7 +344,7 @@ struct BriefingView: View {
                 HStack { ProgressView().scaleEffect(0.8); Text("확인 중…").font(.footnote).foregroundColor(.secondary) }
             } else if earningsExpanded {
                 if earningsItems.isEmpty {
-                    Text("90일 이내 예정 없음").font(.footnote).foregroundColor(.secondary)
+                    Text("90일 이내 예정된 실적이 없어요").font(.footnote).foregroundColor(.secondary)
                 } else {
                     ForEach(earningsItems, id: \.code) { earningsRow($0) }
                 }
@@ -397,7 +397,7 @@ struct BriefingView: View {
             if impactLoading {
                 HStack { ProgressView().scaleEffect(0.8); Text("AI가 해석 중…").font(.footnote).foregroundColor(.secondary) }
             } else if impactComment.isEmpty && impactHoldings.isEmpty && impactWatch.isEmpty {
-                Text("불러오기 실패").font(.footnote).foregroundColor(.secondary)
+                Text("불러오지 못했어요").font(.footnote).foregroundColor(.secondary)
             } else {
                 // 보유 종목 영향은 항상 한눈에(스캔 가능한 핵심).
                 if !impactHoldings.isEmpty {
@@ -594,7 +594,7 @@ struct BriefingView: View {
                     }
                 }
                 .padding(.vertical, 2)
-                Text("종목별 상세는 '내 자산' 탭에서 확인하세요")
+                Text("종목별 상세는 '내 자산' 탭에서 볼 수 있어요")
                     .font(.caption2).foregroundColor(.secondary)
             }
         }
@@ -629,7 +629,7 @@ struct BriefingView: View {
                     Text("확인 중…").font(.footnote).foregroundColor(.secondary)
                 }
             } else if supplyRows.isEmpty {
-                Text("해당 종목 없음").font(.footnote).foregroundColor(.secondary)
+                Text("해당하는 종목이 없어요").font(.footnote).foregroundColor(.secondary)
             } else {
                 ForEach(supplyRows, id: \.item.code) { row in
                     NavigationLink {
@@ -681,7 +681,7 @@ struct BriefingView: View {
                 HStack { ProgressView().scaleEffect(0.8); Text("확인 중…").font(.footnote).foregroundColor(.secondary) }
             } else if dartExpanded {
                 if dartItems.isEmpty {
-                    Text("공시 없음").font(.footnote).foregroundColor(.secondary)
+                    Text("최근 7일간 공시가 없어요").font(.footnote).foregroundColor(.secondary)
                 } else {
                     ForEach(dartItems.indices, id: \.self) { i in
                         let item = dartItems[i]
