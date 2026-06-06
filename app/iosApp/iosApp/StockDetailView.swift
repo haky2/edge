@@ -1443,10 +1443,11 @@ private struct PriceLineChart: View {
         }
     }
 
-    // y축 범위: 표시 구간 고저 + 기준선(평단/목표/손절)까지 포함해 모두 보이게.
+    // y축 범위: 표시 구간 고저 + 기준선 + MA20까지 포함해 모두 차트 안에 들어오게.
     private var yDomain: ClosedRange<Double> {
-        let lows  = pts.map(\.low)  + [avg, target, stop].compactMap { $0 }
-        let highs = pts.map(\.high) + [avg, target, stop].compactMap { $0 }
+        let ma20s = displayCount >= 20 ? pts.compactMap(\.ma20) : []
+        let lows  = pts.map(\.low)  + [avg, target, stop].compactMap { $0 } + ma20s
+        let highs = pts.map(\.high) + [avg, target, stop].compactMap { $0 } + ma20s
         let lo = (lows.min() ?? 0) * 0.99
         let hi = (highs.max() ?? 1) * 1.01
         return lo...(hi > lo ? hi : lo + 1)
@@ -1462,14 +1463,16 @@ private struct PriceLineChart: View {
                     .foregroundStyle(Color.primary.opacity(0.10))
                     .interpolationMethod(.monotone)
             }
-            // 20일 추세선(주황 점선)
-            ForEach(data) { p in
-                if let ma = p.ma20 {
-                    LineMark(x: .value("일", p.id), y: .value("가격", ma),
-                             series: .value("계열", "추세선"))
-                        .foregroundStyle(Color.orange)
-                        .lineStyle(StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
-                        .interpolationMethod(.monotone)
+            // 20일 추세선(주황 점선) — 표시 구간이 20일 미만이면 의미 없으므로 숨김.
+            if displayCount >= 20 {
+                ForEach(data) { p in
+                    if let ma = p.ma20 {
+                        LineMark(x: .value("일", p.id), y: .value("가격", ma),
+                                 series: .value("계열", "추세선"))
+                            .foregroundStyle(Color.orange)
+                            .lineStyle(StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
+                            .interpolationMethod(.monotone)
+                    }
                 }
             }
             // 종가 라인(굵게)
