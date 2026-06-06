@@ -130,7 +130,7 @@ struct StockDetailView: View {
                 // 기간 토글 — 옵션이 5개라 별도 줄
                 Picker("", selection: $chartPeriod) {
                     ForEach(ChartPeriod.allCases, id: \.self) { p in
-                        Text(p.label).tag(p)
+                        Text(p == .all ? allPeriodLabel : p.label).tag(p)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -564,6 +564,19 @@ struct StockDetailView: View {
         case ..<75: return .secondary
         default: return .red
         }
+    }
+
+    // dailyBars 개수를 거래일 기준으로 개월/년 문자열로 환산. 22거래일 ≈ 1개월.
+    private var allPeriodLabel: String {
+        let n = dailyBars.count
+        guard n > 0 else { return "전체" }
+        let months = max(1, Int((Double(n) / 22.0).rounded()))
+        if months >= 12 {
+            let y = months / 12
+            let m = months % 12
+            return m == 0 ? "\(y)년" : "\(y)년\(m)개월"
+        }
+        return "\(months)개월"
     }
 
     // 목표가 상승여력 게이지. 앵커(손절가 or 평단가 or 추정 하한)~목표가 바에 현재가 위치 표시.
@@ -1344,14 +1357,14 @@ private struct FlowEntry: Identifiable {
 // MA5·MA20은 시계열 라인, MA60은 현재값 기준선(RuleMark).
 // 차트 기간 토글. barCount = 표시할 일봉 개수(영업일 기준 근사).
 enum ChartPeriod: CaseIterable {
-    case week, m1, m3, all, today
+    case today, week, m1, m3, all
     var label: String {
         switch self {
+        case .today: "오늘"
         case .week:  "1주"
         case .m1:    "1개월"
         case .m3:    "3개월"
         case .all:   "전체"
-        case .today: "오늘"
         }
     }
     var barCount: Int {
