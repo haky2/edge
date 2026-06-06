@@ -214,9 +214,10 @@ class KisClient(
 
     /** 일봉 HTTP 호출 1회. period_div_code=D, adj_prc_div=1(수정주가). */
     private suspend fun requestDailyChart(code: String, accessToken: String): KisDailyResponse {
-        // start/end: 한투는 최근일 기준으로 내려주므로 end=오늘, start=충분히 과거(3개월)로 둔다.
+        // start/end: 한투는 최근일 기준으로 내려주므로 end=오늘, start=충분히 과거로 둔다.
+        // 차트 기간 토글(1개월/3개월/전체)용으로 넉넉히 7개월(한투 단일 응답 최대 ~100건) 요청.
         val today = java.time.LocalDate.now().toString().replace("-", "")
-        val startDate = java.time.LocalDate.now().minusMonths(4).toString().replace("-", "")
+        val startDate = java.time.LocalDate.now().minusMonths(7).toString().replace("-", "")
         return http.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice") {
             header("authorization", "Bearer $accessToken")
             header("appkey", appKey)

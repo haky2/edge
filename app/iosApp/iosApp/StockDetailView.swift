@@ -25,6 +25,7 @@ struct StockDetailView: View {
     @State private var signalExpanded = false
     @State private var indicatorHelpExpanded = false   // 기술적 지표 설명 접기
     @State private var valuationHelpExpanded = false    // PER/PBR 설명 접기
+    @State private var chartPeriod: ChartPeriod = .m3   // 가격 차트 기간 토글
     @State private var analyzing = false
     @State private var loading = false
     @State private var showEdit = false
@@ -109,26 +110,41 @@ struct StockDetailView: View {
         }
     }
 
-    // 가격 차트 + 기본 지표 카드. 일봉 데이터 로드 전엔 숫자만 표시.
+    // 가격 차트 카드 = "내 기준선 차트". 종가 흐름 + 고저 밴드 + 20일 추세선 위에
+    // 내 평단·목표·손절을 가로선으로 얹어 "내가 산 가격이 지금 어디"를 한눈에 본다.
     private func priceChartCard(_ q: Quote) -> some View {
-        let ordered = Array(dailyBars.reversed())   // [0]=oldest, last=newest
-        let currentClose = ordered.last.map { Double($0.close) }
-        let ma5  = ordered.count >= 5  ? ordered.suffix(5).reduce(0.0)  { $0 + Double($1.close) } / 5  : nil as Double?
-        let ma20 = ordered.count >= 20 ? ordered.suffix(20).reduce(0.0) { $0 + Double($1.close) } / 20 : nil as Double?
-        let ma60 = ordered.count >= 60 ? ordered.suffix(60).reduce(0.0) { $0 + Double($1.close) } / 60 : nil as Double?
+        let avg    = item.avgPrice?.doubleValue
+        let target = item.targetPrice?.doubleValue
+        let stop   = item.stopPrice?.doubleValue
+        let count  = chartPeriod.barCount
 
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 10) {
             if !dailyBars.isEmpty {
-                HStack(spacing: 10) {
-                    chartLegendItem("종가",  .primary, nil,   currentClose)
-                    chartLegendItem("MA5",  .blue,    ma5,   currentClose)
-                    chartLegendItem("MA20", .orange,  ma20,  currentClose)
-                    chartLegendItem("MA60", .purple,  ma60,  currentClose, isDash: true)
+                // 헤더: 제목 + 기간 토글
+                HStack {
+                    Text("가격 흐름").font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Picker("", selection: $chartPeriod) {
+                        ForEach(ChartPeriod.allCases, id: \.self) { p in
+                            Text(p.label).tag(p)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 168)
                 }
-                .font(.caption2)
                 .padding(.top, 4)
-                PriceLineChart(bars: dailyBars)
-                    .frame(height: 180)
+
+                priceChartLegend(hasAvg: avg != nil, hasTarget: target != nil, hasStop: stop != nil)
+
+                PriceLineChart(
+                    bars: dailyBars, displayCount: count,
+                    avg: avg, target: target, stop: stop
+                )
+                .frame(height: 190)
+
+                VolumeBars(bars: dailyBars, displayCount: count)
+                    .frame(height: 40)
+
                 Divider()
             }
             Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
@@ -150,20 +166,22 @@ struct StockDetailView: View {
         .cardStyle()
     }
 
-    private func miniStat(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label).font(.caption2).foregroundColor(.secondary)
+    // 가격 차트 범례. 종가·추세선은 항상, 평단·목표·손절은 입력돼 있을 때만.
+    private func priceChartLegend(hasAvg: Bool, hasTarget: Bool, hasStop: Bool) -> some View {
+        HStack(spacing: 10) {
+            legendLine("종가", .primary, dash: false)
+            legendLine("20일 추세선", .orange, dash: true)
+            if hasTarget { legendMark("목표", "arrowtriangle.up.fill", .red) }
+            if hasAvg    { legendMark("평단", "circle.fill", .green) }
+            if hasStop   { legendMark("손절", "arrowtriangle.down.fill", .blue) }
             Spacer()
-            Text(value).font(.caption2.weight(.medium))
         }
+        .font(.caption2)
     }
 
-    private func chartLegendItem(_ label: String, _ color: Color,
-                                 _ maVal: Double?, _ currentPrice: Double?,
-                                 isDash: Bool = false) -> some View {
-        let above: Bool? = maVal.flatMap { mv in currentPrice.map { $0 >= mv } }
-        return HStack(spacing: 3) {
-            if isDash {
+    private func legendLine(_ label: String, _ color: Color, dash: Bool) -> some View {
+        HStack(spacing: 3) {
+            if dash {
                 HStack(spacing: 2) {
                     ForEach(0..<3, id: \.self) { _ in
                         Rectangle().fill(color).frame(width: 3, height: 1.5)
@@ -172,14 +190,23 @@ struct StockDetailView: View {
             } else {
                 Rectangle().fill(color).frame(width: 12, height: 2)
             }
-            Text(label).foregroundColor(color)
-            if let ab = above {
-                Image(systemName: ab ? "arrow.up" : "arrow.down")
-                    .font(.system(size: 7, weight: .bold))
-                    .foregroundColor(ab ? .red : .blue)
-            }
+            Text(label).foregroundColor(.secondary)
         }
-        .font(.caption2)
+    }
+
+    private func legendMark(_ label: String, _ symbol: String, _ color: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: symbol).font(.system(size: 7)).foregroundColor(color)
+            Text(label).foregroundColor(.secondary)
+        }
+    }
+
+    private func miniStat(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).font(.caption2).foregroundColor(.secondary)
+            Spacer()
+            Text(value).font(.caption2.weight(.medium))
+        }
     }
 
     // 내 포지션 카드(1.5b/c). 평단가·수량이 있으면 현재가로 수익률/평가손익 계산, 목표·손절은 거리(%)와 도달 여부.
@@ -1008,7 +1035,7 @@ struct StockDetailView: View {
         if let q = try? await api.getQuote(code: item.code) { quote = q }
         flows = (try? await api.getInvestorFlow(code: item.code, days: 5)) ?? []
         news = (try? await api.getNews(stockName: item.name, display: 5)) ?? []
-        if let daily = try? await api.getDaily(code: item.code, bars: 62) {
+        if let daily = try? await api.getDaily(code: item.code, bars: 120) {
             dailyBars = daily
             technicalResult = TechnicalIndicators.shared.calculate(bars: daily)
         }
@@ -1119,98 +1146,101 @@ private struct FlowEntry: Identifiable {
 
 // 종가 + 이평선 미니 라인 차트. bars[0] = 최신, reversed 후 최근 30개 표시.
 // MA5·MA20은 시계열 라인, MA60은 현재값 기준선(RuleMark).
+// 차트 기간 토글. barCount = 표시할 일봉 개수(영업일 기준 근사).
+enum ChartPeriod: CaseIterable {
+    case m1, m3, all
+    var label: String { switch self { case .m1: "1개월"; case .m3: "3개월"; case .all: "전체" } }
+    var barCount: Int { switch self { case .m1: 22; case .m3: 66; case .all: 999 } }
+}
+
+private func priceYLabel(_ v: Double) -> String {
+    let n = Int(v)
+    if n >= 10_000 { return "\(n / 10_000)만" }
+    return n.formatted()
+}
+
+// "내 기준선 차트": 종가 라인 + 일별 고저 밴드 + 20일 추세선 위에
+// 내 평단·목표·손절을 가로 기준선으로 얹는다.
 private struct PriceLineChart: View {
     let bars: [DailyBar]
+    let displayCount: Int
+    let avg: Double?
+    let target: Double?
+    let stop: Double?
 
-    private struct CPoint: Identifiable {
-        let id: Int; let close: Double
-    }
-    private struct MAPoint: Identifiable {
-        let id: Int; let value: Double
-    }
-
-    private var orderedBars: [DailyBar] { Array(bars.reversed()) }
-
-    private func yLabel(_ v: Double) -> String {
-        let n = Int(v)
-        if n >= 10_000 { return "\(n / 10_000)만" }
-        return n.formatted()
+    private struct Pt: Identifiable {
+        let id: Int
+        let close: Double
+        let high: Double
+        let low: Double
+        let ma20: Double?
     }
 
-    private var closePts: [CPoint] {
-        let all = orderedBars
-        let start = max(0, all.count - 30)
-        return all[start...].enumerated().map { i, b in CPoint(id: i, close: Double(b.close)) }
-    }
-
-    private func maPts(period: Int) -> [MAPoint] {
-        let all = orderedBars
-        let displayStart = max(0, all.count - 30)
-        var result: [MAPoint] = []
-        for i in displayStart..<all.count {
-            guard i >= period - 1 else { continue }
-            let sum = all[(i - period + 1)...i].reduce(0) { $0 + Double($1.close) }
-            result.append(MAPoint(id: i - displayStart, value: sum / Double(period)))
+    // 최신일이 앞이라 reverse 후, displayCount 만큼 뒤(최근)에서 자른다.
+    // MA20은 잘리기 전 전체 시계열로 계산해 표시 구간 첫날부터 값이 있게 한다.
+    private var pts: [Pt] {
+        let all = Array(bars.reversed())   // [0]=oldest
+        guard !all.isEmpty else { return [] }
+        let start = max(0, all.count - displayCount)
+        return (start..<all.count).map { i in
+            let ma: Double? = i >= 19
+                ? all[(i - 19)...i].reduce(0.0) { $0 + Double($1.close) } / 20
+                : nil
+            let b = all[i]
+            return Pt(id: i - start, close: Double(b.close),
+                      high: Double(b.high), low: Double(b.low), ma20: ma)
         }
-        return result
     }
 
-    private var currentMA60: Double? {
-        let all = orderedBars
-        guard all.count >= 60 else { return nil }
-        return all.suffix(60).reduce(0.0) { $0 + Double($1.close) } / 60.0
+    // y축 범위: 표시 구간 고저 + 기준선(평단/목표/손절)까지 포함해 모두 보이게.
+    private var yDomain: ClosedRange<Double> {
+        let lows  = pts.map(\.low)  + [avg, target, stop].compactMap { $0 }
+        let highs = pts.map(\.high) + [avg, target, stop].compactMap { $0 }
+        let lo = (lows.min() ?? 0) * 0.99
+        let hi = (highs.max() ?? 1) * 1.01
+        return lo...(hi > lo ? hi : lo + 1)
     }
 
     var body: some View {
-        let ma5  = maPts(period: 5)
-        let ma20 = maPts(period: 20)
-        let allY = closePts.map(\.close) + ma5.map(\.value) + ma20.map(\.value)
-        let yMin = (allY.min() ?? 0) * 0.997
-
+        let data = pts
         Chart {
-            // 영역(면) — 종가 아래 옅은 그라데이션. 계열 색 스케일과 무관(직접 스타일).
-            ForEach(closePts) { p in
-                AreaMark(x: .value("일", p.id), yStart: .value("min", yMin), yEnd: .value("가격", p.close))
-                    .foregroundStyle(LinearGradient(colors: [Color.blue.opacity(0.12), Color.clear], startPoint: .top, endPoint: .bottom))
+            // 일별 고저 밴드 — 변동 폭을 옅은 영역으로.
+            ForEach(data) { p in
+                AreaMark(x: .value("일", p.id),
+                         yStart: .value("저", p.low), yEnd: .value("고", p.high))
+                    .foregroundStyle(Color.primary.opacity(0.10))
+                    .interpolationMethod(.monotone)
             }
-            .interpolationMethod(.monotone)
-            // 라인 3종 — y 레이블을 "가격"으로 통일하고 series 로 계열을 구분해야
-            // 계열별 색(chartForegroundStyleScale)이 확실히 적용된다.
-            ForEach(closePts) { p in
-                LineMark(x: .value("일", p.id), y: .value("가격", p.close), series: .value("계열", "종가"))
+            // 20일 추세선(주황 점선)
+            ForEach(data) { p in
+                if let ma = p.ma20 {
+                    LineMark(x: .value("일", p.id), y: .value("가격", ma),
+                             series: .value("계열", "추세선"))
+                        .foregroundStyle(Color.orange)
+                        .lineStyle(StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
+                        .interpolationMethod(.monotone)
+                }
             }
-            .foregroundStyle(by: .value("계열", "종가"))
-            .lineStyle(StrokeStyle(lineWidth: 2.4))
-            .interpolationMethod(.monotone)
-            ForEach(ma5) { p in
-                LineMark(x: .value("일", p.id), y: .value("가격", p.value), series: .value("계열", "MA5"))
+            // 종가 라인(굵게)
+            ForEach(data) { p in
+                LineMark(x: .value("일", p.id), y: .value("가격", p.close),
+                         series: .value("계열", "종가"))
+                    .foregroundStyle(Color.primary)
+                    .lineStyle(StrokeStyle(lineWidth: 2.2))
+                    .interpolationMethod(.monotone)
             }
-            .foregroundStyle(by: .value("계열", "MA5"))
-            .lineStyle(StrokeStyle(lineWidth: 1.2))
-            .interpolationMethod(.monotone)
-            ForEach(ma20) { p in
-                LineMark(x: .value("일", p.id), y: .value("가격", p.value), series: .value("계열", "MA20"))
+            // 마지막 종가점 강조 + "현재" 라벨
+            if let last = data.last {
+                PointMark(x: .value("일", last.id), y: .value("가격", last.close))
+                    .foregroundStyle(Color.primary)
+                    .symbolSize(40)
             }
-            .foregroundStyle(by: .value("계열", "MA20"))
-            .lineStyle(StrokeStyle(lineWidth: 1.2))
-            .interpolationMethod(.monotone)
-            if let ma60 = currentMA60 {
-                RuleMark(y: .value("가격", ma60))
-                    .foregroundStyle(Color.purple)
-                    .lineStyle(StrokeStyle(lineWidth: 1.0, dash: [4, 3]))
-                    .annotation(position: .trailing, alignment: .center) {
-                        VStack(spacing: 0) {
-                            Text("MA60").font(.system(size: 8)).foregroundColor(.purple)
-                            Text(yLabel(ma60)).font(.system(size: 7)).foregroundColor(.purple.opacity(0.8))
-                        }
-                    }
-            }
+            // 내 기준선들
+            baseline(target, "목표", .red,   symbol: "arrowtriangle.up.fill")
+            baseline(avg,    "평단", .green, symbol: "circle.fill")
+            baseline(stop,   "손절", .blue,  symbol: "arrowtriangle.down.fill")
         }
-        .chartForegroundStyleScale([
-            "종가": Color.primary,
-            "MA5":  Color.blue,
-            "MA20": Color.orange,
-        ])
+        .chartYScale(domain: yDomain)
         .chartXAxis(.hidden)
         .chartYAxis {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { v in
@@ -1225,9 +1255,50 @@ private struct PriceLineChart: View {
         .chartLegend(.hidden)
     }
 
-    private func priceYLabel(_ v: Double) -> String {
-        let n = Int(v)
-        if n >= 10_000 { return "\(n / 10_000)만" }
-        return n.formatted()
+    // 기준선 1개(값 있을 때만). 좌측에 "라벨 + 값" 칩.
+    @ChartContentBuilder
+    private func baseline(_ value: Double?, _ label: String, _ color: Color, symbol: String) -> some ChartContent {
+        if let v = value {
+            RuleMark(y: .value("가격", v))
+                .foregroundStyle(color.opacity(0.7))
+                .lineStyle(StrokeStyle(lineWidth: 1.0, dash: [3, 2]))
+                .annotation(position: .leading, alignment: .trailing, spacing: 2) {
+                    HStack(spacing: 2) {
+                        Image(systemName: symbol).font(.system(size: 6))
+                        Text("\(label) \(priceYLabel(v))").font(.system(size: 8, weight: .medium))
+                    }
+                    .foregroundColor(color)
+                }
+        }
+    }
+}
+
+// 거래량 막대. 가격 차트와 같은 기간·개수로 잘라 x축 정렬. 급증일(20일 평균 2배↑) 빨강.
+private struct VolumeBars: View {
+    let bars: [DailyBar]
+    let displayCount: Int
+
+    private struct VPt: Identifiable { let id: Int; let vol: Double; let hot: Bool }
+
+    private var pts: [VPt] {
+        let all = Array(bars.reversed())
+        guard !all.isEmpty else { return [] }
+        let start = max(0, all.count - displayCount)
+        let shown = Array(all[start...])
+        let avg = shown.isEmpty ? 0 : shown.reduce(0.0) { $0 + Double($1.volume) } / Double(shown.count)
+        return shown.enumerated().map { i, b in
+            let v = Double(b.volume)
+            return VPt(id: i, vol: v, hot: avg > 0 && v >= avg * 2)
+        }
+    }
+
+    var body: some View {
+        Chart(pts) { p in
+            BarMark(x: .value("일", p.id), y: .value("거래량", p.vol))
+                .foregroundStyle(p.hot ? Color.red.opacity(0.6) : Color.secondary.opacity(0.35))
+        }
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
+        .chartLegend(.hidden)
     }
 }
