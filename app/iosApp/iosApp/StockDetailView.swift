@@ -1001,8 +1001,7 @@ private struct PriceLineChart: View {
 
     private func yLabel(_ v: Double) -> String {
         let n = Int(v)
-        if n >= 1_000_000 { return "\(n / 10_000)만" }
-        if n >= 10_000    { return "\(n / 1_000)천" }
+        if n >= 10_000 { return "\(n / 10_000)만" }
         return n.formatted()
     }
 
@@ -1096,8 +1095,7 @@ private struct PriceLineChart: View {
 
     private func priceYLabel(_ v: Double) -> String {
         let n = Int(v)
-        if n >= 1_000_000 { return "\(n / 10_000)만" }
-        if n >= 10_000    { return "\(n / 1_000)천" }
+        if n >= 10_000 { return "\(n / 10_000)만" }
         return n.formatted()
     }
 }

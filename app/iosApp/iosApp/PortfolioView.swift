@@ -13,18 +13,22 @@ struct PortfolioView: View {
     private static let sliceColors: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .mint, .cyan, .yellow]
     private static func sliceColor(_ i: Int) -> Color { sliceColors[i % sliceColors.count] }
 
-    // 종목코드 → 섹터 레이블 (관심종목 기준, 신규 추가 시 여기에 등록)
+    // 종목코드 → 섹터 레이블 (보유 종목 추가 시 여기에 등록)
     private static let sectorMap: [String: String] = [
-        "005930": "반도체", "000660": "반도체",          // 삼성전자, SK하이닉스
-        "018260": "IT서비스", "307950": "IT서비스",       // 삼성SDS, 현대오토에버
-        "012450": "방산", "047810": "방산",               // 한화에어로스페이스, 한국항공우주
+        "005930": "반도체", "000660": "반도체",                         // 삼성전자, SK하이닉스
+        "018260": "IT서비스", "307950": "IT서비스",                     // 삼성SDS, 현대오토에버
+        "064400": "IT서비스", "035420": "IT서비스",                     // LG씨엔에스, NAVER
+        "012450": "방산", "047810": "방산",                             // 한화에어로스페이스, 한국항공우주
         "267260": "전력기기", "001440": "전력기기", "062040": "전력기기", // HD현대일렉트릭, 대한전선, 산일전기
-        "329180": "조선",                                 // HD현대중공업
-        "066570": "전자",                                 // LG전자
+        "329180": "조선",                                               // HD현대중공업
+        "066570": "전자",                                               // LG전자
+        "034020": "에너지",                                             // 두산에너빌리티
+        "005380": "자동차",                                             // 현대차
     ]
     private static let sectorColors: [String: Color] = [
         "반도체": .blue, "IT서비스": .purple, "방산": .red,
-        "전력기기": .orange, "조선": .teal, "전자": .green, "기타": .secondary,
+        "전력기기": .orange, "조선": .teal, "전자": .green,
+        "에너지": .yellow, "자동차": .cyan, "기타": .secondary,
     ]
 
     var body: some View {
