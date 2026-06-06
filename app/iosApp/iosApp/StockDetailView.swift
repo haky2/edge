@@ -108,20 +108,25 @@ struct StockDetailView: View {
     }
 
     // 가격 차트 + 기본 지표 카드. 일봉 데이터 로드 전엔 숫자만 표시.
-    @ViewBuilder
     private func priceChartCard(_ q: Quote) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let ordered = Array(dailyBars.reversed())   // [0]=oldest, last=newest
+        let currentClose = ordered.last.map { Double($0.close) }
+        let ma5  = ordered.count >= 5  ? ordered.suffix(5).reduce(0.0)  { $0 + Double($1.close) } / 5  : nil as Double?
+        let ma20 = ordered.count >= 20 ? ordered.suffix(20).reduce(0.0) { $0 + Double($1.close) } / 20 : nil as Double?
+        let ma60 = ordered.count >= 60 ? ordered.suffix(60).reduce(0.0) { $0 + Double($1.close) } / 60 : nil as Double?
+
+        return VStack(alignment: .leading, spacing: 8) {
             if !dailyBars.isEmpty {
                 HStack(spacing: 10) {
-                    chartLegendItem("종가", .primary)
-                    chartLegendItem("MA5", .blue)
-                    chartLegendItem("MA20", .orange)
-                    chartLegendItem("MA60", .purple)
+                    chartLegendItem("종가",  .primary, nil,   currentClose)
+                    chartLegendItem("MA5",  .blue,    ma5,   currentClose)
+                    chartLegendItem("MA20", .orange,  ma20,  currentClose)
+                    chartLegendItem("MA60", .purple,  ma60,  currentClose, isDash: true)
                 }
                 .font(.caption2)
                 .padding(.top, 4)
                 PriceLineChart(bars: dailyBars)
-                    .frame(height: 150)
+                    .frame(height: 180)
                 Divider()
             }
             Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
@@ -151,11 +156,28 @@ struct StockDetailView: View {
         }
     }
 
-    private func chartLegendItem(_ label: String, _ color: Color) -> some View {
-        HStack(spacing: 3) {
-            Rectangle().fill(color).frame(width: 12, height: 2)
-            Text(label).foregroundColor(.secondary)
+    private func chartLegendItem(_ label: String, _ color: Color,
+                                 _ maVal: Double?, _ currentPrice: Double?,
+                                 isDash: Bool = false) -> some View {
+        let above: Bool? = maVal.flatMap { mv in currentPrice.map { $0 >= mv } }
+        return HStack(spacing: 3) {
+            if isDash {
+                HStack(spacing: 2) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        Rectangle().fill(color).frame(width: 3, height: 1.5)
+                    }
+                }
+            } else {
+                Rectangle().fill(color).frame(width: 12, height: 2)
+            }
+            Text(label).foregroundColor(color)
+            if let ab = above {
+                Image(systemName: ab ? "arrow.up" : "arrow.down")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundColor(ab ? .red : .blue)
+            }
         }
+        .font(.caption2)
     }
 
     // 내 포지션 카드(1.5b/c). 평단가·수량이 있으면 현재가로 수익률/평가손익 계산, 목표·손절은 거리(%)와 도달 여부.
@@ -977,6 +999,13 @@ private struct PriceLineChart: View {
 
     private var orderedBars: [DailyBar] { Array(bars.reversed()) }
 
+    private func yLabel(_ v: Double) -> String {
+        let n = Int(v)
+        if n >= 1_000_000 { return "\(n / 10_000)만" }
+        if n >= 10_000    { return "\(n / 1_000)천" }
+        return n.formatted()
+    }
+
     private var closePts: [CPoint] {
         let all = orderedBars
         let start = max(0, all.count - 30)
@@ -1020,26 +1049,29 @@ private struct PriceLineChart: View {
                 LineMark(x: .value("일", p.id), y: .value("가격", p.close), series: .value("계열", "종가"))
             }
             .foregroundStyle(by: .value("계열", "종가"))
-            .lineStyle(StrokeStyle(lineWidth: 1.8))
+            .lineStyle(StrokeStyle(lineWidth: 2.4))
             .interpolationMethod(.monotone)
             ForEach(ma5) { p in
                 LineMark(x: .value("일", p.id), y: .value("가격", p.value), series: .value("계열", "MA5"))
             }
             .foregroundStyle(by: .value("계열", "MA5"))
-            .lineStyle(StrokeStyle(lineWidth: 1.6))
+            .lineStyle(StrokeStyle(lineWidth: 1.2))
             .interpolationMethod(.monotone)
             ForEach(ma20) { p in
                 LineMark(x: .value("일", p.id), y: .value("가격", p.value), series: .value("계열", "MA20"))
             }
             .foregroundStyle(by: .value("계열", "MA20"))
-            .lineStyle(StrokeStyle(lineWidth: 1.6))
+            .lineStyle(StrokeStyle(lineWidth: 1.2))
             .interpolationMethod(.monotone)
             if let ma60 = currentMA60 {
                 RuleMark(y: .value("가격", ma60))
                     .foregroundStyle(Color.purple)
-                    .lineStyle(StrokeStyle(lineWidth: 1.3, dash: [4, 3]))
+                    .lineStyle(StrokeStyle(lineWidth: 1.0, dash: [4, 3]))
                     .annotation(position: .trailing, alignment: .center) {
-                        Text("MA60").font(.system(size: 8)).foregroundColor(.purple)
+                        VStack(spacing: 0) {
+                            Text("MA60").font(.system(size: 8)).foregroundColor(.purple)
+                            Text(yLabel(ma60)).font(.system(size: 7)).foregroundColor(.purple.opacity(0.8))
+                        }
                     }
             }
         }

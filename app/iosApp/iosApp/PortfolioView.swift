@@ -13,6 +13,20 @@ struct PortfolioView: View {
     private static let sliceColors: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .mint, .cyan, .yellow]
     private static func sliceColor(_ i: Int) -> Color { sliceColors[i % sliceColors.count] }
 
+    // 종목코드 → 섹터 레이블 (관심종목 기준, 신규 추가 시 여기에 등록)
+    private static let sectorMap: [String: String] = [
+        "005930": "반도체", "000660": "반도체",          // 삼성전자, SK하이닉스
+        "018260": "IT서비스", "307950": "IT서비스",       // 삼성SDS, 현대오토에버
+        "012450": "방산", "047810": "방산",               // 한화에어로스페이스, 한국항공우주
+        "267260": "전력기기", "001440": "전력기기", "062040": "전력기기", // HD현대일렉트릭, 대한전선, 산일전기
+        "329180": "조선",                                 // HD현대중공업
+        "066570": "전자",                                 // LG전자
+    ]
+    private static let sectorColors: [String: Color] = [
+        "반도체": .blue, "IT서비스": .purple, "방산": .red,
+        "전력기기": .orange, "조선": .teal, "전자": .green, "기타": .secondary,
+    ]
+
     var body: some View {
         NavigationStack {
             Group {
@@ -140,6 +154,35 @@ struct PortfolioView: View {
                     .frame(maxWidth: .infinity)
                 }
             }
+
+            // 섹터 비중 바
+            if rows.count >= 1 && !sectorRows.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("섹터 비중").font(.caption).foregroundColor(.secondary)
+                    let totalEval = sectorRows.reduce(0.0) { $0 + $1.evaluated }
+                    ForEach(sectorRows, id: \.sector) { row in
+                        let pct = totalEval == 0 ? 0.0 : row.evaluated / totalEval
+                        let color = Self.sectorColors[row.sector] ?? .secondary
+                        HStack(spacing: 8) {
+                            Text(row.sector)
+                                .font(.caption2)
+                                .foregroundColor(color)
+                                .frame(width: 52, alignment: .leading)
+                            GeometryReader { geo in
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(color.opacity(0.75))
+                                    .frame(width: max(4, geo.size.width * CGFloat(pct)), height: 10)
+                            }
+                            .frame(height: 10)
+                            Text(String(format: "%.0f%%", pct * 100))
+                                .font(.caption2.monospacedDigit())
+                                .foregroundColor(.secondary)
+                                .frame(width: 30, alignment: .trailing)
+                        }
+                    }
+                }
+            }
         }
         .padding()
         .background(Color(.secondarySystemBackground))
@@ -182,6 +225,17 @@ struct PortfolioView: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // 섹터별 평가금액 합산
+    private var sectorRows: [(sector: String, evaluated: Double)] {
+        var map: [String: Double] = [:]
+        for row in rows {
+            let sector = Self.sectorMap[row.item.code] ?? "기타"
+            map[sector, default: 0] += row.evaluated
+        }
+        return map.map { (sector: $0.key, evaluated: $0.value) }
+                  .sorted { $0.evaluated > $1.evaluated }
     }
 
     private func load() async {
