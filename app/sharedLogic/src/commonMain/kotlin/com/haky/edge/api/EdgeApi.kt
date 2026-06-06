@@ -7,6 +7,7 @@ import com.haky.edge.model.EarningsEntry
 import com.haky.edge.model.InvestorFlow
 import com.haky.edge.model.MacroImpact
 import com.haky.edge.model.MacroIndicator
+import com.haky.edge.model.MarketMood
 import com.haky.edge.model.StockImpact
 import com.haky.edge.model.NewsItem
 import com.haky.edge.model.Quote
@@ -115,6 +116,14 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getMacro(): List<MacroIndicator> =
         client.get("$baseUrl/macro").body()
+
+    /**
+     * 오늘 시장 분위기(코스피 출발 방향) Claude 해석. 기존 10개 매크로 지표 재사용.
+     * Claude 호출이라 첫 생성은 수 초 걸리고 백엔드가 당일 캐시한다.
+     */
+    @Throws(Exception::class)
+    suspend fun getMarketMood(): MarketMood =
+        client.get("$baseUrl/market-mood").body()
 
     /**
      * 매크로 → 내 종목 영향 분석. 보유/관심 종목 코드를 넘기면 종목별 영향(계산) + Claude 종합 해석.

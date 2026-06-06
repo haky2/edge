@@ -11,6 +11,7 @@ import com.haky.edge.macro.CopperClient
 import com.haky.edge.macro.EcosClient
 import com.haky.edge.macro.FearGreedClient
 import com.haky.edge.macro.MacroImpactService
+import com.haky.edge.macro.MarketMoodService
 import com.haky.edge.macro.SectorBriefingService
 import com.haky.edge.master.StockMaster
 import com.haky.edge.news.NaverNewsClient
@@ -23,6 +24,7 @@ import com.haky.edge.routes.earningsRoutes
 import com.haky.edge.routes.investorRoutes
 import com.haky.edge.routes.macroImpactRoutes
 import com.haky.edge.routes.macroRoutes
+import com.haky.edge.routes.marketMoodRoutes
 import com.haky.edge.routes.newsRoutes
 import com.haky.edge.routes.quoteRoutes
 import com.haky.edge.routes.searchRoutes
@@ -107,6 +109,7 @@ fun Application.module() {
     val copper = CopperClient()
     val ecos = EcosClient(apiKey = System.getenv("ECOS_API_KEY").orEmpty())
     val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos, naver)
+    val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
 
     routing {
@@ -116,6 +119,7 @@ fun Application.module() {
         investorRoutes(kis)
         macroRoutes(kis, fearGreed, copper, ecos)
         macroImpactRoutes(macroImpact)
+        marketMoodRoutes(marketMood)
         newsRoutes(naver)
         searchRoutes(master)
         analysisRoutes(analysis)
