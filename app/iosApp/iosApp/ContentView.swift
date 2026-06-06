@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 import SharedLogic
 
 // 앱 전역 싱글톤. DB는 한 번만 열고, api 인스턴스도 공유한다.
@@ -17,6 +18,7 @@ struct WatchlistView: View {
     @State private var watchlist: [WatchItem] = []
     @State private var quotes: [String: Quote] = [:]
     @State private var supplyBadges: [String: [String]] = [:]  // code → ["외인 3일↑", ...]
+    @State private var sparklines: [String: [Double]] = [:]   // code → 7일 종가(오래된→최신)
     @State private var errorText: String?
     @State private var loading = false
     @State private var showSearch = false
@@ -86,6 +88,19 @@ struct WatchlistView: View {
                 }
             }
             Spacer()
+            if let pts = sparklines[item.code], pts.count >= 2 {
+                let up = pts.last! >= pts.first!
+                Chart {
+                    ForEach(Array(pts.enumerated()), id: \.offset) { i, v in
+                        LineMark(x: .value("d", i), y: .value("p", v))
+                            .foregroundStyle(up ? Color.red : Color.blue)
+                    }
+                }
+                .chartXAxis(.hidden)
+                .chartYAxis(.hidden)
+                .frame(width: 56, height: 28)
+                .padding(.trailing, 8)
+            }
             if let q = quotes[item.code] {
                 let up = q.change >= 0
                 VStack(alignment: .trailing, spacing: 2) {
@@ -127,6 +142,27 @@ struct WatchlistView: View {
         }
         loading = false
         Task { await loadSupplyBadges(items: items) }
+        Task { await loadSparklines(items: items) }
+    }
+
+    // 스파크라인: 종목별 7일 종가를 병렬로 가져온다. 실패 종목은 조용히 skip.
+    private func loadSparklines(items: [WatchItem]) async {
+        var result: [String: [Double]] = [:]
+        await withTaskGroup(of: (String, [Double]).self) { group in
+            for item in items {
+                group.addTask {
+                    guard let bars = try? await self.api.getDaily(code: item.code, bars: 7),
+                          bars.count >= 2 else { return (item.code, []) }
+                    // bars: 최신일이 앞 → reverse해서 오래된→최신 순으로
+                    let closes = bars.reversed().map { Double($0.close) }
+                    return (item.code, closes)
+                }
+            }
+            for await (code, closes) in group {
+                if !closes.isEmpty { result[code] = closes }
+            }
+        }
+        sparklines = result
     }
 
     // 수급 배지: 외인/기관 3일 연속 순매수 여부를 백그라운드에서 확인.
