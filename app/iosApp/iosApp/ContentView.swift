@@ -158,6 +158,8 @@ struct ContentView: View {
                 .tabItem { Label("내 자산", systemImage: "chart.pie") }
             BriefingView()
                 .tabItem { Label("브리핑", systemImage: "newspaper") }
+            StatsView()
+                .tabItem { Label("내 패턴", systemImage: "chart.line.uptrend.xyaxis") }
         }
     }
 }

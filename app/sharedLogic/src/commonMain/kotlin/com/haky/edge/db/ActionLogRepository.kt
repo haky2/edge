@@ -16,4 +16,10 @@ class ActionLogRepository(driverFactory: DriverFactory) {
         queries.selectByCode(code) { id, c, action, reason, createdAt ->
             ActionLogEntry(id, c, action, reason, createdAt)
         }.executeAsList().take(limit)
+
+    /** 전체 로그(최신 순). 통계·패턴 분석용. */
+    fun getAll(): List<ActionLogEntry> =
+        queries.selectAll { id, c, action, reason, createdAt ->
+            ActionLogEntry(id, c, action, reason, createdAt)
+        }.executeAsList()
 }

@@ -129,11 +129,12 @@
 - [x] **섹터 대시보드 v1** ✅ 백엔드 `GET /sectors` — KOSPI 업종지수 6개(전기전자·기계·운수장비·전기가스업·서비스업·철강금속, inquire-index-price FHPUP02100000, MRKT=U). `SectorRoutes.kt` + `KisClient.getSectorIndices()`. SharedLogic `SectorIndex` + `EdgeApi.getSectors()`. 브리핑 시장 탭 "섹터 동향" 섹션(시장 지표 아래·실적 일정 위). iOS BUILD SUCCEEDED + curl 검증(6개 정상). 시뮬 확인 필요.
 - [x] **종목 분석 facts 강화 A+B** ✅ `AnalysisService`에 (A) 일봉 기반 가격흐름 서사(고점 대비 낙폭·상한가 수준 급등·연속 등락) + 뉴스 description 주입 & 유사기사 자카드 클러스터링(대표 8건·"외 N건"), (B) DART 연간 재무(매출·영업익·순익 YoY, `DartClient.getFinancials`, fnlttSinglAcnt 11011, 연결 우선). SYSTEM_PROMPT를 촉매→펀더멘털 대조→현재 위치 흐름으로 개편. **`Analysis` 모델 불변 → 앱 변경 없음**, 코멘트만 풍부해짐. LG CNS 검증 OK. **facts 강화로 Sonnet 충분**(Opus 전환 시 분석 1회 ~5배 비용).
 - [x] **Claude 섹터 분석 + 주목 종목 추천** ✅ 백엔드 `SectorBriefingService` + `GET /sector-briefing?codes=` — 섹터지수 6개 + MacroImpactService 섹터 캐시 재사용. 강세 섹터(+0.5%↑)∩관심종목 = spotlight 알고리즘 계산(LLM 환각 없음). Claude는 2~3문단 해석만. 당일 캐시. SharedLogic `SectorBriefing`/`SpotlightStock` + `EdgeApi.getSectorBriefing()`. BriefingView 시장 탭 "섹터 분석" + "오늘 주목 종목" 섹션. iOS BUILD SUCCEEDED.
-- [ ] **UI/UX 전반 개선** — 브리핑·상세화면·관심종목 리스트 전반 디자인 점검 및 개선. 색상 체계 일관성·카드 레이아웃·섹션 구조·네비게이션 흐름 정리. iOS 시뮬 검증.
+- [x] **UI/UX 전반 개선 v1** ✅ 슬라이스 1A~4 완료 (커밋 7e3d0bb·cf70c10·6d96e31). 상세화면 재정렬·Swift Charts·공시·브리핑 다이어트·수급배지·도넛·섹터 2층·가독성 개선·데이터 신선도 표시.
+- [ ] **UI/UX 개선 v2** — 1차 이후 누적된 개선 요구사항 정리 후 진행. 별도 슬라이스 계획 필요.
 - (검토 중) 분석 C: Claude 웹검색 도구로 실시간 촉매(예: 인물 방한 일정) 보강 — 검색 건당 별도 과금·지연 증가라 비용 검토 후 결정
 
 ### Phase 4 — 학습 / 통계
-- 관심종목 행동 로그 (조회/관심등록/매수여부/결과)
+- [ ] **행동 로그 통계 v1** — 관심종목 행동 로그(매수·매도·관심 등록) 집계 → 신호별 승률·내 패턴 통계 화면. Phase 1부터 `action_log`에 데이터 쌓임.
 - 관심만 보이고 안 산 종목 이후 추이
 - 내 투자 패턴 분석 ("외인 순매수 신호 매수 승률 70%" 등)
 - 종목 비교 (두 종목 나란히)

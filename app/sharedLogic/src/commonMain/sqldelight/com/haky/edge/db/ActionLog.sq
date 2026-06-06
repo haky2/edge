@@ -24,3 +24,8 @@ SELECT id, code, action, reason, created_at
 FROM action_log
 ORDER BY created_at DESC
 LIMIT ?;
+
+selectAll:
+SELECT id, code, action, reason, created_at
+FROM action_log
+ORDER BY created_at DESC;
