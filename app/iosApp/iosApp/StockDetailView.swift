@@ -382,14 +382,14 @@ struct StockDetailView: View {
                     .padding(.vertical, 6)
             }
 
-            if let t = item.targetPrice?.doubleValue {
-                Divider()
-                let gap = (t - price) / price * 100   // 현재가 대비 남은 거리
-                let reached = price >= t
-                row("목표가", "\(Int(t).formatted()) 원  " + (reached ? "🎯 도달" : String(format: "(%+.1f%%)", gap)))
-            }
-            if let s = item.stopPrice?.doubleValue {
-                let gap = (s - price) / price * 100
+            let targetP = item.targetPrice?.doubleValue
+            let stopP   = item.stopPrice?.doubleValue
+            if targetP != nil || stopP != nil { Divider() }
+            if let t = targetP {
+                upsideGauge(currentPrice: price, targetPrice: t,
+                            avgPrice: item.avgPrice?.doubleValue, stopPrice: stopP)
+            } else if let s = stopP {
+                let gap     = (s - price) / price * 100
                 let reached = price <= s
                 row("손절가", "\(Int(s).formatted()) 원  " + (reached ? "⚠️ 도달" : String(format: "(%+.1f%%)", gap)))
             }
@@ -564,6 +564,62 @@ struct StockDetailView: View {
         case ..<75: return .secondary
         default: return .red
         }
+    }
+
+    // 목표가 상승여력 게이지. 앵커(손절가 or 평단가 or 추정 하한)~목표가 바에 현재가 위치 표시.
+    private func upsideGauge(currentPrice: Double, targetPrice: Double, avgPrice: Double?, stopPrice: Double?) -> some View {
+        let upside  = (targetPrice - currentPrice) / currentPrice * 100
+        let reached = currentPrice >= targetPrice
+        let anchor: Double = stopPrice ?? avgPrice ?? min(currentPrice * 0.85, targetPrice * 0.75)
+        let range   = max(targetPrice - anchor, 1)
+        let rawProg = (currentPrice - anchor) / range
+        let progress = min(max(rawProg, 0), 1.05)
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("목표가까지").foregroundColor(.secondary)
+                Spacer()
+                Text(reached ? "🎯 도달" : String(format: "%+.1f%%", upside))
+                    .fontWeight(.semibold)
+                    .foregroundColor(reached ? .green : upside < 5 ? .orange : .primary)
+            }
+            .font(.caption)
+
+            GeometryReader { geo in
+                let dotX = min(geo.size.width * progress, geo.size.width - 1)
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color(.systemFill)).frame(height: 5)
+                    Capsule()
+                        .fill(reached ? Color.green : Color.orange)
+                        .frame(width: max(dotX, 5), height: 5)
+                    Circle()
+                        .fill(reached ? Color.green : Color.orange)
+                        .frame(width: 10, height: 10)
+                        .offset(x: dotX - 5, y: -2.5)
+                }
+            }
+            .frame(height: 10)
+
+            HStack(alignment: .top) {
+                if let s = stopPrice {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("\(Int(s).formatted())원").font(.caption2)
+                        Text("손절").font(.caption2).foregroundColor(.blue)
+                    }
+                } else if let a = avgPrice {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("\(Int(a).formatted())원").font(.caption2)
+                        Text("평단").font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("\(Int(targetPrice).formatted())원").font(.caption2)
+                    Text("목표").font(.caption2).foregroundColor(.red)
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     // AI 종합 코멘트 카드(2c). 사실(시세·52주·PER·수급·뉴스)을 백엔드가 모아 Claude가 해석.
