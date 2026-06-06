@@ -138,7 +138,7 @@ struct StockDetailView: View {
                 if chartPeriod == .today {
                     todaySummaryView(q)
                 } else if !dailyBars.isEmpty {
-                    priceChartLegend(hasAvg: avg != nil, hasTarget: target != nil, hasStop: stop != nil)
+                    priceChartLegend(avg: avg, target: target, stop: stop)
                         .padding(.bottom, 4)
 
                     PriceLineChart(
@@ -284,11 +284,13 @@ struct StockDetailView: View {
         }
     }
 
-    // 가격 차트 범례. 종가·추세선·고저폭은 항상, 평단·목표·손절은 입력돼 있을 때만.
-    private func priceChartLegend(hasAvg: Bool, hasTarget: Bool, hasStop: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    // 가격 차트 범례.
+    // 1행: 차트 요소 아이콘(고저폭·종가·추세선·기준선 아이콘)
+    // 2행: 기준선 값 칩(목표/평단/손절 입력돼 있을 때만) — 차트 안 annotation 제거 대신 여기 표시
+    private func priceChartLegend(avg: Double?, target: Double?, stop: Double?) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            // 1행: 선 종류 아이콘
             HStack(spacing: 8) {
-                // 고저 범위 범례
                 HStack(spacing: 3) {
                     Rectangle().fill(Color.primary.opacity(0.12))
                         .frame(width: 12, height: 8).cornerRadius(2)
@@ -303,12 +305,27 @@ struct StockDetailView: View {
                         .font(.system(size: 10))
                         .foregroundColor(.orange.opacity(0.8))
                 }
-                if hasTarget { legendMark("목표", "arrowtriangle.up.fill", .red) }
-                if hasAvg    { legendMark("평단", "circle.fill", .green) }
-                if hasStop   { legendMark("손절", "arrowtriangle.down.fill", .blue) }
                 Spacer()
             }
             .font(.caption2)
+
+            // 2행: 기준선 값 칩 (값 있을 때만)
+            if target != nil || avg != nil || stop != nil {
+                HStack(spacing: 6) {
+                    if let v = target {
+                        baselineChip("목표", priceYLabel(v), "arrowtriangle.up.fill", .red)
+                    }
+                    if let v = avg {
+                        baselineChip("평단", priceYLabel(v), "circle.fill", .green)
+                    }
+                    if let v = stop {
+                        baselineChip("손절", priceYLabel(v), "arrowtriangle.down.fill", .blue)
+                    }
+                    Spacer()
+                }
+                .font(.caption2)
+            }
+
             if trendLineHelpExpanded {
                 Text("추세선(주황 점선): 최근 20거래일 종가 평균. 현재가가 위면 단기 상승추세, 아래면 하락추세.\n고저 폭(회색 띠): 각 날의 하루 중 가격 변동 범위(고가~저가).")
                     .font(.caption2)
@@ -316,6 +333,16 @@ struct StockDetailView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private func baselineChip(_ label: String, _ value: String, _ symbol: String, _ color: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: symbol).font(.system(size: 6)).foregroundColor(color)
+            Text("\(label) \(value)").foregroundColor(color)
+        }
+        .padding(.horizontal, 5).padding(.vertical, 2)
+        .background(color.opacity(0.10))
+        .cornerRadius(4)
     }
 
     private func legendLine(_ label: String, _ color: Color, dash: Bool) -> some View {
@@ -1391,9 +1418,9 @@ private struct PriceLineChart: View {
                     .symbolSize(40)
             }
             // 내 기준선들
-            baseline(target, "목표", .red,   symbol: "arrowtriangle.up.fill")
-            baseline(avg,    "평단", .green, symbol: "circle.fill")
-            baseline(stop,   "손절", .blue,  symbol: "arrowtriangle.down.fill")
+            baseline(target, .red)
+            baseline(avg,    .green)
+            baseline(stop,   .blue)
         }
         .chartYScale(domain: yDomain)
         .chartXAxis(.hidden)
@@ -1410,23 +1437,13 @@ private struct PriceLineChart: View {
         .chartLegend(.hidden)
     }
 
-    // 기준선 1개(값 있을 때만). 라인 위 좌측에 "라벨+값" 칩으로 표시(잘림 방지).
+    // 기준선 1개(값 있을 때만). 값 라벨은 차트 밖 범례 2행에 표시하므로 라인만 그린다.
     @ChartContentBuilder
-    private func baseline(_ value: Double?, _ label: String, _ color: Color, symbol: String) -> some ChartContent {
+    private func baseline(_ value: Double?, _ color: Color) -> some ChartContent {
         if let v = value {
             RuleMark(y: .value("가격", v))
                 .foregroundStyle(color.opacity(0.7))
                 .lineStyle(StrokeStyle(lineWidth: 1.0, dash: [3, 2]))
-                .annotation(position: .bottom, alignment: .leading, spacing: 2) {
-                    HStack(spacing: 2) {
-                        Image(systemName: symbol).font(.system(size: 6))
-                        Text("\(label) \(priceYLabel(v))").font(.system(size: 8, weight: .medium))
-                    }
-                    .foregroundColor(color)
-                    .padding(.horizontal, 4).padding(.vertical, 2)
-                    .background(color.opacity(0.10))
-                    .cornerRadius(4)
-                }
         }
     }
 }
