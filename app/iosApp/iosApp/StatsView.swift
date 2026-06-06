@@ -56,6 +56,9 @@ struct StatsView: View {
             .padding(.vertical, 4)
         } header: {
             Text("전체 \(entries.count)건")
+        } footer: {
+            Text("종목 상세 화면에서 관심·매수·매도를 기록할 때마다 쌓여요.")
+                .font(.caption2)
         }
     }
 
@@ -70,7 +73,7 @@ struct StatsView: View {
     // MARK: - 섹션: 보유기간
 
     private var holdSection: some View {
-        Section("매수 → 매도 보유기간") {
+        Section {
             if let avg = avgHoldDays {
                 HStack {
                     Text("평균 보유기간")
@@ -92,6 +95,11 @@ struct StatsView: View {
                 }
                 .padding(.vertical, 2)
             }
+        } header: {
+            Text("매수 → 매도 보유기간")
+        } footer: {
+            Text("매수 기록 후 같은 종목을 매도하기까지 걸린 시간. 7일 이하는 단타로 표시돼요.")
+                .font(.caption2)
         }
     }
 
@@ -117,7 +125,7 @@ struct StatsView: View {
                 Text("신호별 승률 (\(winRateRows.count)개 신호 · \(totalPairs)쌍)")
             }
         } footer: {
-            Text("매수 사유 태그별 수익 실현 비율. 가격 기록 있는 매수→매도 쌍만 집계.")
+            Text("매수할 때 입력한 사유 태그가 '신호'예요. 예: '외인 순매수', '52주 저점'. 어떤 신호로 산 종목이 수익으로 이어졌는지 볼 수 있어요.")
                 .font(.caption2)
         }
     }
@@ -172,7 +180,7 @@ struct StatsView: View {
         } header: {
             Text("놓친 종목 (관심 후 미매수 \(missedRows.count)개)")
         } footer: {
-            Text("관심 기록은 있지만 매수 로그가 없는 종목.")
+            Text("관심은 눌렀지만 매수하지 않은 종목. 그때 샀다면 지금 얼마였는지 가상 수익률로 보여줘요.")
                 .font(.caption2)
         }
     }
@@ -210,7 +218,7 @@ struct StatsView: View {
     // MARK: - 섹션: 사유 분포
 
     private var reasonSection: some View {
-        Section("사유 태그 (Top \(min(reasonRows.count, 8))개)") {
+        Section {
             ForEach(reasonRows.prefix(8), id: \.reason) { row in
                 HStack {
                     Text(row.reason).font(.body)
@@ -224,13 +232,18 @@ struct StatsView: View {
                 }
                 .padding(.vertical, 2)
             }
+        } header: {
+            Text("사유 태그 (Top \(min(reasonRows.count, 8))개)")
+        } footer: {
+            Text("관심·매수·매도 기록 시 입력한 사유 태그 빈도. 내가 어떤 이유로 행동하는지 패턴을 볼 수 있어요.")
+                .font(.caption2)
         }
     }
 
     // MARK: - 섹션: 종목별 활동
 
     private var codeSection: some View {
-        Section("종목별 활동") {
+        Section {
             ForEach(codeRows, id: \.code) { row in
                 HStack(spacing: 8) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -244,13 +257,18 @@ struct StatsView: View {
                 }
                 .padding(.vertical, 2)
             }
+        } header: {
+            Text("종목별 활동")
+        } footer: {
+            Text("종목마다 관심·매수·매도를 몇 번 기록했는지. 자주 들여다본 종목이 위에 나와요.")
+                .font(.caption2)
         }
     }
 
     // MARK: - 섹션: 최근 활동
 
     private var recentSection: some View {
-        Section("최근 활동") {
+        Section {
             ForEach(entries.prefix(20), id: \.id) { e in
                 HStack(spacing: 8) {
                     actionPill(actionLabel(e.action), actionColor(e.action))
@@ -269,6 +287,11 @@ struct StatsView: View {
                 }
                 .padding(.vertical, 2)
             }
+        } header: {
+            Text("최근 활동")
+        } footer: {
+            Text("가장 최근 기록 20건. 상세 화면에서 관심·매수·매도 버튼을 누를 때마다 쌓여요.")
+                .font(.caption2)
         }
     }
 
