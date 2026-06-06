@@ -89,7 +89,7 @@ struct WatchlistView: View {
             }
             Spacer()
             if let pts = sparklines[item.code], pts.count >= 2 {
-                let up = pts.last! >= pts.first!
+                let up = quotes[item.code].map { $0.changeRate >= 0 } ?? (pts.last! >= pts.first!)
                 Chart {
                     ForEach(Array(pts.enumerated()), id: \.offset) { i, v in
                         LineMark(x: .value("d", i), y: .value("p", v))
