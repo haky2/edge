@@ -26,6 +26,7 @@ struct StockDetailView: View {
     @State private var indicatorHelpExpanded = false   // 기술적 지표 설명 접기
     @State private var valuationHelpExpanded = false    // PER/PBR 설명 접기
     @State private var chartPeriod: ChartPeriod = .m3   // 가격 차트 기간 토글
+    @State private var trendLineHelpExpanded = false     // 20일 추세선 설명 토글
     @State private var analyzing = false
     @State private var loading = false
     @State private var showEdit = false
@@ -119,31 +120,40 @@ struct StockDetailView: View {
         let count  = chartPeriod.barCount
 
         return VStack(alignment: .leading, spacing: 10) {
-            if !dailyBars.isEmpty {
-                // 헤더: 제목 + 기간 토글
+            if !dailyBars.isEmpty || chartPeriod == .today {
+                // 헤더: 제목
                 HStack {
                     Text("가격 흐름").font(.subheadline.weight(.semibold))
                     Spacer()
-                    Picker("", selection: $chartPeriod) {
-                        ForEach(ChartPeriod.allCases, id: \.self) { p in
-                            Text(p.label).tag(p)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 168)
                 }
                 .padding(.top, 4)
+                // 기간 토글 — 옵션이 5개라 별도 줄
+                Picker("", selection: $chartPeriod) {
+                    ForEach(ChartPeriod.allCases, id: \.self) { p in
+                        Text(p.label).tag(p)
+                    }
+                }
+                .pickerStyle(.segmented)
 
-                priceChartLegend(hasAvg: avg != nil, hasTarget: target != nil, hasStop: stop != nil)
+                if chartPeriod == .today {
+                    todaySummaryView(q)
+                } else if !dailyBars.isEmpty {
+                    priceChartLegend(hasAvg: avg != nil, hasTarget: target != nil, hasStop: stop != nil)
 
-                PriceLineChart(
-                    bars: dailyBars, displayCount: count,
-                    avg: avg, target: target, stop: stop
-                )
-                .frame(height: 190)
+                    PriceLineChart(
+                        bars: dailyBars, displayCount: count,
+                        avg: avg, target: target, stop: stop
+                    )
+                    .frame(height: 190)
 
-                VolumeBars(bars: dailyBars, displayCount: count)
-                    .frame(height: 40)
+                    HStack {
+                        Text("거래량").font(.system(size: 9)).foregroundColor(.secondary)
+                        Text("빨강 = 평소 2배↑").font(.system(size: 9)).foregroundColor(.red.opacity(0.65))
+                        Spacer()
+                    }
+                    VolumeBars(bars: dailyBars, displayCount: count)
+                        .frame(height: 36)
+                }
 
                 Divider()
             }
@@ -166,17 +176,145 @@ struct StockDetailView: View {
         .cardStyle()
     }
 
-    // 가격 차트 범례. 종가·추세선은 항상, 평단·목표·손절은 입력돼 있을 때만.
-    private func priceChartLegend(hasAvg: Bool, hasTarget: Bool, hasStop: Bool) -> some View {
-        HStack(spacing: 10) {
-            legendLine("종가", .primary, dash: false)
-            legendLine("20일 추세선", .orange, dash: true)
-            if hasTarget { legendMark("목표", "arrowtriangle.up.fill", .red) }
-            if hasAvg    { legendMark("평단", "circle.fill", .green) }
-            if hasStop   { legendMark("손절", "arrowtriangle.down.fill", .blue) }
-            Spacer()
+    // 오늘 탭: Quote(시가/고가/저가/현재가/거래량) + 거래량×가격 방향 추론.
+    // 분봉 차트 없이 당일 요약으로 "오늘 어떤 날인지" 전달.
+    private func todaySummaryView(_ q: Quote) -> some View {
+        let avg20Vol: Double = {
+            let recent = Array(dailyBars.prefix(20))
+            guard !recent.isEmpty else { return 0 }
+            return recent.reduce(0.0) { $0 + Double($1.volume) } / Double(recent.count)
+        }()
+        let volRatio = avg20Vol > 0 ? Double(q.volume) / avg20Vol : 0
+        let priceUp  = q.changeRate >= 0
+
+        return VStack(alignment: .leading, spacing: 12) {
+            // 시가·현재가
+            HStack(alignment: .top) {
+                ohlcStat("시가", q.open.formatted())
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(q.price.formatted()) 원").font(.callout.weight(.bold))
+                    Text("\(q.changeRate >= 0 ? "+" : "")\(String(format: "%.2f%%", q.changeRate))")
+                        .font(.caption2)
+                        .foregroundColor(priceUp ? .red : .blue)
+                }
+            }
+            // 고가·저가
+            HStack {
+                ohlcStat("고가", q.high.formatted(), valueColor: .red)
+                Spacer()
+                ohlcStat("저가", q.low.formatted(), valueColor: .blue)
+            }
+            // 장중 위치 게이지
+            if q.high > q.low {
+                let range = Double(q.high - q.low)
+                let pos   = Double(q.price - q.low) / range
+                VStack(spacing: 3) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.secondary.opacity(0.15)).frame(height: 5)
+                            Circle()
+                                .fill(priceUp ? Color.red : Color.blue)
+                                .frame(width: 9, height: 9)
+                                .offset(x: (geo.size.width - 9) * pos)
+                        }
+                    }
+                    .frame(height: 9)
+                    HStack {
+                        Text("저 \(q.low.formatted())").font(.system(size: 9)).foregroundColor(.blue)
+                        Spacer()
+                        Text("현재 위치").font(.system(size: 9)).foregroundColor(.secondary)
+                        Spacer()
+                        Text("고 \(q.high.formatted())").font(.system(size: 9)).foregroundColor(.red)
+                    }
+                }
+            }
+            Divider()
+            // 거래량 + 해석
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .lastTextBaseline, spacing: 4) {
+                    Text("오늘 거래량").font(.caption).foregroundColor(.secondary)
+                    Text("\(q.volume.formatted())주").font(.caption.weight(.semibold))
+                    if avg20Vol > 0 {
+                        Text("(평소의 \(String(format: "%.1f", volRatio))배)")
+                            .font(.system(size: 10)).foregroundColor(.secondary)
+                    }
+                }
+                let (emoji, title, desc) = volPriceSignal(priceUp: priceUp, ratio: volRatio)
+                HStack(alignment: .top, spacing: 8) {
+                    Text(emoji).font(.title3)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(.caption.weight(.semibold))
+                        Text(desc).font(.caption2).foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.secondary.opacity(0.07))
+                .cornerRadius(10)
+            }
         }
-        .font(.caption2)
+    }
+
+    private func ohlcStat(_ label: String, _ value: String, valueColor: Color = .primary) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label).font(.caption2).foregroundColor(.secondary)
+            Text(value).font(.callout.weight(.semibold)).foregroundColor(valueColor)
+        }
+    }
+
+    private func volPriceSignal(priceUp: Bool, ratio: Double) -> (String, String, String) {
+        let hot = ratio >= 1.5
+        let ratioStr = String(format: "%.1f", ratio)
+        switch (priceUp, hot) {
+        case (true, true):
+            return ("📈", "강한 매수세",
+                    "거래량이 평소의 \(ratioStr)배로 급증하고 가격도 올랐어요. 상승에 힘이 실린 날이에요.")
+        case (true, false):
+            return ("↗️", "조심스러운 상승",
+                    "가격은 올랐지만 거래량이 많지 않아요. 상승이 지속될지 한 번 더 확인해 보는 게 좋아요.")
+        case (false, true):
+            return ("📉", "강한 매도세",
+                    "거래량이 평소의 \(ratioStr)배로 급증하고 가격도 내렸어요. 하락에 힘이 실린 날이에요.")
+        case (false, false):
+            return ("😴", "소강 하락",
+                    "거래량도 적고 가격도 소폭 내렸어요. 뚜렷한 세력 없이 관망하는 분위기예요.")
+        }
+    }
+
+    // 가격 차트 범례. 종가·추세선·고저폭은 항상, 평단·목표·손절은 입력돼 있을 때만.
+    private func priceChartLegend(hasAvg: Bool, hasTarget: Bool, hasStop: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                // 고저 범위 범례
+                HStack(spacing: 3) {
+                    Rectangle().fill(Color.primary.opacity(0.12))
+                        .frame(width: 12, height: 8).cornerRadius(2)
+                    Text("고저 폭").foregroundColor(.secondary)
+                }
+                legendLine("종가", .primary, dash: false)
+                legendLine("추세선", .orange, dash: true)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { trendLineHelpExpanded.toggle() }
+                } label: {
+                    Image(systemName: trendLineHelpExpanded ? "info.circle.fill" : "info.circle")
+                        .font(.system(size: 10))
+                        .foregroundColor(.orange.opacity(0.8))
+                }
+                if hasTarget { legendMark("목표", "arrowtriangle.up.fill", .red) }
+                if hasAvg    { legendMark("평단", "circle.fill", .green) }
+                if hasStop   { legendMark("손절", "arrowtriangle.down.fill", .blue) }
+                Spacer()
+            }
+            .font(.caption2)
+            if trendLineHelpExpanded {
+                Text("추세선(주황 점선): 최근 20거래일 종가 평균. 현재가가 위면 단기 상승추세, 아래면 하락추세.\n고저 폭(회색 띠): 각 날의 하루 중 가격 변동 범위(고가~저가).")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private func legendLine(_ label: String, _ color: Color, dash: Bool) -> some View {
@@ -1148,9 +1286,25 @@ private struct FlowEntry: Identifiable {
 // MA5·MA20은 시계열 라인, MA60은 현재값 기준선(RuleMark).
 // 차트 기간 토글. barCount = 표시할 일봉 개수(영업일 기준 근사).
 enum ChartPeriod: CaseIterable {
-    case m1, m3, all
-    var label: String { switch self { case .m1: "1개월"; case .m3: "3개월"; case .all: "전체" } }
-    var barCount: Int { switch self { case .m1: 22; case .m3: 66; case .all: 999 } }
+    case week, m1, m3, all, today
+    var label: String {
+        switch self {
+        case .week:  "1주"
+        case .m1:    "1개월"
+        case .m3:    "3개월"
+        case .all:   "전체"
+        case .today: "오늘"
+        }
+    }
+    var barCount: Int {
+        switch self {
+        case .week:  5
+        case .m1:    22
+        case .m3:    66
+        case .all:   999
+        case .today: 0   // PriceLineChart 미사용, todaySummaryView 표시
+        }
+    }
 }
 
 private func priceYLabel(_ v: Double) -> String {
@@ -1255,19 +1409,22 @@ private struct PriceLineChart: View {
         .chartLegend(.hidden)
     }
 
-    // 기준선 1개(값 있을 때만). 좌측에 "라벨 + 값" 칩.
+    // 기준선 1개(값 있을 때만). 라인 위 좌측에 "라벨+값" 칩으로 표시(잘림 방지).
     @ChartContentBuilder
     private func baseline(_ value: Double?, _ label: String, _ color: Color, symbol: String) -> some ChartContent {
         if let v = value {
             RuleMark(y: .value("가격", v))
                 .foregroundStyle(color.opacity(0.7))
                 .lineStyle(StrokeStyle(lineWidth: 1.0, dash: [3, 2]))
-                .annotation(position: .leading, alignment: .trailing, spacing: 2) {
+                .annotation(position: .top, alignment: .leading, spacing: 2) {
                     HStack(spacing: 2) {
                         Image(systemName: symbol).font(.system(size: 6))
                         Text("\(label) \(priceYLabel(v))").font(.system(size: 8, weight: .medium))
                     }
                     .foregroundColor(color)
+                    .padding(.horizontal, 4).padding(.vertical, 2)
+                    .background(color.opacity(0.10))
+                    .cornerRadius(4)
                 }
         }
     }
