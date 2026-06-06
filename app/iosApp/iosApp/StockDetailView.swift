@@ -139,6 +139,7 @@ struct StockDetailView: View {
                     todaySummaryView(q)
                 } else if !dailyBars.isEmpty {
                     priceChartLegend(hasAvg: avg != nil, hasTarget: target != nil, hasStop: stop != nil)
+                        .padding(.bottom, 4)
 
                     PriceLineChart(
                         bars: dailyBars, displayCount: count,
@@ -1416,7 +1417,7 @@ private struct PriceLineChart: View {
             RuleMark(y: .value("가격", v))
                 .foregroundStyle(color.opacity(0.7))
                 .lineStyle(StrokeStyle(lineWidth: 1.0, dash: [3, 2]))
-                .annotation(position: .top, alignment: .leading, spacing: 2) {
+                .annotation(position: .bottom, alignment: .leading, spacing: 2) {
                     HStack(spacing: 2) {
                         Image(systemName: symbol).font(.system(size: 6))
                         Text("\(label) \(priceYLabel(v))").font(.system(size: 8, weight: .medium))
