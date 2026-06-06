@@ -309,18 +309,12 @@ struct StockDetailView: View {
             }
             .font(.caption2)
 
-            // 2행: 기준선 값 칩 (값 있을 때만)
+            // 2행: 기준선 아이콘 (값은 차트 좌측 y축에 표시)
             if target != nil || avg != nil || stop != nil {
-                HStack(spacing: 6) {
-                    if let v = target {
-                        baselineChip("목표", priceYLabel(v), "arrowtriangle.up.fill", .red)
-                    }
-                    if let v = avg {
-                        baselineChip("평단", priceYLabel(v), "circle.fill", .green)
-                    }
-                    if let v = stop {
-                        baselineChip("손절", priceYLabel(v), "arrowtriangle.down.fill", .blue)
-                    }
+                HStack(spacing: 8) {
+                    if target != nil { legendMark("목표", "arrowtriangle.up.fill", .red) }
+                    if avg    != nil { legendMark("평단", "circle.fill", .green) }
+                    if stop   != nil { legendMark("손절", "arrowtriangle.down.fill", .blue) }
                     Spacer()
                 }
                 .font(.caption2)
@@ -333,16 +327,6 @@ struct StockDetailView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-    }
-
-    private func baselineChip(_ label: String, _ value: String, _ symbol: String, _ color: Color) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: symbol).font(.system(size: 6)).foregroundColor(color)
-            Text("\(label) \(value)").foregroundColor(color)
-        }
-        .padding(.horizontal, 5).padding(.vertical, 2)
-        .background(color.opacity(0.10))
-        .cornerRadius(4)
     }
 
     private func legendLine(_ label: String, _ color: Color, dash: Bool) -> some View {
@@ -1425,6 +1409,7 @@ private struct PriceLineChart: View {
         .chartYScale(domain: yDomain)
         .chartXAxis(.hidden)
         .chartYAxis {
+            // 우측: 일반 가격 눈금
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { v in
                 if let d = v.as(Double.self), d > 0 {
                     AxisValueLabel {
@@ -1433,11 +1418,42 @@ private struct PriceLineChart: View {
                 }
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.3, dash: [3, 3]))
             }
+            // 좌측: 기준선(목표/평단/손절) 컬러 레이블 — 데이터와 겹치지 않음
+            AxisMarks(position: .leading, values: baselineAxisValues) { v in
+                if let d = v.as(Double.self) {
+                    AxisValueLabel { baselineLabel(d) }
+                }
+            }
         }
         .chartLegend(.hidden)
     }
 
-    // 기준선 1개(값 있을 때만). 값 라벨은 차트 밖 범례 2행에 표시하므로 라인만 그린다.
+    private var baselineAxisValues: [Double] {
+        [target, avg, stop].compactMap { $0 }
+    }
+
+    // 기준선 레이블 뷰 (target/avg/stop 순서로 매칭)
+    private func baselineLabel(_ d: Double) -> some View {
+        Group {
+            if let t = target, t == d {
+                bRow("목표", d, "arrowtriangle.up.fill", .red)
+            } else if let a = avg, a == d {
+                bRow("평단", d, "circle.fill", .green)
+            } else {
+                bRow("손절", d, "arrowtriangle.down.fill", .blue)
+            }
+        }
+    }
+
+    private func bRow(_ label: String, _ v: Double, _ symbol: String, _ color: Color) -> some View {
+        HStack(spacing: 2) {
+            Image(systemName: symbol).font(.system(size: 6))
+            Text("\(label) \(priceYLabel(v))").font(.system(size: 8, weight: .medium))
+        }
+        .foregroundColor(color)
+    }
+
+    // 기준선 1개(값 있을 때만). 라인만 — 레이블은 좌측 y축에 표시.
     @ChartContentBuilder
     private func baseline(_ value: Double?, _ color: Color) -> some ChartContent {
         if let v = value {
