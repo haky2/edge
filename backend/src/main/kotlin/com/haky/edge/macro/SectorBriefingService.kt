@@ -78,7 +78,7 @@ class SectorBriefingService(
             .take(3)
 
         val facts = buildFacts(sectorIndices, stockSectors, spotlight)
-        val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 768)
+        val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 1300)
 
         val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
