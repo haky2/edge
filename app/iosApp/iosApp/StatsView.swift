@@ -33,6 +33,7 @@ struct StatsView: View {
         List {
             summarySection
             if avgHoldDays != nil || !pairRows.isEmpty { holdSection }
+            winRateSection
             missedSection
             if !reasonRows.isEmpty { reasonSection }
             codeSection
@@ -92,6 +93,63 @@ struct StatsView: View {
                 .padding(.vertical, 2)
             }
         }
+    }
+
+    // MARK: - 섹션: 신호별 승률
+
+    @ViewBuilder
+    private var winRateSection: some View {
+        let totalPairs = winRateRows.reduce(0) { $0 + $1.total }
+        Section {
+            if winRateRows.isEmpty {
+                Text("아직 계산할 수 없어요\n(가격이 기록된 매수→매도 쌍이 필요해요)")
+                    .font(.footnote).foregroundColor(.secondary)
+                    .padding(.vertical, 4)
+            } else {
+                ForEach(winRateRows) { row in
+                    winRateRowView(row)
+                }
+            }
+        } header: {
+            if winRateRows.isEmpty {
+                Text("신호별 승률")
+            } else {
+                Text("신호별 승률 (\(winRateRows.count)개 신호 · \(totalPairs)쌍)")
+            }
+        } footer: {
+            Text("매수 사유 태그별 수익 실현 비율. 가격 기록 있는 매수→매도 쌍만 집계.")
+                .font(.caption2)
+        }
+    }
+
+    private func winRateRowView(_ row: WinRateRow) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(row.reason).font(.body)
+                Spacer()
+                Text(String(format: "%.0f%%", row.rate))
+                    .font(.body.weight(.semibold))
+                    .foregroundColor(row.rate >= 60 ? .red : row.rate >= 40 ? .primary : .blue)
+                Text("\(row.wins)승 \(row.losses)패")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+            GeometryReader { geo in
+                HStack(spacing: 1) {
+                    if row.wins > 0 {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.red.opacity(0.65))
+                            .frame(width: geo.size.width * CGFloat(row.wins) / CGFloat(row.total) - 1)
+                    }
+                    if row.losses > 0 {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.blue.opacity(0.4))
+                            .frame(width: geo.size.width * CGFloat(row.losses) / CGFloat(row.total) - 1)
+                    }
+                }
+            }
+            .frame(height: 6)
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: - 섹션: 놓친 종목
@@ -266,7 +324,25 @@ struct StatsView: View {
         let code: String
         let buyAt: Int64
         let sellAt: Int64
+        let buyPrice: Int64?
+        let sellPrice: Int64?
+        let buyReason: String?
         var days: Int { Int((sellAt - buyAt) / (1000 * 60 * 60 * 24)) }
+        var isWin: Bool? {
+            guard let b = buyPrice.map(Double.init),
+                  let s = sellPrice.map(Double.init),
+                  b > 0 else { return nil }
+            return s > b
+        }
+    }
+
+    private struct WinRateRow: Identifiable {
+        var id: String { reason }
+        let reason: String
+        let wins: Int
+        let losses: Int
+        var total: Int { wins + losses }
+        var rate: Double { total > 0 ? Double(wins) / Double(total) * 100 : 0 }
     }
 
     private var pairRows: [HoldPair] {
@@ -280,12 +356,34 @@ struct StatsView: View {
             for buy in buys {
                 while si < sells.count && sells[si].createdAt <= buy.createdAt { si += 1 }
                 guard si < sells.count else { break }
-                result.append(HoldPair(id: "\(code)_\(buy.createdAt)", code: code,
-                                       buyAt: buy.createdAt, sellAt: sells[si].createdAt))
+                let sell = sells[si]
+                result.append(HoldPair(
+                    id: "\(code)_\(buy.createdAt)",
+                    code: code,
+                    buyAt: buy.createdAt,
+                    sellAt: sell.createdAt,
+                    buyPrice: buy.price.map { $0.int64Value },
+                    sellPrice: sell.price.map { $0.int64Value },
+                    buyReason: buy.reason
+                ))
                 si += 1
             }
         }
         return result.sorted { $0.sellAt > $1.sellAt }
+    }
+
+    private var winRateRows: [WinRateRow] {
+        var map: [String: (wins: Int, losses: Int)] = [:]
+        for pair in pairRows {
+            guard let win = pair.isWin,
+                  let reason = pair.buyReason, !reason.isEmpty else { continue }
+            var c = map[reason] ?? (wins: 0, losses: 0)
+            if win { c.wins += 1 } else { c.losses += 1 }
+            map[reason] = c
+        }
+        return map
+            .map { WinRateRow(reason: $0.key, wins: $0.value.wins, losses: $0.value.losses) }
+            .sorted { $0.total > $1.total }
     }
 
     private var avgHoldDays: Double? {
