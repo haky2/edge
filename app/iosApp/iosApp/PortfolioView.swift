@@ -9,6 +9,10 @@ struct PortfolioView: View {
     @State private var rows: [HoldingRow] = []
     @State private var loading = false
 
+    // 도넛·레전드 공용 팔레트(SwiftUI Charts 기본 색 순서와 유사하게). 인덱스로 색을 고정한다.
+    private static let sliceColors: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .mint, .cyan, .yellow]
+    private static func sliceColor(_ i: Int) -> Color { sliceColors[i % sliceColors.count] }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -96,6 +100,11 @@ struct PortfolioView: View {
 
             // 종목 비중 도넛
             if rows.count > 1 {
+                // 도넛 조각과 레전드 점이 같은 색을 쓰도록 종목명→색을 명시적으로 고정한다.
+                // (레전드 Circle은 차트 밖 도형이라 Charts가 자동으로 색을 주지 않음)
+                let colorByName = Dictionary(
+                    uniqueKeysWithValues: rows.enumerated().map { ($1.item.name, Self.sliceColor($0)) }
+                )
                 Divider()
                 HStack(alignment: .center, spacing: 16) {
                     Chart(rows, id: \.item.code) { row in
@@ -107,16 +116,20 @@ struct PortfolioView: View {
                         .cornerRadius(3)
                         .foregroundStyle(by: .value("종목", row.item.name))
                     }
+                    .chartForegroundStyleScale(
+                        domain: rows.map { $0.item.name },
+                        range: rows.indices.map { Self.sliceColor($0) }
+                    )
                     .chartLegend(.hidden)
                     .frame(width: 100, height: 100)
 
-                    // 간단 레전드
+                    // 간단 레전드 — 도넛과 동일한 색
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(rows.sorted { $0.evaluated > $1.evaluated }, id: \.item.code) { row in
                             let pct = evaluated == 0 ? 0 : row.evaluated / evaluated * 100
                             HStack(spacing: 4) {
                                 Circle().frame(width: 8, height: 8)
-                                    .foregroundStyle(.secondary)  // Charts가 색 할당
+                                    .foregroundStyle(colorByName[row.item.name] ?? .secondary)
                                 Text(row.item.name).font(.caption2).lineLimit(1)
                                 Spacer()
                                 Text(String(format: "%.1f%%", pct)).font(.caption2.monospacedDigit())

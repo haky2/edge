@@ -57,12 +57,13 @@ class SectorBriefingService(
         }
 
         // 오늘 강세 섹터(+0.5% 이상) → 해당 관심종목 추출(알고리즘, LLM 아님).
-        val strongSectors: Set<MacroImpactService.Sector> = sectorIndices
+        // KRX 업종지수는 거친 단위라 세부 Sector 대신 대분류(group)로 매칭한다.
+        val strongGroups: Set<MacroImpactService.MacroGroup> = sectorIndices
             .filter { it.changeRate > 0.5 }
             .flatMap { SECTOR_INDEX_TO_OUR[it.key].orEmpty() }
             .toSet()
         val spotlight = stockSectors
-            .filter { (_, _, sectors) -> sectors.any { it in strongSectors } }
+            .filter { (_, _, sectors) -> sectors.any { it.group in strongGroups } }
             .map { (code, name, sectors) ->
                 SpotlightStock(
                     code = code,
@@ -105,14 +106,14 @@ class SectorBriefingService(
     private fun signed(v: Double) = (if (v >= 0) "+" else "") + "%.2f".format(v)
 
     companion object {
-        // KOSPI 업종지수 key → 우리 Sector enum (1:N 가능. 예: 전기전자에 반도체+전자 혼재).
+        // KOSPI 업종지수 key → 매크로 대분류(MacroGroup) (1:N 가능. 예: 전기전자에 반도체+전자 혼재).
         private val SECTOR_INDEX_TO_OUR = mapOf(
-            "sector_0014" to listOf(MacroImpactService.Sector.SEMICONDUCTOR, MacroImpactService.Sector.ELECTRONICS),
-            "sector_0013" to listOf(MacroImpactService.Sector.SHIPBUILDING),
-            "sector_0016" to listOf(MacroImpactService.Sector.AUTOMOBILE, MacroImpactService.Sector.DEFENSE),
-            "sector_0018" to listOf(MacroImpactService.Sector.POWER_EQUIP),
-            "sector_0028" to listOf(MacroImpactService.Sector.IT_SERVICE, MacroImpactService.Sector.ROBOT),
-            "sector_0012" to listOf(MacroImpactService.Sector.POWER_EQUIP),
+            "sector_0014" to listOf(MacroImpactService.MacroGroup.SEMICONDUCTOR, MacroImpactService.MacroGroup.ELECTRONICS),
+            "sector_0013" to listOf(MacroImpactService.MacroGroup.SHIPBUILDING),
+            "sector_0016" to listOf(MacroImpactService.MacroGroup.AUTOMOBILE, MacroImpactService.MacroGroup.DEFENSE),
+            "sector_0018" to listOf(MacroImpactService.MacroGroup.POWER_EQUIP),
+            "sector_0028" to listOf(MacroImpactService.MacroGroup.TECH_GROWTH),
+            "sector_0012" to listOf(MacroImpactService.MacroGroup.POWER_EQUIP),
         )
 
         private val SYSTEM_PROMPT = """
@@ -125,7 +126,7 @@ class SectorBriefingService(
                ② 강세 섹터 관심종목이 있다면 그 종목과의 연결고리를 설명. 없다면 관심종목 주요 섹터의 흐름 해석.
                ③ 오늘 확인해볼 만한 포인트 한 문장으로 마무리.
             3. "지금 사라/팔라" 같은 매매 지시 금지.
-            4. 형식: 불릿·번호 목록 금지. 마크다운 볼드 헤더(**제목**) 금지. 이야기처럼 흐르는 연속 문단.
+            4. 형식: 불릿·번호 목록과 볼드 '제목 줄'은 금지(이야기처럼 흐르는 연속 문단). 단, 핵심 섹터명·종목명과 강세/약세 같은 키워드는 문장 안에서 **굵게** 강조해 한눈에 들어오게 하라.
             5. 모든 업종이 보합(0%대)이면 "오늘은 섹터 차별화가 크지 않은 날"이라고 담백하게 말해도 됨.
         """.trimIndent()
     }

@@ -113,10 +113,10 @@ struct StockDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             if !dailyBars.isEmpty {
                 HStack(spacing: 10) {
-                    chartLegendItem("종가", .primary.opacity(0.85))
-                    chartLegendItem("MA5", .secondary.opacity(0.7))
-                    chartLegendItem("MA20", .orange.opacity(0.8))
-                    chartLegendItem("MA60", .purple.opacity(0.55))
+                    chartLegendItem("종가", .primary)
+                    chartLegendItem("MA5", .blue)
+                    chartLegendItem("MA20", .orange)
+                    chartLegendItem("MA60", .purple)
                 }
                 .font(.caption2)
                 .padding(.top, 4)
@@ -966,38 +966,46 @@ private struct PriceLineChart: View {
         let yMin = (allY.min() ?? 0) * 0.997
 
         Chart {
+            // 영역(면) — 종가 아래 옅은 그라데이션. 계열 색 스케일과 무관(직접 스타일).
             ForEach(closePts) { p in
-                AreaMark(x: .value("x", p.id), yStart: .value("", yMin), yEnd: .value("종가", p.close))
-                    .foregroundStyle(LinearGradient(colors: [Color.blue.opacity(0.18), Color.clear], startPoint: .top, endPoint: .bottom))
+                AreaMark(x: .value("일", p.id), yStart: .value("min", yMin), yEnd: .value("가격", p.close))
+                    .foregroundStyle(LinearGradient(colors: [Color.blue.opacity(0.12), Color.clear], startPoint: .top, endPoint: .bottom))
             }
             .interpolationMethod(.monotone)
+            // 라인 3종 — y 레이블을 "가격"으로 통일하고 series 로 계열을 구분해야
+            // 계열별 색(chartForegroundStyleScale)이 확실히 적용된다.
             ForEach(closePts) { p in
-                LineMark(x: .value("x", p.id), y: .value("종가", p.close))
-                    .foregroundStyle(Color.primary.opacity(0.85))
-                    .lineStyle(StrokeStyle(lineWidth: 2))
+                LineMark(x: .value("일", p.id), y: .value("가격", p.close), series: .value("계열", "종가"))
             }
+            .foregroundStyle(by: .value("계열", "종가"))
+            .lineStyle(StrokeStyle(lineWidth: 1.8))
             .interpolationMethod(.monotone)
             ForEach(ma5) { p in
-                LineMark(x: .value("x", p.id), y: .value("MA5", p.value))
-                    .foregroundStyle(Color.secondary.opacity(0.6))
-                    .lineStyle(StrokeStyle(lineWidth: 1))
+                LineMark(x: .value("일", p.id), y: .value("가격", p.value), series: .value("계열", "MA5"))
             }
+            .foregroundStyle(by: .value("계열", "MA5"))
+            .lineStyle(StrokeStyle(lineWidth: 1.6))
             .interpolationMethod(.monotone)
             ForEach(ma20) { p in
-                LineMark(x: .value("x", p.id), y: .value("MA20", p.value))
-                    .foregroundStyle(Color.orange.opacity(0.8))
-                    .lineStyle(StrokeStyle(lineWidth: 1.5))
+                LineMark(x: .value("일", p.id), y: .value("가격", p.value), series: .value("계열", "MA20"))
             }
+            .foregroundStyle(by: .value("계열", "MA20"))
+            .lineStyle(StrokeStyle(lineWidth: 1.6))
             .interpolationMethod(.monotone)
             if let ma60 = currentMA60 {
-                RuleMark(y: .value("MA60", ma60))
-                    .foregroundStyle(Color.purple.opacity(0.5))
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                RuleMark(y: .value("가격", ma60))
+                    .foregroundStyle(Color.purple)
+                    .lineStyle(StrokeStyle(lineWidth: 1.3, dash: [4, 3]))
                     .annotation(position: .trailing, alignment: .center) {
-                        Text("MA60").font(.system(size: 8)).foregroundColor(.purple.opacity(0.7))
+                        Text("MA60").font(.system(size: 8)).foregroundColor(.purple)
                     }
             }
         }
+        .chartForegroundStyleScale([
+            "종가": Color.primary,
+            "MA5":  Color.blue,
+            "MA20": Color.orange,
+        ])
         .chartXAxis(.hidden)
         .chartYAxis {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { v in

@@ -107,10 +107,10 @@ class MacroImpactService(
             return StockImpact(code, name, "기타", net = "-", signals = emptyList())
         }
 
-        // 모든 섹터의 민감도를 합쳐 지표별로 집계한다.
-        // 같은 지표가 여러 섹터에 나오면 방향을 합산 후 부호만 취한다(+1/-1/0).
-        // note: 방향이 모두 같으면 첫 번째 섹터의 설명, 섹터별 방향이 갈리면 각 설명을 병기.
-        val allSens = sectors.flatMap { SENSITIVITY[it].orEmpty() }
+        // 세부 섹터를 매크로 대분류(group)로 환원·중복 제거 후 민감도를 지표별로 집계한다.
+        // 같은 지표가 여러 대분류에 나오면 방향을 합산 후 부호만 취한다(+1/-1/0).
+        // note: 방향이 모두 같으면 첫 번째 설명, 방향이 갈리면 각 설명을 병기.
+        val allSens = sectors.map { it.group }.distinct().flatMap { SENSITIVITY[it].orEmpty() }
         val signals = allSens.groupBy { it.indicatorKey }.mapNotNull { (key, group) ->
             val ind = indicators.firstOrNull { it.key == key } ?: return@mapNotNull null
             val rate = ind.changeRate
@@ -230,22 +230,27 @@ class MacroImpactService(
         val newsBullet = if (headlines.isEmpty()) "(뉴스 없음)"
         else headlines.joinToString("\n") { "- ${it.title}" }
 
-        val enumList = Sector.entries.joinToString("\n") { "- ${it.name}: ${it.description}" }
+        val enumList = Sector.entries.joinToString("\n") { "- ${it.name}: ${it.label} (${it.description})" }
         val response = claude.complete(
             systemPrompt = "너는 한국 주식 섹터 분류 전문가다. 요청한 JSON 배열 형식으로만 응답해. 설명, 마크다운 코드블록 없이 배열만.",
             userFacts = """
-다음 한국 주식이 아래 섹터들 중 어디에 해당하는지 JSON 배열로만 답해줘. 복수 선택 가능(최대 3개).
-최근 뉴스 헤드라인에서 신규 사업(로봇, AI, 방산 등)이 보이면 반영해줘.
+다음 한국 주식이 아래 세부 섹터 중 어디에 해당하는지 JSON 배열로만 답해줘.
+
+분류 규칙:
+- 매출·사업 비중이 큰 주력 섹터를 맨 앞에 두고, 최대 3개까지.
+- 회사를 가장 구체적으로 설명하는 세부 섹터를 골라라. (예: SI·클라우드 업체가 생성형AI를 핵심으로 밀면 IT_SERVICE보다 AI_CLOUD를 우선)
+- KIS 업종명은 거칠다. 최근 뉴스에서 실제 주력·신규 사업(AI, 클라우드, 로봇, 방산, HBM 등)이 보이면 그걸 우선 반영해라.
+- 확실하지 않은 부차 섹터는 억지로 채우지 말고 주력 1~2개만 골라도 된다.
 
 종목: $name ($code)
 KIS 업종명: $kisName
 최근 뉴스:
 $newsBullet
 
-선택 가능한 섹터(영어 코드로 응답):
+선택 가능한 세부 섹터(영어 코드로 응답):
 $enumList
 
-응답 예시: ["AUTOMOBILE","ROBOT"]
+응답 예시: ["AI_CLOUD","IT_SERVICE"]
             """.trimIndent(),
             maxTokens = 60,
         )
@@ -264,29 +269,59 @@ $enumList
     private fun autoSector(kisName: String): Sector? = when {
         kisName.contains("서비스")                         -> Sector.IT_SERVICE
         kisName.contains("전기가스") || kisName.contains("전력") -> Sector.POWER_EQUIP
-        kisName.contains("철강") || kisName.contains("금속") || kisName.contains("전선") -> Sector.POWER_EQUIP
+        kisName.contains("전선")                           -> Sector.CABLE
+        kisName.contains("철강") || kisName.contains("금속") -> Sector.POWER_EQUIP
         kisName.contains("기계") || kisName.contains("조선") || kisName.contains("중공업") -> Sector.SHIPBUILDING
-        // "운수장비"/"운송장비"는 자동차가 주력. 방산/조선 주요 종목은 SECTOR_OVERRIDE에 직접 매핑돼 여기 안 온다.
-        kisName.contains("운수장비") || kisName.contains("운송장비") || kisName.contains("자동차") -> Sector.AUTOMOBILE
+        // "운수장비"/"운송장비"는 완성차가 주력. 방산/조선 주력 종목은 뉴스 기반 inferSectors가 먼저 잡는다.
+        kisName.contains("운수장비") || kisName.contains("운송장비") || kisName.contains("자동차") -> Sector.AUTO_OEM
         kisName.contains("항공")                          -> Sector.DEFENSE
-        kisName.contains("반도체")                         -> Sector.SEMICONDUCTOR
-        kisName.contains("전기·전자") || kisName.contains("전자") -> Sector.ELECTRONICS
+        kisName.contains("반도체")                         -> Sector.MEMORY
+        kisName.contains("전기·전자") || kisName.contains("전자") -> Sector.COMPONENT
         else                                             -> null
     }
 
-    /** 우리 분류 섹터. 한투 업종명이 거칠어(예: '전기·전자'에 반도체+가전 혼재) 매크로 민감도용으로 따로 둔다. */
-    enum class Sector(val label: String, val description: String) {
-        SEMICONDUCTOR("반도체",  "반도체 설계·제조·장비·소재"),
-        SHIPBUILDING("조선",    "조선·해양플랜트·선박"),
-        DEFENSE("방산",         "방산·항공우주·무기체계"),
-        POWER_EQUIP("전력기기", "변압기·전선·전력기기·신재생에너지 인프라"),
-        IT_SERVICE("IT서비스",  "IT서비스·SI·클라우드·소프트웨어·플랫폼"),
-        ELECTRONICS("전자/가전","가전·디스플레이·전자부품"),
-        AUTOMOBILE("자동차",    "자동차 완성차·부품·배터리"),
-        ROBOT("로봇·AI",        "로봇·인공지능·자율주행·스마트팩토리"),
+    /**
+     * 매크로 민감도 대분류. 환율·금리·구리 등 매크로 반응은 거친 단위에서 비슷하므로(반도체끼리 동일)
+     * SENSITIVITY는 이 대분류 기준으로만 정의한다. 표시·추천은 아래 세부 Sector를 쓴다.
+     */
+    enum class MacroGroup {
+        SEMICONDUCTOR, TECH_GROWTH, AUTOMOBILE, SHIPBUILDING, DEFENSE, POWER_EQUIP, ELECTRONICS
     }
 
-    /** 섹터 × 지표 민감도 1건. direction: +1 = 지표 상승이 해당 섹터에 우호, -1 = 부담, 0 = 무관. */
+    /**
+     * 표시·추천용 세부 섹터(회사가 실제로 뭘 하는지). 각 섹터는 매크로 민감도 대분류(group) 하나에 매핑된다.
+     * 한투 업종명이 거칠어(예: '전기·전자'에 반도체+가전 혼재) inferSectors가 뉴스까지 보고 이 세부로 분류한다.
+     * 세부를 늘려도 SENSITIVITY(대분류 기준)는 건드릴 필요가 없다.
+     */
+    enum class Sector(val label: String, val description: String, val group: MacroGroup) {
+        // 반도체
+        MEMORY("메모리반도체",   "D램·낸드 메모리",                     MacroGroup.SEMICONDUCTOR),
+        FOUNDRY("파운드리·장비", "위탁생산·반도체 장비·소재",            MacroGroup.SEMICONDUCTOR),
+        AI_CHIP("AI반도체",      "HBM·AI가속기·고대역폭메모리",          MacroGroup.SEMICONDUCTOR),
+        // 테크 성장(소프트·플랫폼·로봇·자율주행 — 나스닥/금리 민감)
+        AI_CLOUD("AI·클라우드",  "생성형AI·클라우드·데이터센터 소프트웨어", MacroGroup.TECH_GROWTH),
+        IT_SERVICE("IT서비스·SI","시스템통합·IT아웃소싱·엔터프라이즈 SW",  MacroGroup.TECH_GROWTH),
+        INTERNET("인터넷플랫폼", "포털·커머스·핀테크·콘텐츠 플랫폼",      MacroGroup.TECH_GROWTH),
+        ROBOT("로봇·자동화",     "산업용·협동로봇·스마트팩토리",          MacroGroup.TECH_GROWTH),
+        AUTONOMOUS("자율주행",   "자율주행·모빌리티 소프트웨어",          MacroGroup.TECH_GROWTH),
+        // 자동차
+        AUTO_OEM("완성차",       "승용·상용 완성차",                    MacroGroup.AUTOMOBILE),
+        AUTO_PARTS("자동차부품", "전장·구동·차체 부품",                 MacroGroup.AUTOMOBILE),
+        BATTERY("2차전지",       "배터리 셀·소재·장비",                 MacroGroup.AUTOMOBILE),
+        // 조선·방산
+        SHIPBUILDING("조선",     "조선·해양플랜트·선박",                MacroGroup.SHIPBUILDING),
+        DEFENSE("방산·항공우주", "무기체계·항공우주",                   MacroGroup.DEFENSE),
+        // 전력
+        POWER_EQUIP("전력기기",  "변압기·전력기기·중전기",              MacroGroup.POWER_EQUIP),
+        CABLE("전선",            "전선·케이블",                        MacroGroup.POWER_EQUIP),
+        RENEWABLE("신재생에너지","태양광·풍력·에너지 인프라",            MacroGroup.POWER_EQUIP),
+        // 전자
+        HOME_APPLIANCE("가전",   "생활가전·AV",                        MacroGroup.ELECTRONICS),
+        DISPLAY("디스플레이",    "OLED·LCD·패널",                      MacroGroup.ELECTRONICS),
+        COMPONENT("전자부품",    "MLCC·기판·카메라모듈 등 부품",         MacroGroup.ELECTRONICS),
+    }
+
+    /** 대분류 × 지표 민감도 1건. direction: +1 = 지표 상승이 해당 그룹에 우호, -1 = 부담, 0 = 무관. */
     private data class Sensitivity(val indicatorKey: String, val direction: Int, val note: String)
 
     companion object {
@@ -300,47 +335,44 @@ $enumList
         private val MANUAL_OVERRIDES = mapOf<String, List<Sector>>()
 
         // 섹터별 매크로 민감도. note 는 근거 한 줄(앱·Claude facts에 그대로 노출).
+        // 매크로 민감도는 대분류(MacroGroup) 기준. 세부 Sector는 group으로 여기에 연결된다.
         private val SENSITIVITY = mapOf(
-            Sector.SEMICONDUCTOR to listOf(
+            MacroGroup.SEMICONDUCTOR to listOf(
                 Sensitivity("usdkrw", +1, "원화 약세 → 수출 채산성 개선"),
                 Sensitivity("nasdaq", +1, "미국 빅테크·AI 반도체와 주가 동조"),
                 Sensitivity("crude",  -1, "유가 상승 → 인플레·금리 우려 → 성장주 부담"),
                 Sensitivity("rate3y", -1, "금리 상승 → 성장주 밸류에이션 할인율 확대"),
             ),
-            Sector.SHIPBUILDING to listOf(
+            MacroGroup.SHIPBUILDING to listOf(
                 Sensitivity("usdkrw", +1, "수주 대금 달러 결제 → 원화 약세 수혜"),
                 Sensitivity("crude",  +1, "유가 상승 → 유조선·LNG선 발주 수요 증가"),
                 Sensitivity("rate3y", -1, "금리 상승 → 선박금융 조달 비용 증가, 선주 투자 부담"),
             ),
-            Sector.DEFENSE to listOf(
+            MacroGroup.DEFENSE to listOf(
                 Sensitivity("usdkrw", +1, "방산 수출 비중 → 원화 약세 우호"),
             ),
-            Sector.POWER_EQUIP to listOf(
+            MacroGroup.POWER_EQUIP to listOf(
                 Sensitivity("usdkrw", +1, "변압기 등 수출 비중 → 원화 약세 우호"),
                 Sensitivity("nasdaq", +1, "미국 데이터센터·전력 인프라 투자 테마 연동"),
                 Sensitivity("crude",  +1, "유가 상승 → 에너지 전환·신재생 투자 가속화"),
                 Sensitivity("copper", -1, "구리 상승 → 변압기·전선 주요 원재료 원가 부담"),
                 Sensitivity("rate3y", -1, "금리 상승 → 인프라 투자 할인율 상승, 밸류에이션 부담"),
             ),
-            Sector.IT_SERVICE to listOf(
-                Sensitivity("usdkrw", 0, "내수 매출 중심 → 환율 영향 제한적"),
-                Sensitivity("rate3y", -1, "금리 상승 → 성장주 밸류에이션 부담"),
+            // IT서비스(내수)+로봇·AI(성장·수출)를 묶은 그룹. 내수·수출 혼재라 환율은 중립.
+            MacroGroup.TECH_GROWTH to listOf(
+                Sensitivity("nasdaq", +1, "미국 빅테크·AI 테마와 동조 — 나스닥 강세 시 동반 상승"),
+                Sensitivity("rate3y", -1, "성장 기대가 반영된 높은 주가 배수 → 금리 상승 시 할인율 부담 확대"),
             ),
-            Sector.ELECTRONICS to listOf(
+            MacroGroup.ELECTRONICS to listOf(
                 Sensitivity("usdkrw", +1, "수출 비중 높아 원화 약세 우호(수입 부품이 일부 상쇄)"),
                 Sensitivity("crude",  -1, "유가 상승 → 물류·부품 운반비 원가 부담"),
                 Sensitivity("copper", -1, "구리 상승 → PCB·배선 부품 원가 부담"),
             ),
-            Sector.AUTOMOBILE to listOf(
+            MacroGroup.AUTOMOBILE to listOf(
                 Sensitivity("usdkrw", +1, "수출 비중 → 원화 약세 시 해외 매출 환산 이익 증가"),
                 Sensitivity("crude",  -1, "유가 상승 → 소비자 유지비 부담 → 자동차 수요 심리 위축"),
                 Sensitivity("copper", -1, "구리 상승 → 차량 배선·전장부품 원재료 원가 부담"),
                 Sensitivity("rate3y", -1, "금리 상승 → 자동차 할부 이자 증가 → 구매 수요 감소"),
-            ),
-            Sector.ROBOT to listOf(
-                Sensitivity("nasdaq", +1, "글로벌 AI·기술주 테마와 연동 — 나스닥 강세 시 로봇·AI 섹터 동반 상승"),
-                Sensitivity("rate3y", -1, "성장 기대가 반영된 높은 주가 배수 → 금리 상승 시 할인율 부담 증가"),
-                Sensitivity("usdkrw", +1, "로봇 수출 비중 확대 추세 → 원화 약세 우호"),
             ),
         )
 
@@ -358,7 +390,7 @@ $enumList
                ④ 오늘 이 흐름에서 주의해야 할 점 또는 확인해볼 만한 것 한 문장으로 마무리.
             3. "지금 사라/팔라"처럼 매매를 지시하지 마라.
             4. 어려운 금융 영어는 한국어로 바꾸거나 괄호 설명을 붙여라.
-            5. 형식: 불릿·번호 목록 금지. 마크다운 볼드 헤더(**제목**) 금지. 이야기처럼 흐르는 연속 문단으로.
+            5. 형식: 불릿·번호 목록과 볼드 '제목 줄'은 금지(이야기처럼 흐르는 연속 문단). 단, 핵심 종목명과 영향 방향(우호/부담) 같은 키워드는 문장 안에서 **굵게** 강조해 한눈에 들어오게 하라.
             6. 지표가 전부 보합(0%대)이면 "오늘은 매크로 영향이 크지 않은 날"이라고 담백하게 말해도 된다.
         """.trimIndent()
     }

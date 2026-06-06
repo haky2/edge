@@ -52,9 +52,11 @@ struct BriefingView: View {
     // 접기/펼치기 상태 (기본 접힘)
     @State private var dartExpanded = false
     @State private var earningsExpanded = false
-    @State private var impactExpanded = false
+    @State private var impactExpanded = false        // 내 종목 영향: AI 코멘트(프로즈) 접기
+    @State private var impactWatchExpanded = false   // 내 종목 영향: 관심 종목 목록 접기
     @State private var marketExpanded = false
     @State private var sectorExpanded = false
+    @State private var sectorBriefingExpanded = false // 섹터 분석: AI 코멘트(프로즈) 접기
 
     // 하이라이트·보유현황용: 쿼츠 로드 후 저장 (spotlight NavigationLink에서도 재사용)
     @State private var allItemsLoaded: [WatchItem] = []
@@ -107,11 +109,11 @@ struct BriefingView: View {
                 supplySection
                 dartSection
             } else {
+                impactSection        // 내 종목 영향 — 가장 중요하므로 최상단
                 marketSection
                 sectorSection
                 sectorBriefingSection
                 earningsSection
-                impactSection
             }
         }
     }
@@ -190,14 +192,14 @@ struct BriefingView: View {
 
     // MARK: - 섹션: 섹터 동향 (관심종목 관련 섹터만)
 
-    // KRX 업종 레이블 → 우리 커스텀 섹터 레이블 매핑
+    // KRX 업종 레이블 → 우리 세부 섹터 레이블 매핑(백엔드 Sector.label과 일치해야 함).
     private let krxToCustom: [String: [String]] = [
-        "전기전자": ["반도체", "전자/가전", "로봇·AI"],
-        "기계":     ["조선", "방산"],
-        "운수장비":  ["자동차", "로봇·AI"],
-        "전기가스업": ["전력기기"],
-        "서비스업":  ["IT서비스", "로봇·AI"],
-        "철강금속":  ["전력기기", "조선"],
+        "전기전자": ["메모리반도체", "파운드리·장비", "AI반도체", "가전", "디스플레이", "전자부품"],
+        "기계":     ["조선", "방산·항공우주"],
+        "운수장비":  ["완성차", "자동차부품", "2차전지", "자율주행"],
+        "전기가스업": ["전력기기", "신재생에너지"],
+        "서비스업":  ["AI·클라우드", "IT서비스·SI", "인터넷플랫폼", "로봇·자동화"],
+        "철강금속":  ["전력기기", "전선", "조선"],
     ]
 
     // 관심/보유 종목의 섹터 레이블 집합 (impactHoldings/Watch에서 추출)
@@ -270,12 +272,8 @@ struct BriefingView: View {
             } else if sectorBriefingComment.isEmpty {
                 Text("불러오기 실패").font(.footnote).foregroundColor(.secondary)
             } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(sectorBriefingComment.components(separatedBy: "\n\n"), id: \.self) { para in
-                        let t = para.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !t.isEmpty { Text(markdown(t)).font(.callout).fixedSize(horizontal: false, vertical: true) }
-                    }
-                }
+                aiCommentToggle(expanded: sectorBriefingExpanded) { withAnimation { sectorBriefingExpanded.toggle() } }
+                if sectorBriefingExpanded { proseBlock(sectorBriefingComment) }
             }
         }
         // 주목 종목 — 코멘트 준비됐을 때만 표시
@@ -383,43 +381,78 @@ struct BriefingView: View {
     @ViewBuilder
     private var impactSection: some View {
         Section {
-            Button { withAnimation { impactExpanded.toggle() } } label: {
-                HStack {
-                    Text("내 종목 영향 (오늘)").font(.headline)
-                    Spacer()
-                    Image(systemName: impactExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption).foregroundColor(.secondary)
-                }
-            }
-            .foregroundColor(.primary)
+            // 헤더는 항상 노출(토글 아님) — 내 종목 영향이 시장 탭 최상단 핵심.
+            Text("내 종목 영향 (오늘)").font(.headline)
             if impactLoading {
                 HStack { ProgressView().scaleEffect(0.8); Text("AI가 해석 중…").font(.footnote).foregroundColor(.secondary) }
-            } else if impactExpanded {
-                if impactComment.isEmpty {
-                    Text("불러오기 실패").font(.footnote).foregroundColor(.secondary)
-                } else {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(impactComment.components(separatedBy: "\n\n"), id: \.self) { para in
-                            let trimmed = para.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if !trimmed.isEmpty {
-                                Text(markdown(trimmed)).font(.callout)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
+            } else if impactComment.isEmpty && impactHoldings.isEmpty && impactWatch.isEmpty {
+                Text("불러오기 실패").font(.footnote).foregroundColor(.secondary)
+            } else {
+                // 보유 종목 영향은 항상 한눈에(스캔 가능한 핵심).
+                if !impactHoldings.isEmpty {
+                    Text("보유 종목").font(.caption.weight(.semibold)).foregroundColor(.secondary)
+                    ForEach(impactHoldings, id: \.code) { impactRow($0) }
+                }
+                // 관심 종목은 많을 수 있어 접기.
+                if !impactWatch.isEmpty {
+                    Button { withAnimation { impactWatchExpanded.toggle() } } label: {
+                        HStack {
+                            Text("관심 종목 \(impactWatch.count)개")
+                                .font(.caption.weight(.semibold)).foregroundColor(.secondary)
+                            Spacer()
+                            Image(systemName: impactWatchExpanded ? "chevron.up" : "chevron.down")
+                                .font(.caption2).foregroundColor(.secondary)
                         }
                     }
-                    if !impactHoldings.isEmpty {
-                        Text("보유 종목").font(.caption.weight(.semibold)).foregroundColor(.secondary)
-                            .padding(.top, 4)
-                        ForEach(impactHoldings, id: \.code) { impactRow($0) }
-                    }
-                    if !impactWatch.isEmpty {
-                        Text("관심 종목").font(.caption.weight(.semibold)).foregroundColor(.secondary)
-                            .padding(.top, 4)
+                    .foregroundColor(.primary)
+                    if impactWatchExpanded {
                         ForEach(impactWatch, id: \.code) { impactRow($0) }
+                    }
+                }
+                // AI 코멘트(프로즈)는 길어서 기본 접힘 — 가독성 위해.
+                if !impactComment.isEmpty {
+                    aiCommentToggle(expanded: impactExpanded) { withAnimation { impactExpanded.toggle() } }
+                    if impactExpanded { proseBlock(impactComment) }
+                }
+            }
+        }
+    }
+
+    // "AI 코멘트" 접기 토글 — 섹터 분석·내 종목 영향에서 공용.
+    private func aiCommentToggle(expanded: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: "sparkles").font(.caption2).foregroundColor(.purple)
+                Text("AI 코멘트").font(.subheadline.weight(.medium))
+                Spacer()
+                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+        }
+        .foregroundColor(.primary)
+    }
+
+    // 빈 줄(\n\n) 기준 문단 분리 + 마크다운 렌더. 줄간격·문단간격을 넉넉히 주고
+    // 왼쪽 보라 액센트 바로 'AI 글'임을 시각적으로 구분해 텍스트 벽처럼 보이지 않게 한다.
+    private func proseBlock(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color.purple.opacity(0.35))
+                .frame(width: 3)
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(text.components(separatedBy: "\n\n"), id: \.self) { para in
+                    let t = para.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !t.isEmpty {
+                        Text(markdown(t))
+                            .font(.callout)
+                            .lineSpacing(5)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }
         }
+        .padding(.vertical, 2)
     }
 
     private func impactRow(_ s: StockImpact) -> some View {
