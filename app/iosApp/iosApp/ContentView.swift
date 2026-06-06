@@ -1,5 +1,4 @@
 import SwiftUI
-import Charts
 import SharedLogic
 
 // 앱 전역 싱글톤. DB는 한 번만 열고, api 인스턴스도 공유한다.
@@ -31,28 +30,15 @@ struct WatchlistView: View {
                 if let e = errorText {
                     Text(e).font(.footnote).foregroundColor(.secondary)
                 }
-                Section {
-                    ForEach(watchlist, id: \.code) { item in
-                        // 탭하면 상세 화면으로. 리스트가 받아둔 시세를 넘겨 즉시 표시.
-                        NavigationLink {
-                            StockDetailView(item: item, quote: quotes[item.code], api: api)
-                        } label: {
-                            row(item)
-                        }
+                ForEach(watchlist, id: \.code) { item in
+                    // 탭하면 상세 화면으로. 리스트가 받아둔 시세를 넘겨 즉시 표시.
+                    NavigationLink {
+                        StockDetailView(item: item, quote: quotes[item.code], api: api)
+                    } label: {
+                        row(item)
                     }
-                    .onDelete(perform: delete)   // 1.3c — 스와이프 삭제 → DB에서 제거
-                } header: {
-                    HStack {
-                        Spacer()
-                        Text("7일 추세")
-                            .frame(width: 72, alignment: .center)
-                        Text("현재가")
-                            .frame(width: 88, alignment: .trailing)
-                    }
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .textCase(nil)
                 }
+                .onDelete(perform: delete)   // 1.3c — 스와이프 삭제 → DB에서 제거
             }
             .navigationTitle("관심종목")
             .toolbar {
@@ -101,22 +87,15 @@ struct WatchlistView: View {
                 }
             }
             Spacer()
-            if let pts = sparklines[item.code], pts.count >= 2 {
-                let up = quotes[item.code].map { $0.changeRate >= 0 } ?? (pts.last! >= pts.first!)
-                let change7d = (pts.last! - pts.first!) / pts.first! * 100
-                VStack(spacing: 2) {
-                    Chart {
-                        ForEach(Array(pts.enumerated()), id: \.offset) { i, v in
-                            LineMark(x: .value("d", i), y: .value("p", v))
-                                .foregroundStyle(up ? Color.red : Color.blue)
-                        }
-                    }
-                    .chartXAxis(.hidden)
-                    .chartYAxis(.hidden)
-                    .frame(width: 56, height: 26)
-                    Text(String(format: "%+.1f%%", change7d))
-                        .font(.system(size: 9))
-                        .foregroundColor(change7d >= 0 ? .red : .blue)
+            if let pts = sparklines[item.code], pts.count >= 2,
+               let q = quotes[item.code] {
+                let up = q.changeRate >= 0
+                let streak = consecutiveStreak(closes: pts, todayUp: up)
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(up ? "📈" : "📉").font(.system(size: 15))
+                    Text("\(streak)일째 \(up ? "상승" : "하락")")
+                        .font(.system(size: 10))
+                        .foregroundColor(up ? .red : .blue)
                 }
                 .padding(.trailing, 8)
             }
@@ -133,6 +112,15 @@ struct WatchlistView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    // 오늘 방향(todayUp)과 같은 방향으로 연속된 거래일 수. 최대 보유 데이터(7일) 한계.
+    private func consecutiveStreak(closes: [Double], todayUp: Bool) -> Int {
+        var count = 1
+        for i in stride(from: closes.count - 1, through: 1, by: -1) {
+            if (closes[i] >= closes[i - 1]) == todayUp { count += 1 } else { break }
+        }
+        return min(count, 7)
     }
 
     // 스와이프 삭제: 해당 종목을 DB에서 지우고 로컬 리스트도 즉시 갱신.
