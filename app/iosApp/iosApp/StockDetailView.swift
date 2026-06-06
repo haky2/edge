@@ -592,10 +592,10 @@ struct StockDetailView: View {
                     Capsule()
                         .fill(reached ? Color.green : Color.orange)
                         .frame(width: max(dotX, 5), height: 5)
-                    Circle()
+                    RoundedRectangle(cornerRadius: 1)
                         .fill(reached ? Color.green : Color.orange)
-                        .frame(width: 10, height: 10)
-                        .offset(x: dotX - 5, y: -2.5)
+                        .frame(width: 2.5, height: 14)
+                        .offset(x: dotX - 1.25, y: -4.5)
                 }
             }
             .frame(height: 10)
