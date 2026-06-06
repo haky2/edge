@@ -31,15 +31,28 @@ struct WatchlistView: View {
                 if let e = errorText {
                     Text(e).font(.footnote).foregroundColor(.secondary)
                 }
-                ForEach(watchlist, id: \.code) { item in
-                    // 탭하면 상세 화면으로. 리스트가 받아둔 시세를 넘겨 즉시 표시.
-                    NavigationLink {
-                        StockDetailView(item: item, quote: quotes[item.code], api: api)
-                    } label: {
-                        row(item)
+                Section {
+                    ForEach(watchlist, id: \.code) { item in
+                        // 탭하면 상세 화면으로. 리스트가 받아둔 시세를 넘겨 즉시 표시.
+                        NavigationLink {
+                            StockDetailView(item: item, quote: quotes[item.code], api: api)
+                        } label: {
+                            row(item)
+                        }
                     }
+                    .onDelete(perform: delete)   // 1.3c — 스와이프 삭제 → DB에서 제거
+                } header: {
+                    HStack {
+                        Spacer()
+                        Text("7일 추세")
+                            .frame(width: 72, alignment: .center)
+                        Text("현재가")
+                            .frame(width: 88, alignment: .trailing)
+                    }
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .textCase(nil)
                 }
-                .onDelete(perform: delete)   // 1.3c — 스와이프 삭제 → DB에서 제거
             }
             .navigationTitle("관심종목")
             .toolbar {
@@ -101,7 +114,7 @@ struct WatchlistView: View {
                     .chartXAxis(.hidden)
                     .chartYAxis(.hidden)
                     .frame(width: 56, height: 26)
-                    Text("7일 \(String(format: "%+.1f%%", change7d))")
+                    Text(String(format: "%+.1f%%", change7d))
                         .font(.system(size: 9))
                         .foregroundColor(change7d >= 0 ? .red : .blue)
                 }
