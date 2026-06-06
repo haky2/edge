@@ -1,6 +1,7 @@
 package com.haky.edge.macro
 
 import com.haky.edge.ai.ClaudeClient
+import com.haky.edge.ai.FileCache
 import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.SectorIndex
 import com.haky.edge.master.StockMaster
@@ -39,6 +40,7 @@ class SectorBriefingService(
     private val macroImpact: MacroImpactService,
 ) {
     private val cache = ConcurrentHashMap<String, SectorBriefing>()
+    private val fileCache = FileCache("sector_briefing", SectorBriefing.serializer())
 
     suspend fun analyze(codes: List<String>): SectorBriefing {
         val today = LocalDate.now().toString()
@@ -49,6 +51,7 @@ class SectorBriefingService(
         }
         val cacheKey = "$today|${codes.sorted().joinToString(",")}|$ratesKey"
         cache[cacheKey]?.let { return it }
+        fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
 
         // 각 종목의 이름 + 섹터 분류(MacroImpactService 7일 캐시 재사용).
         val stockSectors: List<Triple<String, String, List<MacroImpactService.Sector>>> = codes.map { code ->
@@ -81,6 +84,7 @@ class SectorBriefingService(
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
         val result = SectorBriefing(today, comment, spotlight, generatedAt = now)
         cache[cacheKey] = result
+        fileCache.put(cacheKey, result)
         return result
     }
 

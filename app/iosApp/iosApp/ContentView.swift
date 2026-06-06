@@ -101,7 +101,7 @@ struct WatchlistView: View {
                     .chartXAxis(.hidden)
                     .chartYAxis(.hidden)
                     .frame(width: 56, height: 26)
-                    Text(String(format: "%+.1f%%", change7d))
+                    Text("7일 \(String(format: "%+.1f%%", change7d))")
                         .font(.system(size: 9))
                         .foregroundColor(change7d >= 0 ? .red : .blue)
                 }

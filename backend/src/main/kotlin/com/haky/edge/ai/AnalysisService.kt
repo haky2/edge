@@ -50,6 +50,7 @@ class AnalysisService(
 ) {
     private data class Cached(val analysis: Analysis)
     private val cache = ConcurrentHashMap<String, Cached>()
+    private val fileCache = FileCache("analysis", Analysis.serializer())
 
     suspend fun analyze(code: String, position: Position? = null): Analysis {
         val today = LocalDate.now().toString()
@@ -58,6 +59,7 @@ class AnalysisService(
         else
             "$code:$today"
         cache[key]?.let { return it.analysis }
+        fileCache.get(key)?.let { cache[key] = Cached(it); return it }
 
         // 사실 수집. 뉴스·일봉은 실패해도 분석은 진행(없으면 그만큼만).
         val quote = kis.getPrice(code)
@@ -77,6 +79,7 @@ class AnalysisService(
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
         val analysis = Analysis(code = code, name = name, date = today, comment = comment, generatedAt = now)
         cache[key] = Cached(analysis)
+        fileCache.put(key, analysis)
         return analysis
     }
 

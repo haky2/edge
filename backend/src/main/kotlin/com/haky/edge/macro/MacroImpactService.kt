@@ -1,6 +1,7 @@
 package com.haky.edge.macro
 
 import com.haky.edge.ai.ClaudeClient
+import com.haky.edge.ai.FileCache
 import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.MacroIndicator
 import com.haky.edge.master.StockMaster
@@ -62,6 +63,7 @@ class MacroImpactService(
     private val naver: NaverNewsClient,
 ) {
     private val cache = ConcurrentHashMap<String, MacroImpact>()
+    private val fileCache = FileCache("macro_impact", MacroImpact.serializer())
 
     suspend fun analyze(holdings: List<String>, watchlist: List<String>): MacroImpact {
         val today = LocalDate.now().toString()
@@ -77,6 +79,7 @@ class MacroImpactService(
         }
         val cacheKey = "$today|H:${holdings.sorted().joinToString(",")}|W:${watchlist.sorted().joinToString(",")}|$ratesKey"
         cache[cacheKey]?.let { return it }
+        fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
 
         val holdingImpacts = holdings.map { buildStockImpact(it, indicators) }
         val watchImpacts = watchlist.map { buildStockImpact(it, indicators) }
@@ -95,6 +98,7 @@ class MacroImpactService(
             generatedAt = now,
         )
         cache[cacheKey] = result
+        fileCache.put(cacheKey, result)
         return result
     }
 
