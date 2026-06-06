@@ -7,19 +7,29 @@ class ActionLogRepository(driverFactory: DriverFactory) {
     private val db = EdgeDb(driverFactory.createDriver())
     private val queries = db.actionLogQueries
 
-    fun insert(code: String, action: String, reason: String?) {
-        queries.insert(code, action, reason.takeIf { !it.isNullOrBlank() }, nowMillis())
+    /**
+     * 로그 저장. price = 기록 시점 현재가(원). 0 이하이면 null로 저장(미기록).
+     * Swift: Long(비nullable)으로 받아 0을 "없음" 센티널로 사용 → boxing 불필요.
+     */
+    fun insert(code: String, action: String, reason: String?, price: Long = 0L) {
+        queries.insert(
+            code = code,
+            action = action,
+            reason = reason.takeIf { !it.isNullOrBlank() },
+            price = price.takeIf { it > 0L },
+            created_at = nowMillis(),
+        )
     }
 
     /** 해당 종목의 최근 기록(최신 순, 최대 limit 건). */
     fun getByCode(code: String, limit: Int = 10): List<ActionLogEntry> =
-        queries.selectByCode(code) { id, c, action, reason, createdAt ->
-            ActionLogEntry(id, c, action, reason, createdAt)
+        queries.selectByCode(code) { id, c, action, reason, price, createdAt ->
+            ActionLogEntry(id, c, action, reason, price, createdAt)
         }.executeAsList().take(limit)
 
     /** 전체 로그(최신 순). 통계·패턴 분석용. */
     fun getAll(): List<ActionLogEntry> =
-        queries.selectAll { id, c, action, reason, createdAt ->
-            ActionLogEntry(id, c, action, reason, createdAt)
+        queries.selectAll { id, c, action, reason, price, createdAt ->
+            ActionLogEntry(id, c, action, reason, price, createdAt)
         }.executeAsList()
 }

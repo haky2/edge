@@ -91,7 +91,7 @@ struct StockDetailView: View {
             PositionEditView(item: item) { updated in item = updated }  // 저장 시 화면 즉시 반영
         }
         .sheet(isPresented: $showLogSheet, onDismiss: loadLogs) {
-            ActionLogSheetView(code: item.code, logRepo: logRepo)
+            ActionLogSheetView(code: item.code, logRepo: logRepo, currentPrice: quote?.price ?? 0)
         }
     }
 
@@ -803,8 +803,14 @@ struct StockDetailView: View {
                         Text(r).font(.caption).lineLimit(1)
                     }
                     Spacer()
-                    Text(shortTs(entry.createdAt))
-                        .font(.caption2).foregroundColor(.secondary)
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(shortTs(entry.createdAt))
+                            .font(.caption2).foregroundColor(.secondary)
+                        if let p = entry.price {
+                            Text("\(p.int64Value.formatted())원")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
                 }
                 if entry.id != logEntries.last?.id { Divider() }
             }
@@ -896,6 +902,7 @@ private extension View {
 struct ActionLogSheetView: View {
     let code: String
     let logRepo: ActionLogRepository
+    let currentPrice: Int64        // 기록 시점 현재가. 0 = 미기록.
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedAction = "interest"
@@ -935,7 +942,8 @@ struct ActionLogSheetView: View {
                         logRepo.insert(
                             code: code,
                             action: selectedAction,
-                            reason: reason.isEmpty ? nil : reason
+                            reason: reason.isEmpty ? nil : reason,
+                            price: currentPrice
                         )
                         dismiss()
                     }

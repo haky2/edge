@@ -6,5 +6,6 @@ data class ActionLogEntry(
     val code: String,
     val action: String,
     val reason: String?,
+    val price: Long?,     // 기록 시점 현재가(원). 구버전 DB 행은 null.
     val createdAt: Long,  // epoch millis
 )

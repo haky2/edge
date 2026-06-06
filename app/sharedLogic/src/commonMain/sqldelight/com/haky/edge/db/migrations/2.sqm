@@ -1,0 +1,2 @@
+-- v2 → v3: action_log에 당시 가격(price) 추가. 기존 행은 NULL로 보존.
+ALTER TABLE action_log ADD COLUMN price INTEGER;

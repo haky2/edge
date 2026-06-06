@@ -2,13 +2,16 @@ import SwiftUI
 import SharedLogic
 
 // Phase 4 — 내 투자 패턴 통계.
-// action_log(로컬 SQLDelight)를 전부 읽어 앱에서 집계한다. 백엔드 호출 없음.
+// action_log(로컬 SQLDelight)를 전부 읽어 앱에서 집계. 백엔드는 현재가·일봉 조회에만 사용.
 struct StatsView: View {
-    private let logRepo  = Db.actionLog
+    private let logRepo   = Db.actionLog
     private let watchRepo = Db.watchlist
+    private let api       = Db.api
 
     @State private var entries: [ActionLogEntry] = []
-    @State private var nameMap: [String: String] = [:]   // code → 종목명
+    @State private var nameMap: [String: String] = [:]    // code → 종목명
+    @State private var missedRows: [MissedRow] = []
+    @State private var missedLoading = false
 
     var body: some View {
         NavigationStack {
@@ -30,6 +33,7 @@ struct StatsView: View {
         List {
             summarySection
             if avgHoldDays != nil || !pairRows.isEmpty { holdSection }
+            missedSection
             if !reasonRows.isEmpty { reasonSection }
             codeSection
             recentSection
@@ -90,6 +94,61 @@ struct StatsView: View {
         }
     }
 
+    // MARK: - 섹션: 놓친 종목
+
+    @ViewBuilder
+    private var missedSection: some View {
+        Section {
+            if missedLoading {
+                HStack {
+                    ProgressView().scaleEffect(0.8)
+                    Text("현재가 확인 중…").font(.footnote).foregroundColor(.secondary)
+                }
+            } else if missedRows.isEmpty {
+                Text("없음 (관심 후 미매수 종목 없어요)").font(.footnote).foregroundColor(.secondary)
+            } else {
+                ForEach(missedRows) { row in
+                    missedRow(row)
+                }
+            }
+        } header: {
+            Text("놓친 종목 (관심 후 미매수 \(missedRows.count)개)")
+        } footer: {
+            Text("관심 기록은 있지만 매수 로그가 없는 종목.")
+                .font(.caption2)
+        }
+    }
+
+    private func missedRow(_ row: MissedRow) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(row.name).font(.body)
+                Spacer()
+                if let ret = row.hypotheticalReturn {
+                    Text((ret >= 0 ? "+" : "") + String(format: "%.1f%%", ret))
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(ret >= 0 ? .red : .blue)
+                }
+            }
+            HStack(spacing: 6) {
+                Text("관심 \(shortDate(row.lastInterestAt))")
+                    .font(.caption2).foregroundColor(.secondary)
+                if let then = row.thenPrice {
+                    Text("·").font(.caption2).foregroundColor(.secondary)
+                    Text("당시 \(then.formatted())원")
+                        .font(.caption2).foregroundColor(.secondary)
+                } else {
+                    Text("· 가격 미기록").font(.caption2).foregroundColor(.secondary)
+                }
+                if let now = row.currentPrice {
+                    Text("→ 현재 \(now.formatted())원")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
     // MARK: - 섹션: 사유 분포
 
     private var reasonSection: some View {
@@ -99,7 +158,6 @@ struct StatsView: View {
                     Text(row.reason).font(.body)
                     Spacer()
                     Text("\(row.count)회").font(.caption.weight(.semibold)).foregroundColor(.secondary)
-                    // 비율 바 (최대값 기준)
                     if let max = reasonRows.first?.count, max > 0 {
                         RoundedRectangle(cornerRadius: 2)
                             .fill(Color.purple.opacity(0.5))
@@ -131,7 +189,7 @@ struct StatsView: View {
         }
     }
 
-    // MARK: - 섹션: 최근 활동 타임라인
+    // MARK: - 섹션: 최근 활동
 
     private var recentSection: some View {
         Section("최근 활동") {
@@ -143,7 +201,13 @@ struct StatsView: View {
                         if let r = e.reason { Text(r).font(.caption2).foregroundColor(.secondary) }
                     }
                     Spacer()
-                    Text(shortTs(e.createdAt)).font(.caption2).foregroundColor(.secondary)
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(shortTs(e.createdAt)).font(.caption2).foregroundColor(.secondary)
+                        if let p = e.price {
+                            Text("\(p.int64Value.formatted())원")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
                 }
                 .padding(.vertical, 2)
             }
@@ -172,7 +236,6 @@ struct StatsView: View {
     private var sellCount:     Int { entries.filter { $0.action == "sell" }.count }
     private var interestCount: Int { entries.filter { $0.action == "interest" }.count }
 
-    // reason 빈도 (reason 있는 것만, 전체 action 기준)
     private var reasonRows: [(reason: String, count: Int)] {
         var counts: [String: Int] = [:]
         for e in entries {
@@ -182,15 +245,14 @@ struct StatsView: View {
         return counts.map { ($0.key, $0.value) }.sorted { $0.count > $1.count }
     }
 
-    // 종목별 행동 집계 (활동 많은 순)
     private var codeRows: [(code: String, buys: Int, sells: Int, interests: Int)] {
         var map: [String: (buy: Int, sell: Int, interest: Int)] = [:]
         for e in entries {
             var c = map[e.code] ?? (0, 0, 0)
             switch e.action {
-            case "buy":      c.buy += 1
-            case "sell":     c.sell += 1
-            default:         c.interest += 1
+            case "buy":  c.buy += 1
+            case "sell": c.sell += 1
+            default:     c.interest += 1
             }
             map[e.code] = c
         }
@@ -199,7 +261,6 @@ struct StatsView: View {
             .sorted { ($0.buys + $0.sells + $0.interests) > ($1.buys + $1.sells + $1.interests) }
     }
 
-    // 매수→매도 쌍 (코드별 FIFO 매칭, 시간순)
     private struct HoldPair: Identifiable {
         let id: String
         let code: String
@@ -219,12 +280,8 @@ struct StatsView: View {
             for buy in buys {
                 while si < sells.count && sells[si].createdAt <= buy.createdAt { si += 1 }
                 guard si < sells.count else { break }
-                result.append(HoldPair(
-                    id: "\(code)_\(buy.createdAt)",
-                    code: code,
-                    buyAt: buy.createdAt,
-                    sellAt: sells[si].createdAt
-                ))
+                result.append(HoldPair(id: "\(code)_\(buy.createdAt)", code: code,
+                                       buyAt: buy.createdAt, sellAt: sells[si].createdAt))
                 si += 1
             }
         }
@@ -236,15 +293,100 @@ struct StatsView: View {
         return Double(pairRows.map { $0.days }.reduce(0, +)) / Double(pairRows.count)
     }
 
+    // MARK: - 놓친 종목 모델
+
+    struct MissedRow: Identifiable {
+        let id: String           // code
+        let code: String
+        let name: String
+        let lastInterestAt: Int64
+        let loggedPrice: Int64?      // 로그에 저장된 당시 가격 (v3 이후)
+        var lookbackPrice: Int64?    // 일봉 소급 가격 (구버전 로그, 로드 후 채워짐)
+        var currentPrice: Int64?
+
+        var thenPrice: Int64? { loggedPrice ?? lookbackPrice }
+
+        var hypotheticalReturn: Double? {
+            guard let then = thenPrice.map(Double.init),
+                  let now = currentPrice.map(Double.init),
+                  then > 0 else { return nil }
+            return (now - then) / then * 100
+        }
+    }
+
     // MARK: - 로드
 
     private func reload() {
         entries = logRepo.getAll()
         let watchItems = watchRepo.all()
         nameMap = Dictionary(uniqueKeysWithValues: watchItems.map { ($0.code, $0.name) })
+        Task { await loadMissed() }
+    }
+
+    private func loadMissed() async {
+        missedLoading = true
+        defer { missedLoading = false }
+
+        // 관심 있고 매수 로그 없는 코드
+        let interestCodes = Set(entries.filter { $0.action == "interest" }.map { $0.code })
+        let buyCodes      = Set(entries.filter { $0.action == "buy" }.map { $0.code })
+        let missed        = interestCodes.subtracting(buyCodes)
+        guard !missed.isEmpty else { missedRows = []; return }
+
+        // 종목별 가장 최근 interest 엔트리 추출
+        var rows: [MissedRow] = []
+        for code in missed {
+            let latest = entries
+                .filter { $0.code == code && $0.action == "interest" }
+                .max(by: { $0.createdAt < $1.createdAt })
+            guard let e = latest else { continue }
+            let loggedPrice = e.price.map { $0.int64Value }
+            rows.append(MissedRow(
+                id: code, code: code,
+                name: nameMap[code] ?? code,
+                lastInterestAt: e.createdAt,
+                loggedPrice: loggedPrice
+            ))
+        }
+
+        // 현재가 일괄 조회
+        let codes = rows.map { $0.code }
+        if let quotes = try? await api.getQuotes(codes: codes) {
+            let qmap = Dictionary(uniqueKeysWithValues: quotes.map { ($0.code, $0.price) })
+            for i in rows.indices { rows[i].currentPrice = qmap[rows[i].code] }
+        }
+
+        // 구버전 로그(price 없음): 일봉 소급으로 당시 가격 추정
+        await withTaskGroup(of: (String, Int64?).self) { group in
+            for row in rows where row.loggedPrice == nil {
+                group.addTask {
+                    guard let bars = try? await self.api.getDaily(code: row.code, bars: 120)
+                    else { return (row.code, nil) }
+                    let targetDate = self.epochToYYYYMMDD(row.lastInterestAt)
+                    // 최신일이 앞 → 관심 등록일 이하인 첫 번째 바 = 당일 또는 직전 거래일
+                    let match = bars.first { $0.date <= targetDate }
+                    return (row.code, match?.close)
+                }
+            }
+            for await (code, price) in group {
+                if let idx = rows.firstIndex(where: { $0.code == code }) {
+                    rows[idx].lookbackPrice = price
+                }
+            }
+        }
+
+        missedRows = rows.sorted { $0.lastInterestAt > $1.lastInterestAt }
     }
 
     // MARK: - 포맷 헬퍼
+
+    private func epochToYYYYMMDD(_ millis: Int64) -> String {
+        let d = Date(timeIntervalSince1970: Double(millis) / 1000)
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd"
+        f.timeZone = TimeZone(identifier: "Asia/Seoul")
+        return f.string(from: d)
+    }
 
     private func actionLabel(_ action: String) -> String {
         switch action {
