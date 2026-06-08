@@ -31,6 +31,7 @@ struct StockDetailView: View {
     @State private var valuationHelpExpanded = false    // PER/PBR 설명 접기
     @State private var chartPeriod: ChartPeriod = .m3   // 가격 차트 기간 토글
     @State private var trendLineHelpExpanded = false     // 20일 추세선 설명 토글
+    @State private var commentExpanded = false   // AI 코멘트 더보기/접기
     @State private var analyzing = false
     @State private var loading = false
     @State private var showEdit = false
@@ -684,16 +685,49 @@ struct StockDetailView: View {
             .padding(.top, 8)
 
             if let a = analysis {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(a.comment.components(separatedBy: "\n\n"), id: \.self) { para in
-                        let trimmed = para.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !trimmed.isEmpty {
-                            Text(markdown(trimmed))
-                                .font(.callout)
-                                .fixedSize(horizontal: false, vertical: true)
+                let sections = parseCommentSections(a.comment)
+                let collapsible = sections.count > 2
+                let visible = (collapsible && !commentExpanded) ? Array(sections.prefix(2)) : sections
+
+                // 보라 액센트 바 + 소제목 강조 + 본문 줄간격 (BriefingView proseBlock 톤과 통일)
+                HStack(alignment: .top, spacing: 10) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.purple.opacity(0.35))
+                        .frame(width: 3)
+                    VStack(alignment: .leading, spacing: 16) {
+                        ForEach(visible) { sec in
+                            VStack(alignment: .leading, spacing: 6) {
+                                if let h = sec.heading {
+                                    Text(h)
+                                        .font(.subheadline.weight(.bold))
+                                        .foregroundColor(.purple)
+                                }
+                                ForEach(Array(sec.body.enumerated()), id: \.offset) { _, p in
+                                    Text(markdown(p))
+                                        .font(.callout)
+                                        .lineSpacing(5)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
                         }
                     }
                 }
+
+                if collapsible {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { commentExpanded.toggle() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(commentExpanded ? "접기" : "더보기")
+                            Image(systemName: commentExpanded ? "chevron.up" : "chevron.down")
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.purple)
+                    }
+                    .padding(.top, 2)
+                }
+
                 Text(aiCommentFreshLabel(a) + " · 투자 판단과 책임은 본인에게 있습니다")
                     .font(.caption2).foregroundColor(.secondary)
                     .padding(.top, 2)
@@ -1553,6 +1587,47 @@ struct StockDetailView: View {
             markdown: s,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         )) ?? AttributedString(s)
+    }
+
+    // AI 코멘트를 (소제목, 본문 단락들) 섹션으로 파싱. **소제목**만 있는 블록을 헤더로 인식,
+    // 이어지는 블록들을 그 섹션의 본문으로 묶는다. 헤더 없는 옛 포맷도 한 섹션으로 안전 처리.
+    private struct CommentSection: Identifiable {
+        let id = UUID()
+        let heading: String?
+        let body: [String]
+    }
+
+    private func parseCommentSections(_ comment: String) -> [CommentSection] {
+        let blocks = comment.components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var sections: [CommentSection] = []
+        var heading: String? = nil
+        var body: [String] = []
+        func flush() {
+            if heading != nil || !body.isEmpty {
+                sections.append(CommentSection(heading: heading, body: body))
+            }
+            heading = nil; body = []
+        }
+        for b in blocks {
+            if let h = headingOnly(b) {
+                flush()
+                heading = h
+            } else {
+                body.append(b)
+            }
+        }
+        flush()
+        return sections
+    }
+
+    // "**최근 흐름**" 처럼 짧고 통째로 굵은 줄 → 소제목 텍스트, 아니면 nil(본문).
+    private func headingOnly(_ s: String) -> String? {
+        guard s.hasPrefix("**"), s.hasSuffix("**"), s.count > 4 else { return nil }
+        let inner = String(s.dropFirst(2).dropLast(2))
+        guard !inner.contains("**"), !inner.contains("\n"), inner.count <= 20 else { return nil }
+        return inner
     }
 
     private func load() async {
