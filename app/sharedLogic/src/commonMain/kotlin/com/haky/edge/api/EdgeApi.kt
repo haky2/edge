@@ -13,6 +13,7 @@ import com.haky.edge.model.NewsItem
 import com.haky.edge.model.Quote
 import com.haky.edge.model.SectorBriefing
 import com.haky.edge.model.SectorIndex
+import com.haky.edge.model.ShortSellingSummary
 import com.haky.edge.model.StockInfo
 import com.haky.edge.model.TargetPriceInfo
 import io.ktor.client.HttpClient
@@ -204,4 +205,10 @@ class EdgeApi(
         if (targetPrice > 0.0) parameter("targetPrice", targetPrice)
         if (stopPrice > 0.0) parameter("stopPrice", stopPrice)
     }.body()
+
+    /** 종목 공매도 거래량·잔고 요약. KRX 데이터, 당일 캐시. 데이터 없으면 null. */
+    @Throws(Exception::class)
+    suspend fun getShortSelling(code: String): ShortSellingSummary? = runCatching {
+        client.get("$baseUrl/short-selling/$code").body<ShortSellingSummary>()
+    }.getOrNull()
 }

@@ -10,6 +10,7 @@ import com.haky.edge.kis.KisException
 import com.haky.edge.macro.CopperClient
 import com.haky.edge.macro.EcosClient
 import com.haky.edge.macro.FearGreedClient
+import com.haky.edge.macro.KrxShortSellingClient
 import com.haky.edge.macro.MacroImpactService
 import com.haky.edge.macro.MarketMoodService
 import com.haky.edge.macro.SectorBriefingService
@@ -30,6 +31,7 @@ import com.haky.edge.routes.quoteRoutes
 import com.haky.edge.routes.searchRoutes
 import com.haky.edge.routes.sectorBriefingRoutes
 import com.haky.edge.routes.sectorRoutes
+import com.haky.edge.routes.shortSellingRoutes
 import com.haky.edge.routes.targetPriceRoutes
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -108,7 +110,8 @@ fun Application.module() {
     val copper = CopperClient()
     val ecos = EcosClient(apiKey = System.getenv("ECOS_API_KEY").orEmpty())
     val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos, naver)
-    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact)
+    val krxShortSelling = KrxShortSellingClient()
+    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling)
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
 
@@ -127,6 +130,7 @@ fun Application.module() {
         earningsRoutes(dart)
         sectorRoutes(kis)
         sectorBriefingRoutes(sectorBriefing)
+        shortSellingRoutes(krxShortSelling)
         targetPriceRoutes(naverTargetPrice)
     }
 }

@@ -20,6 +20,8 @@ struct StockDetailView: View {
     @State private var dartDisclosures: [DartDisclosure] = []
     @State private var earningsEntry: EarningsEntry?
     @State private var stockSignal: StockImpact?
+    @State private var shortSelling: ShortSellingSummary?
+    @State private var shortSellingHelpExpanded = false
     @State private var dartExpanded = false
     @State private var earningsExpanded = false
     @State private var signalExpanded = false
@@ -56,6 +58,9 @@ struct StockDetailView: View {
                 }
                 if !flows.isEmpty {
                     flowCard()       // 수급: 외인/기관/개인 일별 순매수
+                }
+                if let ss = shortSelling {
+                    shortSellingCard(ss)
                 }
                 if !news.isEmpty {
                     newsCard()
@@ -996,6 +1001,111 @@ struct StockDetailView: View {
         return f.string(from: Date())
     }
 
+    // 공매도 카드 — 거래량·잔고 수치 + ⓘ 공매도 설명 토글
+    private func shortSellingCard(_ ss: ShortSellingSummary) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // 헤더
+            HStack {
+                Text("공매도 동향").font(.subheadline.weight(.semibold))
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        shortSellingHelpExpanded.toggle()
+                    }
+                } label: {
+                    Label(shortSellingHelpExpanded ? "접기" : "공매도란?",
+                          systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // 설명 토글 (접기/펼치기)
+            if shortSellingHelpExpanded {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("공매도는 **주식을 빌려서 파는** 것이에요.")
+                        .font(.caption)
+                    Text("지금 비싸게 팔고 → 나중에 싸게 사서 갚아 차익을 얻는 방식이라, 하락에 베팅하는 세력이 많을수록 **공매도 잔고**가 늘어나요.")
+                        .font(.caption)
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("잔고 증가").font(.caption.weight(.semibold)).foregroundColor(.red)
+                            Text("하락 베팅 강화\n단기 하락 압력").font(.caption2).foregroundColor(.secondary)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("잔고 감소").font(.caption.weight(.semibold)).foregroundColor(.blue)
+                            Text("숏커버링(청산 매수)\n단기 상승 압력").font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    Text("잔고는 T+2일 지연 확정이라, 최신 2거래일은 '집계 중'으로 보여요.")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                .padding(10)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
+            }
+
+            // 수치 요약
+            HStack(spacing: 16) {
+                // 최근 거래량
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("공매도 거래량").font(.caption).foregroundColor(.secondary)
+                    Text("\(formatShortVol(ss.recentVolume))주")
+                        .font(.footnote.weight(.semibold))
+                    Text(ss.recentVolumeDate).font(.caption2).foregroundColor(.secondary)
+                }
+
+                Divider().frame(height: 36)
+
+                // 잔고
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("공매도 잔고").font(.caption).foregroundColor(.secondary)
+                    if let bal = ss.balance {
+                        Text("\(formatShortVol(bal.int64Value))주")
+                            .font(.footnote.weight(.semibold))
+                        HStack(spacing: 4) {
+                            if let pctBox = ss.balanceChangePct {
+                                let pct = pctBox.doubleValue
+                                let isUp = pct > 0.5
+                                let isDown = pct < -0.5
+                                Image(systemName: isUp ? "arrow.up" : isDown ? "arrow.down" : "minus")
+                                    .font(.caption2)
+                                    .foregroundColor(isUp ? .red : isDown ? .blue : .secondary)
+                                Text(pct >= 0 ? "+\(String(format: "%.1f", pct))%" : "\(String(format: "%.1f", pct))%")
+                                    .font(.caption2)
+                                    .foregroundColor(isUp ? .red : isDown ? .blue : .secondary)
+                            }
+                            if let d = ss.balanceDate {
+                                Text("(\(d) 확정)").font(.caption2).foregroundColor(.secondary)
+                            }
+                        }
+                    } else {
+                        Text("집계 중").font(.footnote).foregroundColor(.secondary)
+                        Text("T+2일 지연").font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+                Spacer()
+            }
+            .padding(.top, 2)
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.06), radius: 4, x: 0, y: 2)
+    }
+
+    private func formatShortVol(_ vol: Int64) -> String {
+        if vol >= 10_000 {
+            return String(format: "%.1f만", Double(vol) / 10_000)
+        } else {
+            let f = NumberFormatter()
+            f.numberStyle = .decimal
+            return f.string(from: NSNumber(value: vol)) ?? "\(vol)"
+        }
+    }
+
     // 뉴스 카드(2b). 종목명으로 네이버 검색한 최신 헤드라인. 탭하면 Safari로 원문 이동.
     private func newsCard() -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1277,13 +1387,15 @@ struct StockDetailView: View {
         targetPriceInfo = try? await api.getTargetPrice(code: item.code)
         loading = false
 
-        // DART·실적·지표영향은 느린 네트워크 이후 병렬 로드 (접기 기본이라 늦어도 무방)
-        async let dartTask   = api.getDartDisclosures(code: item.code, days: 30)
-        async let earnsTask  = api.getEarnings(codes: [item.code])
-        async let signalTask = api.getStockSignals(code: item.code)
+        // DART·실적·지표영향·공매도는 느린 네트워크 이후 병렬 로드 (접기 기본이라 늦어도 무방)
+        async let dartTask         = api.getDartDisclosures(code: item.code, days: 30)
+        async let earnsTask        = api.getEarnings(codes: [item.code])
+        async let signalTask       = api.getStockSignals(code: item.code)
+        async let shortSellingTask = api.getShortSelling(code: item.code)
         dartDisclosures = (try? await dartTask) ?? []
         earningsEntry   = (try? await earnsTask)?.first
         stockSignal     = try? await signalTask
+        shortSelling    = try? await shortSellingTask
     }
 
     private func loadAnalysis() async {
