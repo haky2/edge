@@ -1,6 +1,7 @@
 package com.haky.edge.api
 
 import com.haky.edge.model.Analysis
+import com.haky.edge.model.Backtest
 import com.haky.edge.model.DailyBar
 import com.haky.edge.model.DartDisclosure
 import com.haky.edge.model.EarningsEntry
@@ -220,5 +221,14 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getValuationBand(code: String): ValuationBand? = runCatching {
         client.get("$baseUrl/valuation-band/$code").body<ValuationBand>()
+    }.getOrNull()
+
+    /**
+     * 신호별 익일 적중률 백테스트(외인·기관 순매수·거래량 급증). 일봉 부족 시 null.
+     * 표본수 n과 confident 플래그를 그대로 노출 — 작은 표본은 화면에서 신중히 표기.
+     */
+    @Throws(Exception::class)
+    suspend fun getBacktest(code: String): Backtest? = runCatching {
+        client.get("$baseUrl/backtest/$code").body<Backtest>()
     }.getOrNull()
 }

@@ -119,7 +119,7 @@ fun Application.module() {
     val krxShortSelling = KrxShortSellingClient()
     val valuationBand = ValuationBandService(kis, dart)
     val backtest = BacktestService(kis)
-    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling, valuationBand)
+    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling, valuationBand, backtest)
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
 

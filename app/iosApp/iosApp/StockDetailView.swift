@@ -23,6 +23,7 @@ struct StockDetailView: View {
     @State private var shortSelling: ShortSellingSummary?
     @State private var shortSellingHelpExpanded = false
     @State private var valuationBand: ValuationBand?
+    @State private var backtest: Backtest?          // 신호별 익일 적중률(검증된 신호)
     @State private var dartExpanded = false
     @State private var earningsExpanded = false
     @State private var signalExpanded = false
@@ -61,6 +62,7 @@ struct StockDetailView: View {
                 if !flows.isEmpty {
                     flowCard()       // 수급: 외인/기관/개인 일별 순매수
                 }
+                if let bt = backtest { backtestCard(bt) }  // 검증된 신호(익일 적중률)
                 if let ss = shortSelling {
                     shortSellingCard(ss)
                 }
@@ -1102,6 +1104,83 @@ struct StockDetailView: View {
         }
     }
 
+    // 검증된 신호 카드 — 외인·기관 순매수·거래량 급증일의 익일 적중률(이 종목 실측)
+    private func backtestCard(_ bt: Backtest) -> some View {
+        let shown = bt.signals.filter { $0.n > 0 }
+        guard !shown.isEmpty else { return AnyView(EmptyView()) }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("검증된 신호").font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text("최근 \(bt.tradingDays)거래일 실측").font(.caption2).foregroundColor(.secondary)
+                }
+                .padding(.top, 4)
+
+                Text("평소 익일 상승확률 \(Int(bt.baselineWinRate))% · 평균 \(String(format: "%+.2f", bt.baselineAvgReturn))% (세로선=평소 기준)")
+                    .font(.caption2).foregroundColor(.secondary)
+
+                ForEach(Array(shown.enumerated()), id: \.offset) { idx, s in
+                    if idx > 0 { Divider() }
+                    backtestRow(s, baseline: Int(bt.baselineWinRate))
+                }
+
+                Text("이 종목 과거 통계일 뿐 미래를 보장하지 않아요. 표본(n)이 작으면 참고만 하세요.")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            .padding()
+            .cardStyle()
+        )
+    }
+
+    private func backtestRow(_ s: SignalResult, baseline: Int) -> some View {
+        let win = Int(s.winRate)
+        let confident = s.confident
+        let edgeUp = s.edge >= 0
+        let accent: Color = edgeUp ? .red : .blue
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(s.signal).font(.caption.weight(.semibold))
+                Text("표본 \(Int(s.n))일").font(.caption2).foregroundColor(.secondary)
+                Spacer()
+                if confident {
+                    Text("\(edgeUp ? "+" : "")\(String(format: "%.1f", s.edge))%p")
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(accent.opacity(0.15)).foregroundColor(accent).cornerRadius(8)
+                } else {
+                    Text("표본 부족")
+                        .font(.caption2)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.gray.opacity(0.15)).foregroundColor(.secondary).cornerRadius(8)
+                }
+            }
+            // 익일 상승확률 바 + 평소(baseline) 기준선
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.gray.opacity(0.18)).frame(height: 6)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill((confident ? accent : Color.gray).opacity(confident ? 0.7 : 0.4))
+                        .frame(width: geo.size.width * CGFloat(win) / 100.0, height: 6)
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.5))
+                        .frame(width: 1.5, height: 10)
+                        .offset(x: geo.size.width * CGFloat(baseline) / 100.0 - 0.75, y: -2)
+                }
+            }
+            .frame(height: 10)
+            HStack {
+                Text("익일 상승확률 \(win)%")
+                    .font(.caption2).foregroundColor(confident ? .primary : .secondary)
+                Spacer()
+                Text("평균 \(String(format: "%+.2f", s.avgReturn))%")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+        }
+        .opacity(confident ? 1.0 : 0.6)
+    }
+
     // 공매도 카드 — 거래량·잔고 수치 + ⓘ 공매도 설명 토글
     private func shortSellingCard(_ ss: ShortSellingSummary) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1494,11 +1573,13 @@ struct StockDetailView: View {
         async let signalTask        = api.getStockSignals(code: item.code)
         async let shortSellingTask  = api.getShortSelling(code: item.code)
         async let valuationBandTask = api.getValuationBand(code: item.code)
+        async let backtestTask      = api.getBacktest(code: item.code)
         dartDisclosures = (try? await dartTask) ?? []
         earningsEntry   = (try? await earnsTask)?.first
         stockSignal     = try? await signalTask
         shortSelling    = try? await shortSellingTask
         valuationBand   = try? await valuationBandTask
+        backtest        = try? await backtestTask
     }
 
     private func loadAnalysis() async {

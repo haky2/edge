@@ -53,6 +53,7 @@ class AnalysisService(
     private val macroImpact: MacroImpactService,
     private val krxShortSelling: KrxShortSellingClient,
     private val valuationBandSvc: ValuationBandService,
+    private val backtestSvc: BacktestService,
 ) {
     private data class Cached(val analysis: Analysis)
     private val cache = ConcurrentHashMap<String, Cached>()
@@ -79,11 +80,12 @@ class AnalysisService(
         }.getOrNull()
         val shortSelling = runCatching { krxShortSelling.getShortSelling(code) }.getOrNull()
         val valuationBand = runCatching { valuationBandSvc.getValuationBand(code) }.getOrNull()
+        val backtest = runCatching { backtestSvc.getBacktest(code) }.getOrNull()
         // 비슷한 뉴스가 도배되는 날(예: 특정 이슈)이 많아, 넉넉히 받아 유사 건을 묶고 대표 N건만 쓴다.
         val rawNews = runCatching { naver.search(name, display = 30) }.getOrElse { emptyList() }
         val news = dedupeNews(rawNews, limit = 8)
 
-        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, valuationBand, position)
+        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, valuationBand, backtest, position)
         val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 1800)
 
         val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
@@ -107,6 +109,7 @@ class AnalysisService(
         sectorChangeRate: Double?,
         shortSelling: ShortSellingSummary?,
         valuationBand: ValuationBand?,
+        backtest: Backtest?,
         position: Position? = null,
     ): String {
         val sb = StringBuilder()
@@ -193,6 +196,7 @@ class AnalysisService(
                 sb.appendLine("  ${it.date} 외국인 ${it.foreign} / 기관 ${it.institution} / 개인 ${it.individual}")
             }
         }
+        backtestText(backtest)?.let { sb.appendLine().append(it) }
         if (news.isNotEmpty()) {
             sb.appendLine("최근 뉴스(유사 기사는 묶음, '외 N건'=같은 이슈가 그만큼 쏟아졌다는 관심도 신호):")
             news.forEach { c ->
@@ -279,6 +283,30 @@ class AnalysisService(
             if (streak >= 2) add("최근 ${streak}거래일 연속 ${if (firstSign > 0) "상승" else "하락"}(누적 ${"%.1f".format(streakSum)}%)")
         }
         if (moves.isNotEmpty()) sb.appendLine("  " + moves.joinToString(", "))
+        return sb.toString()
+    }
+
+    /**
+     * 백테스트(신호별 익일 적중률)를 Claude 입력용 텍스트로. 신뢰 가능한(confident) 신호만 적는다.
+     * 표본이 작고 특정 기간 한정이라는 한계를 명시해 과신을 막는다.
+     */
+    private fun backtestText(b: Backtest?): String? {
+        if (b == null) return null
+        val confident = b.signals.filter { it.confident && it.n > 0 }
+        if (confident.isEmpty()) return null
+        val sb = StringBuilder()
+        sb.appendLine(
+            "검증된 신호(이 종목 최근 ${b.tradingDays}거래일 실측, " +
+                "평소 익일 상승확률 ${b.baselineWinRate}%·평균 ${"%.2f".format(b.baselineAvgReturn)}%):"
+        )
+        confident.forEach { s ->
+            val edgeSign = if (s.edge >= 0) "+" else ""
+            sb.appendLine(
+                "  ${s.signal}일(n=${s.n}): 익일 상승확률 ${s.winRate}% / 평균 ${"%.2f".format(s.avgReturn)}%" +
+                    " (평소 대비 $edgeSign${"%.2f".format(s.edge)}%p)"
+            )
+        }
+        sb.appendLine("  ※ 과거 표본 통계일 뿐 미래 보장 아님. 승률과 평균이 어긋나면 소수 급등/급락일이 평균을 끌어당긴 것.")
         return sb.toString()
     }
 
@@ -377,6 +405,7 @@ class AnalysisService(
             6. 형식: 불릿·번호 목록 금지. 각 단락 첫 줄에 **소제목**(예: **최근 흐름**, **실적 확인**, **수급·밸류**, **종합**)을 넣어라. 단락 사이는 빈 줄 하나. 소제목 바로 아래는 이야기처럼 흐르는 문장으로.
             7. 뉴스는 종목과 무관한 것이 섞일 수 있다. 관련 있어 보이는 것만 쓰고 억지로 연결하지 마라.
             8. "내 포지션" 섹션이 있으면 평단가 기준 현재 손익과 목표가까지 남은 거리를 마지막 문단에 자연스럽게 녹여준다.
+            9. "검증된 신호" 섹션이 있으면 ③ 수급·밸류 단락에서 활용하되, "이 종목 과거 통계상" 같은 한정을 붙이고 표본이 작을 수 있음을 신중하게 다뤄라. 승률과 평균이 다르면 그 의미(소수 급등일 영향)도 짚어준다. 절대 미래 수익을 단정하지 마라.
         """.trimIndent()
     }
 }
