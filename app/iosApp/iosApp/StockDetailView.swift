@@ -22,6 +22,7 @@ struct StockDetailView: View {
     @State private var stockSignal: StockImpact?
     @State private var shortSelling: ShortSellingSummary?
     @State private var shortSellingHelpExpanded = false
+    @State private var valuationBand: ValuationBand?
     @State private var dartExpanded = false
     @State private var earningsExpanded = false
     @State private var signalExpanded = false
@@ -52,6 +53,7 @@ struct StockDetailView: View {
                     positionCard(q)  // 내 포지션 + 수익률
                     aiCommentCard()  // AI 종합 코멘트 (포지션 다음 → 맥락 연결)
                     analysisCard(q)  // 지표 해석 ① 계산 기반(52주 위치·수급 흐름 요약)
+                    if let band = valuationBand { valuationBandCard(band) }  // 밸류에이션 히스토리 밴드
                     if let tr = technicalResult { technicalCard(tr, price: Double(q.price)) }  // 이평·RSI·거래량
                 } else if loading {
                     ProgressView().padding(.top, 40)
@@ -1001,6 +1003,105 @@ struct StockDetailView: View {
         return f.string(from: Date())
     }
 
+    // 밸류에이션 히스토리 밴드 카드 — PER/PBR 현재값을 과거 N년 밴드 위에 표시
+    private func valuationBandCard(_ band: ValuationBand) -> some View {
+        let showPer = band.perCurrent > 0 && band.perMax > band.perMin
+        let showPbr = band.pbrCurrent > 0 && band.pbrMax > band.pbrMin
+        guard showPer || showPbr else { return AnyView(EmptyView()) }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("밸류에이션 히스토리").font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text("\(band.yearsUsed)년 밴드").font(.caption2).foregroundColor(.secondary)
+                }
+                .padding(.top, 4)
+
+                if showPer {
+                    valuationBandRow(
+                        name: "PER",
+                        current: band.perCurrent,
+                        bandMin: band.perMin, bandMax: band.perMax, median: band.perMedian,
+                        percentile: Int(band.perPercentile),
+                        label: band.perLabel
+                    )
+                }
+                if showPbr {
+                    if showPer { Divider() }
+                    valuationBandRow(
+                        name: "PBR",
+                        current: band.pbrCurrent,
+                        bandMin: band.pbrMin, bandMax: band.pbrMax, median: band.pbrMedian,
+                        percentile: Int(band.pbrPercentile),
+                        label: band.pbrLabel
+                    )
+                }
+
+                Text("연도말 종가 기준, 상장주식수 근사치 — 분할·증자 시 오차 가능")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            .padding()
+            .cardStyle()
+        )
+    }
+
+    private func valuationBandRow(name: String, current: Double, bandMin: Double, bandMax: Double, median: Double, percentile: Int, label: String) -> some View {
+        let color = valuationBandColor(label)
+        let fraction = bandMax > bandMin ? CGFloat((current - bandMin) / (bandMax - bandMin)) : 0.5
+        let clampedFraction = fraction < 0 ? 0.0 : (fraction > 1 ? 1.0 : fraction)
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(name).font(.caption.weight(.semibold)).foregroundColor(.secondary)
+                Text(String(format: "%.2f배", current)).font(.caption.weight(.bold))
+                Spacer()
+                Text(label)
+                    .font(.caption2)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(color.opacity(0.15))
+                    .foregroundColor(color)
+                    .cornerRadius(8)
+            }
+            // 범위 바 + 현재 위치 마커
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.gray.opacity(0.18))
+                        .frame(height: 6)
+                    // 중앙값 눈금
+                    if bandMax > bandMin {
+                        let midFraction = CGFloat((median - bandMin) / (bandMax - bandMin))
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.5))
+                            .frame(width: 1.5, height: 10)
+                            .offset(x: midFraction * geo.size.width - 0.75, y: -2)
+                    }
+                    // 현재값 마커
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(color)
+                        .frame(width: 3, height: 14)
+                        .offset(x: clampedFraction * (geo.size.width - 3), y: -4)
+                }
+            }
+            .frame(height: 14)
+            HStack {
+                Text(String(format: "%.1f배", bandMin)).font(.caption2).foregroundColor(.secondary)
+                Spacer()
+                Text("중앙 \(String(format: "%.1f배", median))").font(.caption2).foregroundColor(.secondary)
+                Spacer()
+                Text(String(format: "%.1f배", bandMax)).font(.caption2).foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func valuationBandColor(_ label: String) -> Color {
+        switch label {
+        case "역사적 저평가":   return .blue
+        case "역사적 고평가":   return .red
+        default:               return .orange
+        }
+    }
+
     // 공매도 카드 — 거래량·잔고 수치 + ⓘ 공매도 설명 토글
     private func shortSellingCard(_ ss: ShortSellingSummary) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1387,15 +1488,17 @@ struct StockDetailView: View {
         targetPriceInfo = try? await api.getTargetPrice(code: item.code)
         loading = false
 
-        // DART·실적·지표영향·공매도는 느린 네트워크 이후 병렬 로드 (접기 기본이라 늦어도 무방)
-        async let dartTask         = api.getDartDisclosures(code: item.code, days: 30)
-        async let earnsTask        = api.getEarnings(codes: [item.code])
-        async let signalTask       = api.getStockSignals(code: item.code)
-        async let shortSellingTask = api.getShortSelling(code: item.code)
+        // DART·실적·지표영향·공매도·밸류에이션은 느린 네트워크 이후 병렬 로드 (접기 기본이라 늦어도 무방)
+        async let dartTask          = api.getDartDisclosures(code: item.code, days: 30)
+        async let earnsTask         = api.getEarnings(codes: [item.code])
+        async let signalTask        = api.getStockSignals(code: item.code)
+        async let shortSellingTask  = api.getShortSelling(code: item.code)
+        async let valuationBandTask = api.getValuationBand(code: item.code)
         dartDisclosures = (try? await dartTask) ?? []
         earningsEntry   = (try? await earnsTask)?.first
         stockSignal     = try? await signalTask
         shortSelling    = try? await shortSellingTask
+        valuationBand   = try? await valuationBandTask
     }
 
     private func loadAnalysis() async {

@@ -16,6 +16,7 @@ import com.haky.edge.model.SectorIndex
 import com.haky.edge.model.ShortSellingSummary
 import com.haky.edge.model.StockInfo
 import com.haky.edge.model.TargetPriceInfo
+import com.haky.edge.model.ValuationBand
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -210,5 +211,14 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getShortSelling(code: String): ShortSellingSummary? = runCatching {
         client.get("$baseUrl/short-selling/$code").body<ShortSellingSummary>()
+    }.getOrNull()
+
+    /**
+     * PER/PBR 역사적 밴드 + 현재 백분위. 과거 5년 연간 말 기준 계산.
+     * DART/KIS 데이터 부족 시 null.
+     */
+    @Throws(Exception::class)
+    suspend fun getValuationBand(code: String): ValuationBand? = runCatching {
+        client.get("$baseUrl/valuation-band/$code").body<ValuationBand>()
     }.getOrNull()
 }

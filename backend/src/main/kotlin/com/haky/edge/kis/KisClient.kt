@@ -212,6 +212,70 @@ class KisClient(
         throw KisException("한투 일봉 조회 실패($code): $lastMsg")
     }
 
+    /**
+     * 상장주식수(lstn_stcn) 반환. ValuationBand 계산 시 EPS/BPS 분모로 사용.
+     * 내부적으로 inquire-price 를 재호출하므로 이미 당일 시세가 있으면 함께 쓰도록 설계.
+     */
+    suspend fun getListedShares(code: String): Long {
+        val accessToken = token()
+        var lastMsg = ""
+        repeat(MAX_ATTEMPTS) { attempt ->
+            val resp = rateLimiter.withPermit { requestPrice(code, accessToken) }
+            if (resp.rtCd == "0" && resp.output != null) {
+                return resp.output.listedShares.toLongSafe()
+            }
+            lastMsg = resp.msg1.ifBlank { "rt_cd=${resp.rtCd}" }
+            if (attempt < MAX_ATTEMPTS - 1) delay(BACKOFF_MS * (attempt + 1))
+        }
+        throw KisException("한투 상장주식수 조회 실패($code): $lastMsg")
+    }
+
+    /**
+     * 종목 월봉 차트(최근 months개월). 밸류에이션 히스토리 밴드용(5년 연도말 가격).
+     * 동일 API(FHKST03010100), period_div_code=M. 최신일이 앞.
+     */
+    suspend fun getMonthlyChart(code: String, months: Int = 65): List<DailyBar> {
+        val accessToken = token()
+        var lastMsg = ""
+        repeat(MAX_ATTEMPTS) { attempt ->
+            val resp = rateLimiter.withPermit { requestMonthlyChart(code, accessToken, months) }
+            if (resp.rtCd == "0") {
+                return resp.output2.take(months).map {
+                    DailyBar(
+                        date = it.date,
+                        open = it.open.toLongSafe(),
+                        high = it.high.toLongSafe(),
+                        low = it.low.toLongSafe(),
+                        close = it.close.toLongSafe(),
+                        volume = it.volume.toLongSafe(),
+                    )
+                }.filter { it.close > 0 }
+            }
+            lastMsg = resp.msg1.ifBlank { "rt_cd=${resp.rtCd}" }
+            if (attempt < MAX_ATTEMPTS - 1) delay(BACKOFF_MS * (attempt + 1))
+        }
+        throw KisException("한투 월봉 조회 실패($code): $lastMsg")
+    }
+
+    /** 월봉 HTTP 호출 1회. period_div_code=M. */
+    private suspend fun requestMonthlyChart(code: String, accessToken: String, months: Int): KisDailyResponse {
+        val today = java.time.LocalDate.now().toString().replace("-", "")
+        val startDate = java.time.LocalDate.now().minusMonths(months.toLong()).toString().replace("-", "")
+        return http.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice") {
+            header("authorization", "Bearer $accessToken")
+            header("appkey", appKey)
+            header("appsecret", appSecret)
+            header("tr_id", "FHKST03010100")
+            header("custtype", "P")
+            parameter("FID_COND_MRKT_DIV_CODE", "J")
+            parameter("FID_INPUT_ISCD", code)
+            parameter("FID_INPUT_DATE_1", startDate)
+            parameter("FID_INPUT_DATE_2", today)
+            parameter("FID_PERIOD_DIV_CODE", "M") // M=월봉
+            parameter("FID_ORG_ADJ_PRC", "1")
+        }.body()
+    }
+
     /** 일봉 HTTP 호출 1회. period_div_code=D, adj_prc_div=1(수정주가). */
     private suspend fun requestDailyChart(code: String, accessToken: String): KisDailyResponse {
         // start/end: 한투는 최근일 기준으로 내려주므로 end=오늘, start=충분히 과거로 둔다.

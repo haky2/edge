@@ -52,6 +52,7 @@ class AnalysisService(
     private val naverTargetPrice: NaverTargetPriceClient,
     private val macroImpact: MacroImpactService,
     private val krxShortSelling: KrxShortSellingClient,
+    private val valuationBandSvc: ValuationBandService,
 ) {
     private data class Cached(val analysis: Analysis)
     private val cache = ConcurrentHashMap<String, Cached>()
@@ -77,11 +78,12 @@ class AnalysisService(
             macroImpact.sectorIndexChangeRate(code, name, quote.sectorName)
         }.getOrNull()
         val shortSelling = runCatching { krxShortSelling.getShortSelling(code) }.getOrNull()
+        val valuationBand = runCatching { valuationBandSvc.getValuationBand(code) }.getOrNull()
         // 비슷한 뉴스가 도배되는 날(예: 특정 이슈)이 많아, 넉넉히 받아 유사 건을 묶고 대표 N건만 쓴다.
         val rawNews = runCatching { naver.search(name, display = 30) }.getOrElse { emptyList() }
         val news = dedupeNews(rawNews, limit = 8)
 
-        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, position)
+        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, valuationBand, position)
         val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 1800)
 
         val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
@@ -104,6 +106,7 @@ class AnalysisService(
         consensusTarget: Long?,
         sectorChangeRate: Double?,
         shortSelling: ShortSellingSummary?,
+        valuationBand: ValuationBand?,
         position: Position? = null,
     ): String {
         val sb = StringBuilder()
@@ -155,6 +158,27 @@ class AnalysisService(
             )
         }
         if (q.per > 0) sb.appendLine("PER ${q.per} / PBR ${q.pbr}")
+        if (valuationBand != null && valuationBand.yearsUsed > 0) {
+            sb.appendLine("밸류에이션 히스토리 밴드(연도말 기준 과거 ${valuationBand.yearsUsed}년, 상장주식수 근사치):")
+            if (valuationBand.perCurrent > 0 && valuationBand.perMax > 0) {
+                sb.appendLine(
+                    "  PER 현재 ${"%.1f".format(valuationBand.perCurrent)}배 " +
+                        "→ ${valuationBand.yearsUsed}년 밴드 " +
+                        "[${"%.1f".format(valuationBand.perMin)}~${"%.1f".format(valuationBand.perMax)}배], " +
+                        "중앙 ${"%.1f".format(valuationBand.perMedian)}배 " +
+                        "(${valuationBand.perLabel})"
+                )
+            }
+            if (valuationBand.pbrCurrent > 0 && valuationBand.pbrMax > 0) {
+                sb.appendLine(
+                    "  PBR 현재 ${"%.2f".format(valuationBand.pbrCurrent)}배 " +
+                        "→ ${valuationBand.yearsUsed}년 밴드 " +
+                        "[${"%.2f".format(valuationBand.pbrMin)}~${"%.2f".format(valuationBand.pbrMax)}배], " +
+                        "중앙 ${"%.2f".format(valuationBand.pbrMedian)}배 " +
+                        "(${valuationBand.pbrLabel})"
+                )
+            }
+        }
         sb.appendLine("거래량: ${q.volume}")
 
         // 최근 가격 흐름 서사(일봉 계산) — "상한가 두 번 치고 며칠째 급락" 같은 흐름을 사실로 제공.

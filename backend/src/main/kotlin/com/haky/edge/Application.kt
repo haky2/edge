@@ -3,6 +3,7 @@ package com.haky.edge
 import com.haky.edge.ai.AnalysisService
 import com.haky.edge.ai.ClaudeClient
 import com.haky.edge.ai.ClaudeException
+import com.haky.edge.ai.ValuationBandService
 import com.haky.edge.dart.DartClient
 import com.haky.edge.dart.DartException
 import com.haky.edge.kis.KisClient
@@ -34,6 +35,7 @@ import com.haky.edge.routes.sectorBriefingRoutes
 import com.haky.edge.routes.sectorRoutes
 import com.haky.edge.routes.shortSellingRoutes
 import com.haky.edge.routes.targetPriceRoutes
+import com.haky.edge.routes.valuationBandRoutes
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.http.HttpStatusCode
@@ -113,7 +115,8 @@ fun Application.module() {
     val yahoo = YahooMacroClient()
     val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos, naver, yahoo)
     val krxShortSelling = KrxShortSellingClient()
-    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling)
+    val valuationBand = ValuationBandService(kis, dart)
+    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling, valuationBand)
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
 
@@ -134,5 +137,6 @@ fun Application.module() {
         sectorBriefingRoutes(sectorBriefing)
         shortSellingRoutes(krxShortSelling)
         targetPriceRoutes(naverTargetPrice)
+        valuationBandRoutes(valuationBand)
     }
 }

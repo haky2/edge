@@ -164,7 +164,7 @@ class DartClient(private val apiKey: String) {
         return null
     }
 
-    /** fnlttSinglAcnt 행에서 연결(없으면 별도) 매출·영업이익·순이익의 당기/전기를 추출. */
+    /** fnlttSinglAcnt 행에서 연결(없으면 별도) 매출·영업이익·순이익·자본총계의 당기/전기를 추출. */
     private fun buildFinancialSummary(rows: List<DartFinanceRow>, year: Int): FinancialSummary? {
         // 연결(CFS) 우선, 없으면 별도(OFS).
         val consolidated = rows.any { it.fsDiv == "CFS" }
@@ -179,13 +179,56 @@ class DartClient(private val apiKey: String) {
         // 매출·영업이익 둘 다 못 찾으면 의미 없는 데이터로 보고 건너뜀.
         if (rev == null && op == null) return null
 
+        // 자본총계: 재무상태표(BS) 행에서 추출.
+        // 정확 매치(공백 제거 후 완전 일치) 우선 → 없으면 마지막 부분 매치.
+        // "지배기업소유주에게귀속되는자본총계" 등 하위 항목보다 "자본총계" 그랜드 토탈을 선택해야 PBR이 정확함.
+        val bsScoped = rows.filter { it.fsDiv == (if (consolidated) "CFS" else "OFS") && it.sjDiv == "BS" }
+        val equityExactTargets = setOf("자본총계", "자기자본총계", "자본합계")
+        val equityRow = bsScoped.firstOrNull { r ->
+            equityExactTargets.contains(r.accountName.replace(" ", ""))
+        } ?: bsScoped.lastOrNull { r ->
+            equityExactTargets.any { r.accountName.replace(" ", "").contains(it) }
+        }
+
         return FinancialSummary(
             fiscalYear = year,
             consolidated = consolidated,
             revenue = rev?.thisAmount(), revenuePrev = rev?.prevAmount(),
             operatingProfit = op?.thisAmount(), operatingProfitPrev = op?.prevAmount(),
             netIncome = net?.thisAmount(), netIncomePrev = net?.prevAmount(),
+            equity = equityRow?.thisAmount(),
         )
+    }
+
+    // 연도별 재무 캐시. key="date|code|year". ValuationBandService에서 복수 연도 병렬 조회 시 활용.
+    private val financialsByYearCache = ConcurrentHashMap<String, FinancialSummary>()
+
+    /**
+     * 지정 연도(사업보고서 기준)의 연간 재무 요약을 반환.
+     * 매핑 없는 종목·API 실패 시 null(밴드 계산은 가능한 연도만 사용).
+     */
+    suspend fun getFinancialsForYear(stockCode: String, year: Int): FinancialSummary? {
+        if (apiKey.isBlank()) return null
+        val today = LocalDate.now().toString()
+        val cacheKey = "$today|$stockCode|$year"
+        financialsByYearCache[cacheKey]?.let { return it }
+
+        ensureCorpCodeMap()
+        val corpCode = corpCodeMap?.get(stockCode) ?: return null
+
+        val resp = runCatching {
+            http.get("https://opendart.fss.or.kr/api/fnlttSinglAcnt.json") {
+                parameter("crtfc_key", apiKey)
+                parameter("corp_code", corpCode)
+                parameter("bsns_year", year.toString())
+                parameter("reprt_code", "11011")  // 사업보고서(연간)
+            }.body<DartFinanceResponse>()
+        }.getOrNull() ?: return null
+        if (resp.status != "000") return null
+        val rows = resp.list ?: return null
+        val summary = buildFinancialSummary(rows, year) ?: return null
+        financialsByYearCache[cacheKey] = summary
+        return summary
     }
 
     private fun isPeriodicReport(name: String) =
@@ -286,6 +329,7 @@ data class EarningsEntry(
 /**
  * 최근 연간 재무 요약. 금액 단위는 원(DART 원본). null = 해당 계정 없음.
  * prev = 직전 사업연도 동일 계정(전년比 계산용).
+ * equity = 자본총계(재무상태표 BS 항목, 밸류에이션 밴드 BPS 계산용).
  */
 data class FinancialSummary(
     val fiscalYear: Int,
@@ -293,6 +337,7 @@ data class FinancialSummary(
     val revenue: Long?, val revenuePrev: Long?,
     val operatingProfit: Long?, val operatingProfitPrev: Long?,
     val netIncome: Long?, val netIncomePrev: Long?,
+    val equity: Long? = null,         // 자본총계(BS, ValuationBand용)
 )
 
 // ── 앱에 내려주는 공시 1건 ──────────────────────────────────────────────────

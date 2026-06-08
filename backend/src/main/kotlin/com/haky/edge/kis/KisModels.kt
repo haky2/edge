@@ -77,6 +77,7 @@ data class KisPriceOutput(
     @SerialName("per") val per: String = "0",
     @SerialName("pbr") val pbr: String = "0",
     @SerialName("bstp_kor_isnm") val sectorName: String = "", // 업종명
+    @SerialName("lstn_stcn") val listedShares: String = "0",  // 상장주식수 (ValuationBand 계산용)
 )
 
 // ── 수급(외인/기관/개인) ──────────────────────────────────────────────
