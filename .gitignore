@@ -28,3 +28,7 @@ secrets.properties
 **/src/main/resources/application-local.*
 .kis-token.json
 **/.kis-token.json
+
+# 런타임 파일 캐시 (FileCache: 당일 Claude/계산 결과 재사용)
+.cache/
+**/.cache/

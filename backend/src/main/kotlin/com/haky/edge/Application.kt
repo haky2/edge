@@ -1,6 +1,7 @@
 package com.haky.edge
 
 import com.haky.edge.ai.AnalysisService
+import com.haky.edge.ai.BacktestService
 import com.haky.edge.ai.ClaudeClient
 import com.haky.edge.ai.ClaudeException
 import com.haky.edge.ai.ValuationBandService
@@ -21,6 +22,7 @@ import com.haky.edge.news.NaverNewsClient
 import com.haky.edge.news.NaverTargetPriceClient
 import com.haky.edge.news.NewsException
 import com.haky.edge.routes.analysisRoutes
+import com.haky.edge.routes.backtestRoutes
 import com.haky.edge.routes.chartRoutes
 import com.haky.edge.routes.dartRoutes
 import com.haky.edge.routes.earningsRoutes
@@ -116,6 +118,7 @@ fun Application.module() {
     val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos, naver, yahoo)
     val krxShortSelling = KrxShortSellingClient()
     val valuationBand = ValuationBandService(kis, dart)
+    val backtest = BacktestService(kis)
     val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling, valuationBand)
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
@@ -138,5 +141,6 @@ fun Application.module() {
         shortSellingRoutes(krxShortSelling)
         targetPriceRoutes(naverTargetPrice)
         valuationBandRoutes(valuationBand)
+        backtestRoutes(backtest)
     }
 }
