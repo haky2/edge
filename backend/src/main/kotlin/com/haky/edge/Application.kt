@@ -104,11 +104,11 @@ fun Application.module() {
     )
     val dart = DartClient(apiKey = System.getenv("DART_API_KEY").orEmpty())
     val naverTargetPrice = NaverTargetPriceClient()
-    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice)
     val fearGreed = FearGreedClient()
     val copper = CopperClient()
     val ecos = EcosClient(apiKey = System.getenv("ECOS_API_KEY").orEmpty())
     val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos, naver)
+    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact)
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
 

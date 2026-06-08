@@ -6,6 +6,7 @@ import com.haky.edge.kis.DailyBar
 import com.haky.edge.kis.InvestorFlow
 import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.Quote
+import com.haky.edge.macro.MacroImpactService
 import com.haky.edge.master.StockMaster
 import com.haky.edge.news.NaverNewsClient
 import com.haky.edge.news.NaverTargetPriceClient
@@ -47,6 +48,7 @@ class AnalysisService(
     private val claude: ClaudeClient,
     private val dart: DartClient,
     private val naverTargetPrice: NaverTargetPriceClient,
+    private val macroImpact: MacroImpactService,
 ) {
     private data class Cached(val analysis: Analysis)
     private val cache = ConcurrentHashMap<String, Cached>()
@@ -68,11 +70,14 @@ class AnalysisService(
         val bars = runCatching { kis.getDailyChart(code, bars = 20) }.getOrElse { emptyList() }
         val financials = runCatching { dart.getFinancials(code) }.getOrNull()
         val consensusTarget = runCatching { naverTargetPrice.getTargetPrice(code) }.getOrNull()
+        val sectorChangeRate = runCatching {
+            macroImpact.sectorIndexChangeRate(code, name, quote.sectorName)
+        }.getOrNull()
         // 비슷한 뉴스가 도배되는 날(예: 특정 이슈)이 많아, 넉넉히 받아 유사 건을 묶고 대표 N건만 쓴다.
         val rawNews = runCatching { naver.search(name, display = 30) }.getOrElse { emptyList() }
         val news = dedupeNews(rawNews, limit = 8)
 
-        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, position)
+        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, position)
         val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 1800)
 
         val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
@@ -93,11 +98,24 @@ class AnalysisService(
         flows: List<InvestorFlow>,
         news: List<NewsCluster>,
         consensusTarget: Long?,
+        sectorChangeRate: Double?,
         position: Position? = null,
     ): String {
         val sb = StringBuilder()
         sb.appendLine("종목: $name ($code)")
         sb.appendLine("현재가: ${q.price}원 (전일대비 ${q.change}, ${q.changeRate}%)")
+        if (sectorChangeRate != null) {
+            val rs = q.changeRate - sectorChangeRate
+            val label = when {
+                rs > 0.5  -> "섹터 대비 강세"
+                rs < -0.5 -> "섹터 대비 약세"
+                else      -> "섹터 수준"
+            }
+            sb.appendLine(
+                "섹터 대비 상대강도(RS): ${if (rs >= 0) "+" else ""}${"%.1f".format(rs)}%p" +
+                    " (소속 섹터지수 ${if (sectorChangeRate >= 0) "+" else ""}${"%.2f".format(sectorChangeRate)}%, $label)"
+            )
+        }
         if (consensusTarget != null && consensusTarget > 0) {
             val upside = (consensusTarget - q.price).toDouble() / q.price * 100
             sb.appendLine(

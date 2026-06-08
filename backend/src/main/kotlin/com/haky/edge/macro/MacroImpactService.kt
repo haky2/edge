@@ -208,6 +208,15 @@ class MacroImpactService(
     suspend fun resolveStockSectors(code: String, name: String, kisName: String): List<Sector> =
         resolveSectors(code, name, kisName)
 
+    /** 종목 소속 섹터의 KOSPI 업종지수 등락률. 매핑 없거나 지수 조회 실패 시 null. */
+    suspend fun sectorIndexChangeRate(code: String, name: String, kisName: String): Double? {
+        val sectors = resolveStockSectors(code, name, kisName)
+        if (sectors.isEmpty()) return null
+        val sectorKey = GROUP_TO_SECTOR_KEY[sectors.first().group] ?: return null
+        val sectorIndices = runCatching { kis.getSectorIndices() }.getOrElse { return null }
+        return sectorIndices.firstOrNull { it.key == sectorKey }?.changeRate
+    }
+
     /** 종목 1개의 매크로 지표 영향 신호. Claude 호출 없음 — 섹터 결정 + 지표별 방향 계산만. 상세화면용. */
     suspend fun stockSignals(code: String): StockImpact {
         val indicators = kis.getMacroIndicators()
@@ -335,6 +344,17 @@ $enumList
     companion object {
         // 영향 방향 계산에 쓰는 지표. fear_greed는 방향 계산 제외(맥락용).
         private val IMPACT_INDICATORS = listOf("usdkrw", "nasdaq", "crude", "copper", "rate3y")
+
+        // 대분류 → KOSPI 업종지수 key. SectorBriefingService의 SECTOR_INDEX_TO_OUR 역매핑.
+        val GROUP_TO_SECTOR_KEY = mapOf(
+            MacroGroup.SEMICONDUCTOR to "sector_0014",
+            MacroGroup.ELECTRONICS   to "sector_0014",
+            MacroGroup.SHIPBUILDING  to "sector_0013",
+            MacroGroup.AUTOMOBILE    to "sector_0016",
+            MacroGroup.DEFENSE       to "sector_0016",
+            MacroGroup.POWER_EQUIP   to "sector_0018",
+            MacroGroup.TECH_GROWTH   to "sector_0028",
+        )
 
         // 섹터 캐시 유효기간: 7일. 사업 방향은 자주 바뀌지 않으므로 충분.
         private const val SECTOR_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000L
