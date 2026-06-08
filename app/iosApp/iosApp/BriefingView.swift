@@ -209,14 +209,19 @@ struct BriefingView: View {
                 Text("CNN이 매일 산출하는 시장 심리 지수예요. 0에 가까울수록 공포, 100에 가까울수록 탐욕이에요.")
                     .font(.caption2).foregroundColor(.secondary)
             }
+            if m.key == "tnx" {
+                Text("미국 국채 10년물 금리예요. 금리 상승은 주식 밸류에이션에 부담을, 하락은 유동성 개선 신호예요.")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
         }
         .padding(.vertical, 2)
     }
 
-    // 공포탐욕지수는 0–100 점수라 소수 1자리로 단순 표시. 나머지는 천단위 구분 + 소수 2자리.
+    // 공포탐욕지수는 0–100 점수라 소수 1자리, 미10년물 금리는 "%p" 단위로 소수 2자리, 나머지는 천단위 구분 + 소수 2자리.
     // 주의: Swift String(format:)은 "%,.2f" 천단위 플래그 미지원 → NumberFormatter 사용.
     private func formatMacroValue(_ m: MacroIndicator) -> String {
         if m.key == "fear_greed" { return String(format: "%.1f", m.value) }
+        if m.key == "tnx" { return String(format: "%.2f%%", m.value) }
         return macroValueFormatter.string(from: NSNumber(value: m.value)) ?? String(format: "%.2f", m.value)
     }
 

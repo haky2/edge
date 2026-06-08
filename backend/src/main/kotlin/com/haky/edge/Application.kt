@@ -14,6 +14,7 @@ import com.haky.edge.macro.KrxShortSellingClient
 import com.haky.edge.macro.MacroImpactService
 import com.haky.edge.macro.MarketMoodService
 import com.haky.edge.macro.SectorBriefingService
+import com.haky.edge.macro.YahooMacroClient
 import com.haky.edge.master.StockMaster
 import com.haky.edge.news.NaverNewsClient
 import com.haky.edge.news.NaverTargetPriceClient
@@ -109,10 +110,11 @@ fun Application.module() {
     val fearGreed = FearGreedClient()
     val copper = CopperClient()
     val ecos = EcosClient(apiKey = System.getenv("ECOS_API_KEY").orEmpty())
-    val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos, naver)
+    val yahoo = YahooMacroClient()
+    val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos, naver, yahoo)
     val krxShortSelling = KrxShortSellingClient()
     val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling)
-    val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos)
+    val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
 
     routing {
@@ -120,7 +122,7 @@ fun Application.module() {
         quoteRoutes(kis)
         chartRoutes(kis)
         investorRoutes(kis)
-        macroRoutes(kis, fearGreed, copper, ecos)
+        macroRoutes(kis, fearGreed, copper, ecos, yahoo)
         macroImpactRoutes(macroImpact)
         marketMoodRoutes(marketMood)
         newsRoutes(naver)

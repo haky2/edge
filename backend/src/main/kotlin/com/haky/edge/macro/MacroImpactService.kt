@@ -61,6 +61,7 @@ class MacroImpactService(
     private val copper: CopperClient,
     private val ecos: EcosClient,
     private val naver: NaverNewsClient,
+    private val yahoo: YahooMacroClient,
 ) {
     private val cache = ConcurrentHashMap<String, MacroImpact>()
     private val fileCache = FileCache("macro_impact", MacroImpact.serializer())
@@ -68,8 +69,8 @@ class MacroImpactService(
     suspend fun analyze(holdings: List<String>, watchlist: List<String>): MacroImpact {
         val today = LocalDate.now().toString()
         val kisIndicators = kis.getMacroIndicators()
-        // copper·rate3y는 IMPACT_INDICATORS에 포함(방향 계산 대상). fear_greed는 맥락용(방향 계산 제외).
-        val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get())
+        // copper·rate3y는 IMPACT_INDICATORS에 포함(방향 계산 대상). fear_greed·tnx·dxy는 맥락용(방향 계산 제외).
+        val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get()) + yahoo.get()
         val indicators = kisIndicators + extras
 
         // 캐시 키: 날짜 + 종목집합 + 영향 계산에 쓰는 지표 등락(0.5% 반올림) → 의미있는 변화 시 재생성.

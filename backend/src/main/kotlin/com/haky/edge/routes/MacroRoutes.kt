@@ -6,6 +6,7 @@ import com.haky.edge.macro.CopperClient
 import com.haky.edge.macro.EcosClient
 import com.haky.edge.macro.FearGreedClient
 import com.haky.edge.macro.MacroImpactService
+import com.haky.edge.macro.YahooMacroClient
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -16,13 +17,14 @@ fun Route.macroRoutes(
     fearGreed: FearGreedClient,
     copper: CopperClient,
     ecos: EcosClient,
+    yahoo: YahooMacroClient,
 ) {
     // GET /macro — 브리핑 "시장 지표" 섹션용.
-    // KIS: 코스피·코스닥·원/달러·다우·나스닥·S&P500·WTI유가. Yahoo: 구리. CNN: 공포탐욕지수. ECOS: 국고채3년.
+    // KIS: 코스피·코스닥·원/달러·다우·나스닥·S&P500·WTI유가. Yahoo: 구리·미10년물·달러인덱스. CNN: 공포탐욕지수. ECOS: 국고채3년.
     // 개별 지표 실패는 무시되고 성공분만 반환(섹션 통째로 죽지 않게).
     get("/macro") {
         val kisItems = kis.getMacroIndicators()
-        val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get())
+        val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get()) + yahoo.get()
         call.respond(kisItems + extras)
     }
 }

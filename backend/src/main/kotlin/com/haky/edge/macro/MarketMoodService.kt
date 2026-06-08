@@ -33,6 +33,7 @@ class MarketMoodService(
     private val fearGreed: FearGreedClient,
     private val copper: CopperClient,
     private val ecos: EcosClient,
+    private val yahoo: YahooMacroClient,
 ) {
     private val cache = ConcurrentHashMap<String, MarketMood>()
     private val fileCache = FileCache("market_mood", MarketMood.serializer())
@@ -40,7 +41,7 @@ class MarketMoodService(
     suspend fun get(): MarketMood {
         val today = LocalDate.now().toString()
         val kisIndicators = kis.getMacroIndicators()
-        val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get())
+        val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get()) + yahoo.get()
         val indicators = kisIndicators + extras
 
         val cacheKey = buildCacheKey(today, indicators)
@@ -48,7 +49,7 @@ class MarketMoodService(
         fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
 
         val facts = buildFacts(indicators)
-        val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 600)
+        val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 900)
 
         val now = LocalTime.now(ZoneId.of("Asia/Seoul"))
             .format(DateTimeFormatter.ofPattern("HH:mm"))
@@ -92,14 +93,13 @@ class MarketMoodService(
 
             규칙(반드시 지킬 것):
             1. 아래 user 메시지의 지표 수치만 근거로 삼는다. 거기 없는 수치를 절대 만들어내지 마라.
-            2. 3~5문장의 연속 문단 하나로만 써라. 불릿·번호 목록, 소제목 금지.
-            3. 이 흐름으로 써라:
-               ① 가장 눈에 띄는 1~2개 지표가 오늘 코스피 출발 분위기에 어떤 방향을 만드는지.
-               ② 추가 지표(환율·유가·심리 등)가 그 방향을 강화하는지 완화하는지.
-               ③ 오늘 특히 챙겨볼 만한 포인트 한 문장으로 마무리.
-            4. "지금 사라/팔라"처럼 매매를 지시하지 마라.
-            5. 지표가 전부 보합(0%대)이면 "오늘은 해외 발 변수가 크지 않은 날"이라고 담백하게 써도 된다.
-            6. 핵심 방향 키워드(우호적/부담/강세/약세 등)는 **굵게** 강조해 한눈에 들어오게 하라.
+            2. 아래 3개 문단을 각각 빈 줄(줄바꿈 2번)로 구분해서 써라. 불릿·번호 목록, 소제목 금지.
+               문단 ①: 가장 눈에 띄는 1~2개 지표가 오늘 코스피 출발 분위기에 어떤 방향을 만드는지. (2~3문장)
+               문단 ②: 나머지 지표(환율·유가·심리·금리 등)가 그 방향을 강화하는지 완화하는지. (2~3문장)
+               문단 ③: 오늘 특히 챙겨볼 만한 포인트 한 문장으로 마무리.
+            3. "지금 사라/팔라"처럼 매매를 지시하지 마라.
+            4. 지표가 전부 보합(0%대)이면 "오늘은 해외 발 변수가 크지 않은 날"이라고 담백하게 써도 된다.
+            5. 핵심 방향 키워드(우호적/부담/강세/약세 등)는 **굵게** 강조해 한눈에 들어오게 하라.
         """.trimIndent()
     }
 }

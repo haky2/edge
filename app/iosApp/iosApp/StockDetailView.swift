@@ -1091,7 +1091,7 @@ struct StockDetailView: View {
             .padding(.top, 2)
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Color(.secondarySystemBackground))
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.06), radius: 4, x: 0, y: 2)
     }
