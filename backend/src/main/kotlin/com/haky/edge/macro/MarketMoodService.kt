@@ -41,7 +41,8 @@ class MarketMoodService(
     suspend fun get(): MarketMood {
         val today = LocalDate.now().toString()
         val kisIndicators = kis.getMacroIndicators()
-        val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get()) + yahoo.get()
+        val kodexOt = runCatching { kis.getKodexOvertimeSignal() }.getOrNull()
+        val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get(), kodexOt) + yahoo.get()
         val indicators = kisIndicators + extras
 
         val cacheKey = buildCacheKey(today, indicators)
@@ -84,7 +85,7 @@ class MarketMoodService(
 
     companion object {
         // 캐시 키에 포함할 지표 — 시장 방향 판단에 핵심인 것들.
-        private val CACHE_INDICATORS = listOf("nasdaq", "sp500", "dow", "usdkrw", "fear_greed", "crude")
+        private val CACHE_INDICATORS = listOf("nasdaq", "sp500", "dow", "usdkrw", "fear_greed", "crude", "kodex200_ot")
 
         private val SYSTEM_PROMPT = """
             너는 한국 주식 투자 보조 앱의 장 전 시장 분위기 해석 어시스턴트다.

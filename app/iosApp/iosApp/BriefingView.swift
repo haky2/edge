@@ -213,6 +213,10 @@ struct BriefingView: View {
                 Text("미국 국채 10년물 금리예요. 금리 상승은 주식 밸류에이션에 부담을, 하락은 유동성 개선 신호예요.")
                     .font(.caption2).foregroundColor(.secondary)
             }
+            if m.key == "kodex200_ot" {
+                Text("코스피200 추종 ETF의 시간외 단일가예요. 장 전(8~9시)엔 오늘 코스피 출발 방향을, 장 후(16~18시)엔 연장 거래 방향을 보여줘요.")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
         }
         .padding(.vertical, 2)
     }

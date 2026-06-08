@@ -211,5 +211,24 @@ data class SectorIndex(
     val changeRate: Double, // 등락률 %
 )
 
+// ── 시간외 단일가 (KODEX200 갭 신호) ──────────────────────────────────────
+// inquire-overtime-price(tr_id FHPST01060000): 장전(08~09시)·장후(16~18시) 시간외 단일가.
+// output1 = 최신가 요약, output2 = 틱 리스트(여기서는 output1만 사용).
+
+@Serializable
+data class KisOvertimePriceResponse(
+    @SerialName("rt_cd") val rtCd: String = "",
+    @SerialName("msg1") val msg1: String = "",
+    @SerialName("output1") val output1: KisOvertimePriceOutput? = null,
+)
+
+@Serializable
+data class KisOvertimePriceOutput(
+    @SerialName("stck_prpr") val price: String = "0",
+    @SerialName("prdy_vrss") val change: String = "0",      // 전일 대비 변화값 (부호 없음)
+    @SerialName("prdy_vrss_sign") val sign: String = "3",  // 방향 부호(1상한 2상승 3보합 4하한 5하락)
+    @SerialName("prdy_ctrt") val changeRate: String = "0",  // 등락률 (부호 없음)
+)
+
 /** 한투 연동 중 발생한 오류(상류 문제)를 일반 버그와 구분하기 위한 예외 — StatusPages에서 502로 매핑된다. */
 class KisException(message: String) : RuntimeException(message)

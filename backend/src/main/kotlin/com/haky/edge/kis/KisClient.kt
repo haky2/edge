@@ -434,10 +434,53 @@ class KisClient(
         throw KisException("한투 업종지수 조회 실패(${spec.iscd}): $lastMsg")
     }
 
+    /**
+     * KODEX 200(069500) 시간외 단일가를 조회해 MacroIndicator로 반환.
+     * output1의 최신가가 항상 채워지므로 FID_INPUT_HOUR_1=000000으로 고정.
+     * 장전(08~09시): 오늘 코스피 출발 방향, 장후(16~18시): 시간외 방향 신호.
+     * 실패 시 null(섹션 유지).
+     */
+    suspend fun getKodexOvertimeSignal(): MacroIndicator? {
+        val now = System.currentTimeMillis()
+        overtimeCache["kodex200"]?.let { (ind, expiry) ->
+            if (now < expiry) return ind
+        }
+        return runCatching {
+            val accessToken = token()
+            val resp = rateLimiter.withPermit { requestOvertimePrice("069500", accessToken) }
+            if (resp.rtCd != "0") return@runCatching null
+            val o = resp.output1 ?: return@runCatching null
+            val mul = signMultiplier(o.sign)
+            MacroIndicator(
+                key = "kodex200_ot",
+                label = "KODEX200 시간외",
+                value = o.price.toDoubleSafe(),
+                change = kotlin.math.abs(o.change.toDoubleSafe()) * mul,
+                changeRate = kotlin.math.abs(o.changeRate.toDoubleSafe()) * mul,
+            ).also { overtimeCache["kodex200"] = it to now + OVERTIME_CACHE_MS }
+        }.getOrNull()
+    }
+
+    /** 시간외 단일가 HTTP 호출 1회. tr_id = FHPST01060000. */
+    private suspend fun requestOvertimePrice(code: String, accessToken: String): KisOvertimePriceResponse =
+        http.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-overtime-price") {
+            header("authorization", "Bearer $accessToken")
+            header("appkey", appKey)
+            header("appsecret", appSecret)
+            header("tr_id", "FHPST01060000")
+            header("custtype", "P")
+            parameter("FID_COND_MRKT_DIV_CODE", "J")
+            parameter("FID_INPUT_ISCD", code)
+            parameter("FID_INPUT_HOUR_1", "000000") // output1(최신가 요약)은 시간 무관 항상 동일
+        }.body()
+
     companion object {
         private const val MAX_ATTEMPTS = 4
         private const val BACKOFF_MS = 250L
+        private const val OVERTIME_CACHE_MS = 30 * 60 * 1000L // 30분
     }
+
+    private val overtimeCache = java.util.concurrent.ConcurrentHashMap<String, Pair<MacroIndicator, Long>>()
 }
 
 // 한투 원본(문자열) → 우리 Quote 로 변환.
