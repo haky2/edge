@@ -86,7 +86,8 @@ class MacroImpactService(
         val watchImpacts = watchlist.map { buildStockImpact(it, indicators) }
 
         val facts = buildFacts(indicators, holdingImpacts, watchImpacts)
-        val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 1536)
+        // 상한(ceiling)일 뿐 — 3~4문단이면 보통 그 안에서 end_turn, 길어져도 ClaudeClient가 이어써 안 잘림.
+        val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 2800)
 
         val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))

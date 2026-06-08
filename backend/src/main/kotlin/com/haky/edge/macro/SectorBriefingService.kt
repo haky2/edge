@@ -78,7 +78,8 @@ class SectorBriefingService(
             .take(3)
 
         val facts = buildFacts(sectorIndices, stockSectors, spotlight)
-        val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 1300)
+        // 상한(ceiling)일 뿐 — 2~3문단이면 보통 그 안에서 end_turn, 길어져도 ClaudeClient가 이어써 안 잘림.
+        val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 2800)
 
         val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
