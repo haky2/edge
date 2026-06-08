@@ -46,10 +46,8 @@ class SectorBriefingService(
         val today = LocalDate.now().toString()
         val sectorIndices = kis.getSectorIndices()
 
-        val ratesKey = sectorIndices.joinToString(",") {
-            "${it.key}=${((it.changeRate) * 2).roundToInt()}"
-        }
-        val cacheKey = "$today|${codes.sorted().joinToString(",")}|$ratesKey"
+        // 키 = 날짜 + 종목집합. 섹터 등락은 제외 — 하루에 한 번만 Claude 호출하고 당일은 캐시 재사용.
+        val cacheKey = "$today|${codes.sorted().joinToString(",")}"
         cache[cacheKey]?.let { return it }
         fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
 

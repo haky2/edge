@@ -61,10 +61,8 @@ class AnalysisService(
 
     suspend fun analyze(code: String, position: Position? = null): Analysis {
         val today = LocalDate.now().toString()
-        val key = if (position != null)
-            "$code:$today:avg=${position.avgPrice}:qty=${position.qty}"
-        else
-            "$code:$today"
+        // 키 = code+날짜. 같은 날 포지션이 바뀌어도 캐시 재사용(하루 1회 호출 원칙).
+        val key = "$code:$today"
         cache[key]?.let { return it.analysis }
         fileCache.get(key)?.let { cache[key] = Cached(it); return it }
 

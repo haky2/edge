@@ -69,16 +69,12 @@ class MacroImpactService(
     suspend fun analyze(holdings: List<String>, watchlist: List<String>): MacroImpact {
         val today = LocalDate.now().toString()
         val kisIndicators = kis.getMacroIndicators()
-        // copper·rate3y는 IMPACT_INDICATORS에 포함(방향 계산 대상). fear_greed·tnx·dxy는 맥락용(방향 계산 제외).
+        // copper·rate3y는 방향 계산 대상(buildStockImpact). fear_greed·tnx·dxy는 맥락용(방향 계산 제외).
         val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get()) + yahoo.get()
         val indicators = kisIndicators + extras
 
-        // 캐시 키: 날짜 + 종목집합 + 영향 계산에 쓰는 지표 등락(0.5% 반올림) → 의미있는 변화 시 재생성.
-        val ratesKey = IMPACT_INDICATORS.joinToString(",") { key ->
-            val r = indicators.firstOrNull { it.key == key }?.changeRate ?: 0.0
-            "$key=${(r * 2).roundToInt()}"
-        }
-        val cacheKey = "$today|H:${holdings.sorted().joinToString(",")}|W:${watchlist.sorted().joinToString(",")}|$ratesKey"
+        // 키 = 날짜 + 종목집합. 지표 등락은 제외 — 하루에 한 번만 Claude 호출하고 당일은 캐시 재사용.
+        val cacheKey = "$today|H:${holdings.sorted().joinToString(",")}|W:${watchlist.sorted().joinToString(",")}"
         cache[cacheKey]?.let { return it }
         fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
 
@@ -344,9 +340,6 @@ $enumList
     private data class Sensitivity(val indicatorKey: String, val direction: Int, val note: String)
 
     companion object {
-        // 영향 방향 계산에 쓰는 지표. fear_greed는 방향 계산 제외(맥락용).
-        private val IMPACT_INDICATORS = listOf("usdkrw", "nasdaq", "crude", "copper", "rate3y")
-
         // 대분류 → KOSPI 업종지수 key. SectorBriefingService의 SECTOR_INDEX_TO_OUR 역매핑.
         val GROUP_TO_SECTOR_KEY = mapOf(
             MacroGroup.SEMICONDUCTOR to "sector_0014",

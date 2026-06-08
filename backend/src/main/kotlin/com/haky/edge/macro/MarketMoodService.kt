@@ -45,7 +45,8 @@ class MarketMoodService(
         val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get(), kodexOt) + yahoo.get()
         val indicators = kisIndicators + extras
 
-        val cacheKey = buildCacheKey(today, indicators)
+        // 키 = 날짜만. 하루에 한 번만 Claude 호출하고 지표가 바뀌어도 당일은 캐시 재사용.
+        val cacheKey = today
         cache[cacheKey]?.let { return it }
         fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
 
@@ -66,14 +67,6 @@ class MarketMoodService(
         return result
     }
 
-    private fun buildCacheKey(today: String, indicators: List<MacroIndicator>): String {
-        val rates = CACHE_INDICATORS.joinToString(",") { key ->
-            val r = indicators.firstOrNull { it.key == key }?.changeRate ?: 0.0
-            "$key=${(r * 2).roundToInt()}"
-        }
-        return "$today|$rates"
-    }
-
     private fun buildFacts(indicators: List<MacroIndicator>): String {
         val sb = StringBuilder()
         sb.appendLine("현재 시장 지표 (전일 대비):")
@@ -85,9 +78,6 @@ class MarketMoodService(
     }
 
     companion object {
-        // 캐시 키에 포함할 지표 — 시장 방향 판단에 핵심인 것들.
-        private val CACHE_INDICATORS = listOf("nasdaq", "sp500", "dow", "usdkrw", "fear_greed", "crude", "kodex200_ot", "ewy")
-
         private val SYSTEM_PROMPT = """
             너는 한국 주식 투자 보조 앱의 장 전 시장 분위기 해석 어시스턴트다.
             독자는 주식에 관심 있는 일반인이다. 전문 용어는 괄호로 짧게 풀어준다.
