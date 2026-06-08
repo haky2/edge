@@ -20,7 +20,7 @@ fun Route.macroRoutes(
     yahoo: YahooMacroClient,
 ) {
     // GET /macro — 브리핑 "시장 지표" 섹션용.
-    // KIS: 코스피·코스닥·원/달러·다우·나스닥·S&P500·WTI유가·KODEX200시간외. Yahoo: 구리·미10년물·달러인덱스. CNN: 공포탐욕지수. ECOS: 국고채3년.
+    // KIS: 코스피·코스닥·원/달러·다우·나스닥·S&P500·WTI유가·KODEX200시간외. Yahoo: 구리·미10년물·달러인덱스·EWY. CNN: 공포탐욕지수. ECOS: 국고채3년.
     // 개별 지표 실패는 무시되고 성공분만 반환(섹션 통째로 죽지 않게).
     get("/macro") {
         val kisItems = kis.getMacroIndicators()

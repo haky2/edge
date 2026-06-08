@@ -217,6 +217,10 @@ struct BriefingView: View {
                 Text("코스피200 추종 ETF의 시간외 단일가예요. 장 전(8~9시)엔 오늘 코스피 출발 방향을, 장 후(16~18시)엔 연장 거래 방향을 보여줘요.")
                     .font(.caption2).foregroundColor(.secondary)
             }
+            if m.key == "ewy" {
+                Text("미국 NYSE에 상장된 한국 주식 ETF예요. 미국 시장이 열리는 동안(한국 기준 밤~새벽) 외국인이 한국 주식을 어떻게 평가하는지 보여줘요. 다음 날 코스피 방향의 선행 신호로 봐요.")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
         }
         .padding(.vertical, 2)
     }
