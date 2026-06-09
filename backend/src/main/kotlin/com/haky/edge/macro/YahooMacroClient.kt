@@ -39,6 +39,8 @@ class YahooMacroClient {
         runCatching { fetchOne("^TNX",       "tnx", "미10년물") }.getOrNull(),
         runCatching { fetchOne("DX-Y.NYB",   "dxy", "달러인덱스") }.getOrNull(),
         runCatching { fetchOne("EWY",        "ewy", "EWY 한국ETF") }.getOrNull(),
+        runCatching { fetchOne("^SOX",       "sox", "필라델피아반도체") }.getOrNull(),
+        runCatching { fetchOne("^RUT",       "rut", "러셀2000") }.getOrNull(),
     )
 
     private suspend fun fetchOne(symbol: String, key: String, label: String): MacroIndicator {

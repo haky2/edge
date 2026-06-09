@@ -28,7 +28,7 @@ fun Route.macroRoutes(
         val kisItems = kis.getMacroIndicators()
         val kodexOt = runCatching { kis.getKodexOvertimeSignal() }.getOrNull()
         val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get(), kodexOt) + yahoo.get()
-        call.respond(kisItems + extras)
+        call.respond((kisItems + extras).sortedBy { MACRO_DISPLAY_ORDER.indexOf(it.key).takeIf { i -> i >= 0 } ?: Int.MAX_VALUE })
     }
 }
 
@@ -60,6 +60,16 @@ private fun String?.toCodeList(): List<String> =
         ?.filter { it.matches(Regex("""\d{6}""")) }
         ?.distinct()
         ?: emptyList()
+
+// 시장 지표 표시 순서: 한국 → 미국 지수 → 금리/환율 → 원자재 → 심리.
+private val MACRO_DISPLAY_ORDER = listOf(
+    "kodex200_ot",  // 한국
+    "kospi", "kosdaq", "usdkrw", "ewy",
+    "nasdaq", "sox", "sp500", "dow", "rut",  // 미국 지수
+    "tnx", "dxy", "rate3y",                  // 금리/환율
+    "crude", "copper",                       // 원자재
+    "fear_greed",                            // 심리
+)
 
 // "code1:avg1:qty1,code2:avg2:qty2" → Map<code, HoldingPosition>
 private fun String?.toPositionMap(): Map<String, HoldingPosition> =

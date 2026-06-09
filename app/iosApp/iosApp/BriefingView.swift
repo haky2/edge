@@ -244,6 +244,14 @@ struct BriefingView: View {
                 Text("미국 NYSE에 상장된 한국 주식 ETF예요. 미국 시장이 열리는 동안(한국 기준 밤~새벽) 외국인이 한국 주식을 어떻게 평가하는지 보여줘요. 다음 날 코스피 방향의 선행 신호로 봐요.")
                     .font(.caption2).foregroundColor(.secondary)
             }
+            if m.key == "sox" {
+                Text("미국 필라델피아 반도체 지수예요. 반도체 관련주의 방향을 선행하는 지표로, 삼성전자·SK하이닉스 등 반도체 종목에 직접적인 영향을 줘요.")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            if m.key == "rut" {
+                Text("미국 소형주 2000개로 구성된 러셀2000 지수예요. 나스닥·S&P500과 함께 미국 증시 전반의 위험 선호 심리를 가늠하는 지표예요.")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
         }
         .padding(.vertical, 2)
     }
