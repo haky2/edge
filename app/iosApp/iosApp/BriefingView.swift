@@ -64,6 +64,7 @@ struct BriefingView: View {
     // 접기/펼치기 상태 (기본 접힘)
     @State private var dartExpanded = false
     @State private var earningsExpanded = false
+    @State private var impactSectionExpanded = true   // 내 종목 영향: 섹션 전체 접기
     @State private var impactExpanded = false        // 내 종목 영향: AI 코멘트(프로즈) 접기
     @State private var impactWatchExpanded = false   // 내 종목 영향: 관심 종목 목록 접기
     @State private var marketExpanded = false
@@ -470,53 +471,57 @@ struct BriefingView: View {
     @ViewBuilder
     private var impactSection: some View {
         Section {
-            // 헤더는 항상 노출(토글 아님) — 내 종목 영향이 시장 탭 최상단 핵심.
-            HStack(spacing: 6) {
-                Text("내 종목 영향 (오늘)").font(.headline)
-                if analysisMode == .aggressive {
-                    Text("⚔️ 공격적 모드")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.orange.opacity(0.15))
-                        .foregroundColor(.orange)
-                        .clipShape(Capsule())
+            Button { withAnimation { impactSectionExpanded.toggle() } } label: {
+                HStack(spacing: 6) {
+                    Text("내 종목 영향 (오늘)").font(.headline)
+                    if analysisMode == .aggressive {
+                        Text("⚔️ 공격적 모드")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.15))
+                            .foregroundColor(.orange)
+                            .clipShape(Capsule())
+                    }
+                    Spacer()
+                    Image(systemName: impactSectionExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
                 }
             }
-            if impactLoading {
-                HStack { ProgressView().scaleEffect(0.8); Text("AI가 해석 중…").font(.footnote).foregroundColor(.secondary) }
-            } else if impactComment.isEmpty && impactHoldings.isEmpty && impactWatch.isEmpty {
-                Text("불러오지 못했어요").font(.footnote).foregroundColor(.secondary)
-            } else {
-                // 보유 종목 영향은 항상 한눈에(스캔 가능한 핵심).
-                if !impactHoldings.isEmpty {
-                    Text("보유 종목").font(.caption.weight(.semibold)).foregroundColor(.secondary)
-                    ForEach(impactHoldings, id: \.code) { impactRow($0) }
-                }
-                // 관심 종목은 많을 수 있어 접기.
-                if !impactWatch.isEmpty {
-                    Button { withAnimation { impactWatchExpanded.toggle() } } label: {
-                        HStack {
-                            Text("관심 종목 \(impactWatch.count)개")
-                                .font(.caption.weight(.semibold)).foregroundColor(.secondary)
-                            Spacer()
-                            Image(systemName: impactWatchExpanded ? "chevron.up" : "chevron.down")
-                                .font(.caption2).foregroundColor(.secondary)
+            .foregroundColor(.primary)
+            if impactSectionExpanded {
+                if impactLoading {
+                    HStack { ProgressView().scaleEffect(0.8); Text("AI가 해석 중…").font(.footnote).foregroundColor(.secondary) }
+                } else if impactComment.isEmpty && impactHoldings.isEmpty && impactWatch.isEmpty {
+                    Text("불러오지 못했어요").font(.footnote).foregroundColor(.secondary)
+                } else {
+                    if !impactHoldings.isEmpty {
+                        Text("보유 종목").font(.caption.weight(.semibold)).foregroundColor(.secondary)
+                        ForEach(impactHoldings, id: \.code) { impactRow($0) }
+                    }
+                    if !impactWatch.isEmpty {
+                        Button { withAnimation { impactWatchExpanded.toggle() } } label: {
+                            HStack {
+                                Text("관심 종목 \(impactWatch.count)개")
+                                    .font(.caption.weight(.semibold)).foregroundColor(.secondary)
+                                Spacer()
+                                Image(systemName: impactWatchExpanded ? "chevron.up" : "chevron.down")
+                                    .font(.caption2).foregroundColor(.secondary)
+                            }
+                        }
+                        .foregroundColor(.primary)
+                        if impactWatchExpanded {
+                            ForEach(impactWatch, id: \.code) { impactRow($0) }
                         }
                     }
-                    .foregroundColor(.primary)
-                    if impactWatchExpanded {
-                        ForEach(impactWatch, id: \.code) { impactRow($0) }
-                    }
-                }
-                // AI 코멘트(프로즈)는 길어서 기본 접힘 — 가독성 위해.
-                if !impactComment.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        aiCommentToggle(expanded: impactExpanded) { withAnimation { impactExpanded.toggle() } }
-                        if !impactGeneratedAt.isEmpty {
-                            Text("오늘 \(impactGeneratedAt) 생성")
-                                .font(.caption2).foregroundColor(.secondary)
+                    if !impactComment.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            aiCommentToggle(expanded: impactExpanded) { withAnimation { impactExpanded.toggle() } }
+                            if !impactGeneratedAt.isEmpty {
+                                Text("오늘 \(impactGeneratedAt) 생성")
+                                    .font(.caption2).foregroundColor(.secondary)
+                            }
+                            if impactExpanded { proseBlock(impactComment) }
                         }
-                        if impactExpanded { proseBlock(impactComment) }
                     }
                 }
             }
