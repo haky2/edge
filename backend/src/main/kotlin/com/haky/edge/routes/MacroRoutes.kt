@@ -2,9 +2,11 @@ package com.haky.edge.routes
 
 import com.haky.edge.ErrorResponse
 import com.haky.edge.kis.KisClient
+import com.haky.edge.macro.AnalysisMode
 import com.haky.edge.macro.CopperClient
 import com.haky.edge.macro.EcosClient
 import com.haky.edge.macro.FearGreedClient
+import com.haky.edge.macro.HoldingPosition
 import com.haky.edge.macro.MacroImpactService
 import com.haky.edge.macro.YahooMacroClient
 import io.ktor.http.HttpStatusCode
@@ -31,13 +33,15 @@ fun Route.macroRoutes(
 }
 
 fun Route.macroImpactRoutes(service: MacroImpactService) {
-    // GET /macro-impact?holdings=a,b&watchlist=c,d
-    //   - 보유/관심 종목 코드를 받아 오늘 매크로가 각 그룹에 미치는 영향(계산) + Claude 종합 해석 반환.
-    //   - 코드만 받는다(평단 불필요 — 영향은 종목 속성이라 방향성 해석이지 손익 계산이 아님).
+    // GET /macro-impact?holdings=a,b&watchlist=c,d&mode=defensive|aggressive&positions=code:avg:qty,...
+    //   - mode 미지정 시 defensive 폴백.
+    //   - positions: 보유 종목 포지션(공격 모드 포트폴리오 스탠스에 활용). 미전달 시 빈 맵.
     get("/macro-impact") {
         val holdings = call.request.queryParameters["holdings"].toCodeList()
         val watchlist = call.request.queryParameters["watchlist"].toCodeList()
-        call.respond(service.analyze(holdings, watchlist))
+        val mode = AnalysisMode.from(call.request.queryParameters["mode"])
+        val positionMap = call.request.queryParameters["positions"].toPositionMap()
+        call.respond(service.analyze(holdings, watchlist, mode, positionMap))
     }
 
     // GET /macro-signal/{code}
@@ -56,3 +60,17 @@ private fun String?.toCodeList(): List<String> =
         ?.filter { it.matches(Regex("""\d{6}""")) }
         ?.distinct()
         ?: emptyList()
+
+// "code1:avg1:qty1,code2:avg2:qty2" → Map<code, HoldingPosition>
+private fun String?.toPositionMap(): Map<String, HoldingPosition> =
+    this?.split(",")
+        ?.mapNotNull { entry ->
+            val parts = entry.split(":")
+            if (parts.size != 3) return@mapNotNull null
+            val code = parts[0].trim().takeIf { it.matches(Regex("""\d{6}""")) } ?: return@mapNotNull null
+            val avg = parts[1].toDoubleOrNull() ?: return@mapNotNull null
+            val qty = parts[2].toLongOrNull() ?: return@mapNotNull null
+            code to HoldingPosition(avg, qty)
+        }
+        ?.toMap()
+        ?: emptyMap()

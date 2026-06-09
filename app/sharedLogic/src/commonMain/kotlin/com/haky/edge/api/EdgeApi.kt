@@ -134,13 +134,26 @@ class EdgeApi(
 
     /**
      * 매크로 → 내 종목 영향 분석. 보유/관심 종목 코드를 넘기면 종목별 영향(계산) + Claude 종합 해석.
-     * Claude 호출이라 첫 생성은 수 초 걸리고 백엔드가 당일 캐시한다. 둘 다 비어도 호출은 됨(빈 결과).
+     * mode="defensive"|"aggressive". positions: code→(avgPrice, qty) 포지션 맵(공격 모드 포트폴리오 스탠스용).
+     * Claude 호출이라 첫 생성은 수 초 걸리고 백엔드가 모드별 당일 캐시한다. 둘 다 비어도 호출은 됨(빈 결과).
      */
     @Throws(Exception::class)
-    suspend fun getMacroImpact(holdings: List<String>, watchlist: List<String>): MacroImpact =
+    suspend fun getMacroImpact(
+        holdings: List<String>,
+        watchlist: List<String>,
+        mode: String = "defensive",
+        positions: Map<String, Pair<Double, Long>> = emptyMap(),
+    ): MacroImpact =
         client.get("$baseUrl/macro-impact") {
             parameter("holdings", holdings.joinToString(","))
             parameter("watchlist", watchlist.joinToString(","))
+            parameter("mode", mode)
+            if (positions.isNotEmpty()) {
+                // "code:avgPrice:qty,..." 포맷으로 직렬화
+                parameter("positions", positions.entries.joinToString(",") { (code, pos) ->
+                    "$code:${pos.first.toLong()}:${pos.second}"
+                })
+            }
         }.body()
 
     /**

@@ -43,6 +43,9 @@ data class MacroSignal(
     val note: String,        // 근거 한 줄
 )
 
+/** 보유 종목 포지션 정보. 공격적 모드에서 포트폴리오 스탠스 의견에 활용. */
+data class HoldingPosition(val avgPrice: Double, val qty: Long)
+
 /**
  * 매크로 지표가 내 보유/관심 종목에 어떤 영향인지 분석한다.
  *
@@ -66,24 +69,31 @@ class MacroImpactService(
     private val cache = ConcurrentHashMap<String, MacroImpact>()
     private val fileCache = FileCache("macro_impact", MacroImpact.serializer())
 
-    suspend fun analyze(holdings: List<String>, watchlist: List<String>): MacroImpact {
+    suspend fun analyze(
+        holdings: List<String>,
+        watchlist: List<String>,
+        mode: AnalysisMode = AnalysisMode.DEFENSIVE,
+        positionMap: Map<String, HoldingPosition> = emptyMap(),
+    ): MacroImpact {
         val today = LocalDate.now().toString()
         val kisIndicators = kis.getMacroIndicators()
         // copper·rate3y는 방향 계산 대상(buildStockImpact). fear_greed·tnx·dxy는 맥락용(방향 계산 제외).
         val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get()) + yahoo.get()
         val indicators = kisIndicators + extras
 
-        // 키 = 날짜 + 종목집합. 지표 등락은 제외 — 하루에 한 번만 Claude 호출하고 당일은 캐시 재사용.
-        val cacheKey = "$today|H:${holdings.sorted().joinToString(",")}|W:${watchlist.sorted().joinToString(",")}"
+        // 키 = 날짜 + 종목집합 + 모드. 포지션(평단·수량)은 키에 넣지 않음 — 하루 1회 공유 원칙 유지.
+        // (포지션별 개인화 캐시는 종목상세 5b에서 설계)
+        val cacheKey = "$today|H:${holdings.sorted().joinToString(",")}|W:${watchlist.sorted().joinToString(",")}|${mode.name}"
         cache[cacheKey]?.let { return it }
         fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
 
         val holdingImpacts = holdings.map { buildStockImpact(it, indicators) }
         val watchImpacts = watchlist.map { buildStockImpact(it, indicators) }
 
-        val facts = buildFacts(indicators, holdingImpacts, watchImpacts)
+        val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
+        val facts = buildFacts(indicators, holdingImpacts, watchImpacts, positionMap)
         // 상한(ceiling)일 뿐 — 3~4문단이면 보통 그 안에서 end_turn, 길어져도 ClaudeClient가 이어써 안 잘림.
-        val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 2800)
+        val comment = claude.complete(prompt, facts, maxTokens = 2800)
 
         val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
@@ -159,6 +169,7 @@ class MacroImpactService(
         indicators: List<MacroIndicator>,
         holdings: List<StockImpact>,
         watchlist: List<StockImpact>,
+        positionMap: Map<String, HoldingPosition> = emptyMap(),
     ): String {
         val sb = StringBuilder()
         sb.appendLine("오늘 시장 지표(전일 대비):")
@@ -166,20 +177,29 @@ class MacroImpactService(
             sb.appendLine("  - ${it.label} ${"%.2f".format(it.value)} (${signed(it.changeRate)}%)")
         }
         sb.appendLine()
-        appendGroup(sb, "[보유 종목]", holdings)
+        appendGroup(sb, "[보유 종목]", holdings, positionMap)
         sb.appendLine()
-        appendGroup(sb, "[관심 종목(미보유)]", watchlist)
+        appendGroup(sb, "[관심 종목(미보유)]", watchlist, emptyMap())
         return sb.toString()
     }
 
-    private fun appendGroup(sb: StringBuilder, title: String, items: List<StockImpact>) {
+    private fun appendGroup(
+        sb: StringBuilder,
+        title: String,
+        items: List<StockImpact>,
+        positionMap: Map<String, HoldingPosition>,
+    ) {
         sb.appendLine(title)
         if (items.isEmpty()) {
             sb.appendLine("  (없음)")
             return
         }
         items.forEach { s ->
-            sb.appendLine("  - ${s.name}(${s.code}) · ${s.sectorLabel} · 종합:${s.net}")
+            val posSuffix = positionMap[s.code]?.let { pos ->
+                val avgFmt = "%,.0f".format(pos.avgPrice)
+                "  | 평단 ${avgFmt}원 ${pos.qty}주 보유"
+            } ?: ""
+            sb.appendLine("  - ${s.name}(${s.code}) · ${s.sectorLabel} · 종합:${s.net}$posSuffix")
             if (s.signals.isEmpty()) {
                 sb.appendLine("      (영향 매핑 준비 중)")
             } else {
@@ -399,7 +419,8 @@ $enumList
             ),
         )
 
-        private val SYSTEM_PROMPT = """
+        // 방어적(기본): 사실+방향, 매매 지시 없음.
+        private val DEFENSIVE_PROMPT = """
             너는 한국 주식 투자 보조 앱의 매크로 영향 분석 어시스턴트다.
             독자는 주식에 관심 있는 일반인이다. 전문 용어는 괄호로 짧게 풀어준다.
             예) 원화 약세(원/달러 환율이 오를 때, 1달러에 더 많은 원화가 필요), 수급(외국인·기관·개인 중 누가 사고 파는지)
@@ -415,6 +436,32 @@ $enumList
             4. 어려운 금융 영어는 한국어로 바꾸거나 괄호 설명을 붙여라.
             5. 형식: 불릿·번호 목록과 볼드 '제목 줄'은 금지(이야기처럼 흐르는 연속 문단). 단, 핵심 종목명과 영향 방향(우호/부담) 같은 키워드는 문장 안에서 **굵게** 강조해 한눈에 들어오게 하라.
             6. 지표가 전부 보합(0%대)이면 "오늘은 매크로 영향이 크지 않은 날"이라고 담백하게 말해도 된다.
+        """.trimIndent()
+
+        // 공격적: 방어적과 같은 사실·환각가드 위에서, 포트폴리오 스탠스 의견까지 단호하게 제시.
+        // 포지션(평단·수량)이 facts에 포함될 때 활용 — 보유 비중 조절·차익실현·분할 추가 등 포트폴리오 레벨 명령.
+        // 개별 종목 "X를 사라/팔라" 금지(보유 비중·섹터 레벨까지만). market-mood와 동일한 어조 원칙.
+        private val AGGRESSIVE_PROMPT = """
+            너는 한국 주식 투자 보조 앱의 매크로 영향 분석 어시스턴트다.
+            지금은 "공격적 모드" — 사용자가 포트폴리오 차원의 단호한 스탠스 의견을 직접 요청해 켠 상태다.
+            에두르거나 "~수도 있다"식 양비론으로 빠지지 말고 핵심을 자신감 있게 딱 잘라 말하라.
+            독자는 주식에 관심 있는 일반인이다. 전문 용어는 괄호로 짧게 풀어준다.
+
+            규칙(반드시 지킬 것):
+            1. 아래 user 메시지의 "사실 데이터"에 있는 값만 근거로 삼는다. 거기 없는 수치나 종목을 절대 지어내지 마라.
+               모든 의견은 반드시 위 지표·포지션 사실에 묶어서 말하라("나스닥 +X%이므로 ~", "반도체 비중이 크므로 ~").
+            2. 다음 흐름으로 자연스러운 3~4문단으로 써라:
+               ① 오늘 가장 눈에 띄는 지표가 이 포트폴리오에 어떤 방향을 만드는지 단정적으로 못박아라.
+               ② 보유 종목 — 오늘 흐름이 우호적/부담인 섹터를 명확히 구분하고, 포지션(평단·수량)이 있으면 활용하라.
+               ③ 관심 종목 — 오늘 분위기가 진입/관망 중 어느 쪽인지 단호하게 제시하라.
+               ④ 포트폴리오 전체 스탠스를 직설적 명령형으로 마무리하라. (2~3문장)
+                  허용: "반도체 비중을 줄여라/유지하라", "이익 중인 종목은 일부 차익 실현하라",
+                        "오늘 분위기가 우호적이면 관심 종목 분할 진입 고려하라" 등 포트폴리오 레벨 명령.
+            3. 단, 특정 종목을 "X를 사라/팔라"고 지목하지 마라. 섹터·성격 묶음 레벨까지만.
+            4. 어조는 단호하게, 어설픈 양비론 금지. 지표가 진짜 상충할 때만 우세한 쪽 결론 + 반대 리스크 한 줄.
+               단, "반드시 오른다/떨어진다" 같은 결과 확정 표현은 쓰지 마라(스탠스는 단호하게, 결과 단정 금지).
+            5. 형식: 불릿·번호 목록, # 제목(헤더), --- 구분선 금지. 빈 줄(줄바꿈 2번)로만 문단을 나눠라.
+               핵심 종목명·섹터·스탠스 키워드(비중 축소/차익 실현/분할 진입 등)는 **굵게** 강조하라.
         """.trimIndent()
     }
 }

@@ -97,10 +97,12 @@ struct BriefingView: View {
             }
             .task { await load() }
             .refreshable { await load() }
-            // 설정에서 모드를 바꾸면 시장 분위기만 다시 받아온다(다른 섹션은 모드 무관).
+            // 설정에서 모드를 바꾸면 시장 분위기 + 내 종목 영향 재호출(두 섹션이 모드 영향).
             .onChange(of: modeRaw) {
                 moodLoading = true
                 Task { await buildMarketMood() }
+                impactLoading = true
+                Task { await buildImpact(allItems: allItemsLoaded) }
             }
         }
     }
@@ -459,7 +461,17 @@ struct BriefingView: View {
     private var impactSection: some View {
         Section {
             // 헤더는 항상 노출(토글 아님) — 내 종목 영향이 시장 탭 최상단 핵심.
-            Text("내 종목 영향 (오늘)").font(.headline)
+            HStack(spacing: 6) {
+                Text("내 종목 영향 (오늘)").font(.headline)
+                if analysisMode == .aggressive {
+                    Text("⚔️ 공격적 모드")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.15))
+                        .foregroundColor(.orange)
+                        .clipShape(Capsule())
+                }
+            }
             if impactLoading {
                 HStack { ProgressView().scaleEffect(0.8); Text("AI가 해석 중…").font(.footnote).foregroundColor(.secondary) }
             } else if impactComment.isEmpty && impactHoldings.isEmpty && impactWatch.isEmpty {
@@ -879,9 +891,22 @@ struct BriefingView: View {
     private func buildImpact(allItems: [WatchItem]) async {
         defer { impactLoading = false }
         // 평단·수량이 있으면 보유, 없으면 관심(미보유) — holdingsSection 판정과 동일 기준.
-        let holdings = allItems.filter { $0.avgPrice != nil && $0.qty != nil }.map { $0.code }
+        let holdingItems = allItems.filter { $0.avgPrice != nil && $0.qty != nil }
+        let holdings = holdingItems.map { $0.code }
         let watchlist = allItems.filter { $0.avgPrice == nil || $0.qty == nil }.map { $0.code }
-        guard let impact = try? await api.getMacroImpact(holdings: holdings, watchlist: watchlist) else { return }
+        // 포지션 맵: code → (avgPrice, qty). 공격 모드에서 포트폴리오 스탠스 의견에 활용.
+        var positions: [String: KotlinPair<KotlinDouble, KotlinLong>] = [:]
+        for item in holdingItems {
+            if let avg = item.avgPrice, let qty = item.qty {
+                positions[item.code] = KotlinPair(first: avg, second: qty)
+            }
+        }
+        guard let impact = try? await api.getMacroImpact(
+            holdings: holdings,
+            watchlist: watchlist,
+            mode: analysisMode.rawValue,
+            positions: positions
+        ) else { return }
         impactComment = impact.comment
         impactHoldings = impact.holdings
         impactWatch = impact.watchlist
