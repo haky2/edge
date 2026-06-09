@@ -79,11 +79,12 @@ class AnalysisService(
         val shortSelling = runCatching { krxShortSelling.getShortSelling(code) }.getOrNull()
         val valuationBand = runCatching { valuationBandSvc.getValuationBand(code) }.getOrNull()
         val backtest = runCatching { backtestSvc.getBacktest(code) }.getOrNull()
+        val flowSensitivity = runCatching { backtestSvc.getFlowSensitivity(code) }.getOrNull()
         // 비슷한 뉴스가 도배되는 날(예: 특정 이슈)이 많아, 넉넉히 받아 유사 건을 묶고 대표 N건만 쓴다.
         val rawNews = runCatching { naver.search(name, display = 30) }.getOrElse { emptyList() }
         val news = dedupeNews(rawNews, limit = 8)
 
-        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, valuationBand, backtest, position)
+        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, valuationBand, backtest, flowSensitivity, position)
         // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
         val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 3500)
 
@@ -109,6 +110,7 @@ class AnalysisService(
         shortSelling: ShortSellingSummary?,
         valuationBand: ValuationBand?,
         backtest: Backtest?,
+        flowSensitivity: FlowSensitivity?,
         position: Position? = null,
     ): String {
         val sb = StringBuilder()
@@ -196,6 +198,7 @@ class AnalysisService(
             }
         }
         backtestText(backtest)?.let { sb.appendLine().append(it) }
+        flowSensitivityText(flowSensitivity)?.let { sb.appendLine().append(it) }
         if (news.isNotEmpty()) {
             sb.appendLine("최근 뉴스(유사 기사는 묶음, '외 N건'=같은 이슈가 그만큼 쏟아졌다는 관심도 신호):")
             news.forEach { c ->
@@ -306,6 +309,21 @@ class AnalysisService(
             )
         }
         sb.appendLine("  ※ 과거 표본 통계일 뿐 미래 보장 아님. 승률과 평균이 어긋나면 소수 급등/급락일이 평균을 끌어당긴 것.")
+        return sb.toString()
+    }
+
+    /** 수급-가격 민감도(Pearson 상관)를 Claude 입력용 텍스트로. confident 항목만. */
+    private fun flowSensitivityText(fs: FlowSensitivity?): String? {
+        if (fs == null) return null
+        val confident = fs.items.filter { it.confident }
+        if (confident.isEmpty()) return null
+        val sb = StringBuilder()
+        sb.appendLine("수급-가격 민감도(이 종목 수급 규모와 당일 등락률 Pearson 상관, 과거 표본):")
+        confident.forEach { c ->
+            val rSign = if (c.r >= 0) "+" else ""
+            sb.appendLine("  ${c.investor}(n=${c.n}): r=$rSign${c.r}, ${c.label}")
+        }
+        sb.appendLine("  ※ 상관이 강할수록 해당 주체 수급이 이 종목 당일 가격을 함께 끌어올리거나 내리는 경향. 과거 ${fs.items.firstOrNull()?.n ?: 0}거래일 한정, 미래 보장 아님.")
         return sb.toString()
     }
 

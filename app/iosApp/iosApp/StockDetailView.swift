@@ -24,6 +24,7 @@ struct StockDetailView: View {
     @State private var shortSellingHelpExpanded = false
     @State private var valuationBand: ValuationBand?
     @State private var backtest: Backtest?          // 신호별 익일 적중률(검증된 신호)
+    @State private var flowSensitivity: FlowSensitivity?  // 수급-가격 민감도
     @State private var dartExpanded = false
     @State private var earningsExpanded = false
     @State private var signalExpanded = false
@@ -64,6 +65,7 @@ struct StockDetailView: View {
                     flowCard()       // 수급: 외인/기관/개인 일별 순매수
                 }
                 if let bt = backtest { backtestCard(bt) }  // 검증된 신호(익일 적중률)
+                if let fs = flowSensitivity { flowSensitivityCard(fs) }  // 수급-가격 민감도
                 if let ss = shortSelling {
                     shortSellingCard(ss)
                 }
@@ -1215,6 +1217,97 @@ struct StockDetailView: View {
         .opacity(confident ? 1.0 : 0.6)
     }
 
+    // 수급-가격 민감도 카드 — 외인/기관 순매수량 vs 당일 등락률 Pearson 상관
+    private func flowSensitivityCard(_ fs: FlowSensitivity) -> some View {
+        let shown = fs.items.filter { $0.n > 0 }
+        guard !shown.isEmpty else { return AnyView(EmptyView()) }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("수급-가격 민감도").font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text("수급 규모 ↔ 당일 등락률").font(.caption2).foregroundColor(.secondary)
+                }
+                .padding(.top, 4)
+
+                Text("수급 주체가 많이 사고팔수록 이 종목 당일 주가가 같이 움직이는 정도예요.")
+                    .font(.caption2).foregroundColor(.secondary)
+
+                ForEach(Array(shown.enumerated()), id: \.offset) { idx, fc in
+                    if idx > 0 { Divider() }
+                    flowCorrRow(fc)
+                }
+
+                Text("과거 표본 통계로 미래를 보장하지 않아요. 표본(n)이 작으면 참고만 하세요.")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            .padding()
+            .cardStyle()
+        )
+    }
+
+    private func flowCorrRow(_ fc: FlowCorrelation) -> some View {
+        let r = fc.r
+        let confident = fc.confident
+        // r: -1~+1 → 바 너비는 abs(r), 방향으로 색상
+        let accent: Color = r >= 0 ? .red : .blue
+        let rPct = min(abs(r), 1.0)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(fc.investor).font(.caption.weight(.semibold))
+                Text("표본 \(Int(fc.n))일").font(.caption2).foregroundColor(.secondary)
+                Spacer()
+                if confident {
+                    Text(fc.label)
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(abs(r) < 0.1 ? Color.gray.opacity(0.15) : accent.opacity(0.15))
+                        .foregroundColor(abs(r) < 0.1 ? .secondary : accent)
+                        .cornerRadius(8)
+                } else {
+                    Text("표본 부족")
+                        .font(.caption2)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.gray.opacity(0.15)).foregroundColor(.secondary).cornerRadius(8)
+                }
+            }
+            // r값 바: 중앙이 0, 왼쪽=음(파랑), 오른쪽=양(빨강)
+            GeometryReader { geo in
+                let mid = geo.size.width / 2
+                let barW = geo.size.width / 2 * CGFloat(rPct)
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.gray.opacity(0.18)).frame(height: 6)
+                    if r >= 0 {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill((confident ? accent : Color.gray).opacity(confident ? 0.7 : 0.4))
+                            .frame(width: barW, height: 6)
+                            .offset(x: mid)
+                    } else {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill((confident ? accent : Color.gray).opacity(confident ? 0.7 : 0.4))
+                            .frame(width: barW, height: 6)
+                            .offset(x: mid - barW)
+                    }
+                    // 중앙선(r=0 기준)
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.4))
+                        .frame(width: 1.5, height: 10)
+                        .offset(x: mid - 0.75, y: -2)
+                }
+            }
+            .frame(height: 10)
+            HStack {
+                Text("r = \(String(format: "%+.2f", r))")
+                    .font(.caption2).foregroundColor(confident ? .primary : .secondary)
+                Spacer()
+                Text(r >= 0 ? "매수↑ 시 상승 경향" : "매수↑ 시 하락 경향")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+        }
+        .opacity(confident ? 1.0 : 0.6)
+    }
+
     // 공매도 카드 — 거래량·잔고 수치 + ⓘ 공매도 설명 토글
     private func shortSellingCard(_ ss: ShortSellingSummary) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1648,13 +1741,15 @@ struct StockDetailView: View {
         async let signalTask        = api.getStockSignals(code: item.code)
         async let shortSellingTask  = api.getShortSelling(code: item.code)
         async let valuationBandTask = api.getValuationBand(code: item.code)
-        async let backtestTask      = api.getBacktest(code: item.code)
+        async let backtestTask          = api.getBacktest(code: item.code)
+        async let flowSensitivityTask   = api.getFlowSensitivity(code: item.code)
         dartDisclosures = (try? await dartTask) ?? []
         earningsEntry   = (try? await earnsTask)?.first
         stockSignal     = try? await signalTask
         shortSelling    = try? await shortSellingTask
         valuationBand   = try? await valuationBandTask
         backtest        = try? await backtestTask
+        flowSensitivity = try? await flowSensitivityTask
     }
 
     private func loadAnalysis() async {

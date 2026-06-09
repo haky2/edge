@@ -22,4 +22,19 @@ fun Route.backtestRoutes(service: BacktestService) {
             call.respond(result)
         }
     }
+
+    // GET /flow-sensitivity/{code} — 수급 규모와 당일 등락률의 Pearson 상관. 당일 캐시.
+    get("/flow-sensitivity/{code}") {
+        val code = call.parameters["code"].orEmpty()
+        if (!Regex("""\d{6}""").matches(code)) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("종목코드는 6자리 숫자여야 합니다: '$code'"))
+            return@get
+        }
+        val result = service.getFlowSensitivity(code)
+        if (result == null) {
+            call.respond(HttpStatusCode.NotFound, ErrorResponse("수급 또는 일봉 데이터가 부족합니다."))
+        } else {
+            call.respond(result)
+        }
+    }
 }

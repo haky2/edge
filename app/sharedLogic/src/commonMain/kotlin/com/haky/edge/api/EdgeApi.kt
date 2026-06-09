@@ -2,6 +2,7 @@ package com.haky.edge.api
 
 import com.haky.edge.model.Analysis
 import com.haky.edge.model.Backtest
+import com.haky.edge.model.FlowSensitivity
 import com.haky.edge.model.DailyBar
 import com.haky.edge.model.DartDisclosure
 import com.haky.edge.model.EarningsEntry
@@ -230,5 +231,11 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getBacktest(code: String): Backtest? = runCatching {
         client.get("$baseUrl/backtest/$code").body<Backtest>()
+    }.getOrNull()
+
+    /** 수급 규모와 당일 등락률의 Pearson 상관(외인/기관). 데이터 부족 시 null. */
+    @Throws(Exception::class)
+    suspend fun getFlowSensitivity(code: String): FlowSensitivity? = runCatching {
+        client.get("$baseUrl/flow-sensitivity/$code").body<FlowSensitivity>()
     }.getOrNull()
 }

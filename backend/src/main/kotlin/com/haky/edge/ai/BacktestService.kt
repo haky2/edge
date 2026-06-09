@@ -7,6 +7,27 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.abs
+import kotlin.math.pow
+import kotlin.math.sqrt
+
+/** 한 주체(외인/기관)의 순매수량 vs 당일 등락률 Pearson 상관 결과. */
+@Serializable
+data class FlowCorrelation(
+    val investor: String,    // "외인" / "기관"
+    val r: Double,           // Pearson r (-1.0~1.0, 소수점 2자리)
+    val label: String,       // "양의 중간 상관" 등
+    val n: Int,              // 매칭된 표본일수
+    val confident: Boolean,  // n >= MIN_SAMPLE
+)
+
+/** 한 종목의 수급-가격 민감도. GET /flow-sensitivity/{code} 응답 DTO. */
+@Serializable
+data class FlowSensitivity(
+    val code: String,
+    val items: List<FlowCorrelation>,
+)
 
 /** 단일 신호의 익일 성과 집계 결과. */
 @Serializable
@@ -54,22 +75,31 @@ class BacktestService(
 ) {
     private val fileCache = FileCache("backtest", Backtest.serializer())
 
-    suspend fun getBacktest(code: String): Backtest? {
-        val today = LocalDate.now().toString()
-        val cacheKey = "$code:$today"
-        fileCache.get(cacheKey)?.let { return it }
+    // getBacktest와 getFlowSensitivity가 동시에 호출될 때 KIS API 이중 호출 방지.
+    private data class KisData(val bars: List<DailyBar>, val flow: List<InvestorFlow>)
+    private val kisDataCache = ConcurrentHashMap<String, KisData>()
 
-        // 일봉 120(가능한 만큼) + 수급 30을 병렬로.
+    private suspend fun fetchKisData(code: String): KisData {
+        val key = "$code:${LocalDate.now()}"
+        kisDataCache[key]?.let { return it }
         val (dailyDesc, flow) = coroutineScope {
             val d = async { runCatching { kis.getDailyChart(code, bars = 120) }.getOrElse { emptyList() } }
             val f = async { runCatching { kis.getInvestorFlow(code, days = 30) }.getOrElse { emptyList() } }
             d.await() to f.await()
         }
-        // 익일 수익률을 보려면 최소 2거래일 필요.
-        if (dailyDesc.size < 2) return null
+        val data = KisData(dailyDesc.sortedBy { it.date }, flow)
+        kisDataCache[key] = data
+        return data
+    }
 
-        // 과거→현재 오름차순으로 정렬해 인덱스 i와 i+1(익일)을 매핑.
-        val bars = dailyDesc.sortedBy { it.date }
+    suspend fun getBacktest(code: String): Backtest? {
+        val today = LocalDate.now().toString()
+        val cacheKey = "$code:$today"
+        fileCache.get(cacheKey)?.let { return it }
+
+        val (bars, flow) = fetchKisData(code).let { it.bars to it.flow }
+        // 익일 수익률을 보려면 최소 2거래일 필요.
+        if (bars.size < 2) return null
         val dateToIndex = bars.indices.associateBy { bars[it].date }
 
         // close[i] → close[i+1] 익일 수익률(%). 마지막 날(익일 없음)은 null.
@@ -157,6 +187,88 @@ class BacktestService(
         if (returns.isEmpty()) 0.0 else returns.average()
 
     private fun Double.round2(): Double = Math.round(this * 100.0) / 100.0
+
+    // ── 수급-가격 민감도 ──────────────────────────────────────────────────
+
+    private val flowSensCache = FileCache("flow-sensitivity", FlowSensitivity.serializer())
+
+    /**
+     * 외인/기관 순매수량과 당일 등락률의 Pearson 상관계수를 측정한다.
+     * "이 종목은 외인이 살수록 당일 얼마나 오르는가"를 실측.
+     * 기존 일봉(120)+수급(30) 데이터를 재사용 — 새 API 호출 없음.
+     */
+    suspend fun getFlowSensitivity(code: String): FlowSensitivity? {
+        val today = LocalDate.now().toString()
+        val cacheKey = "$code:$today"
+        flowSensCache.get(cacheKey)?.let { return it }
+
+        // fetchKisData 재사용 — getBacktest와 동시 호출 시 KIS API 이중 호출 방지
+        val (bars, flow) = fetchKisData(code).let { it.bars to it.flow }
+        if (bars.size < 2 || flow.isEmpty()) return null
+
+        // 오름차순 정렬된 bars에서 zipWithNext로 당일 수익률 계산
+        val dateToReturn: Map<String, Double> = bars.zipWithNext().mapNotNull { (prev, cur) ->
+            if (prev.close <= 0) null
+            else cur.date to (cur.close - prev.close).toDouble() / prev.close * 100.0
+        }.toMap()
+
+        val items = listOf(
+            flowCorr("외인", flow, dateToReturn) { it.foreign },
+            flowCorr("기관", flow, dateToReturn) { it.institution },
+        ).filterNotNull()
+
+        if (items.isEmpty()) return null
+        val result = FlowSensitivity(code = code, items = items)
+        flowSensCache.put(cacheKey, result)
+        return result
+    }
+
+    private fun flowCorr(
+        name: String,
+        flow: List<InvestorFlow>,
+        dateToReturn: Map<String, Double>,
+        getFlow: (InvestorFlow) -> Long,
+    ): FlowCorrelation? {
+        val pairs = flow.mapNotNull { f ->
+            val ret = dateToReturn[f.date] ?: return@mapNotNull null
+            getFlow(f).toDouble() to ret
+        }
+        val n = pairs.size
+        if (n < 2) return null
+        val xs = pairs.map { it.first }
+        val ys = pairs.map { it.second }
+        val r = pearson(xs, ys).round2()
+        return FlowCorrelation(
+            investor = name,
+            r = r,
+            label = corrLabel(r),
+            n = n,
+            confident = n >= MIN_SAMPLE,
+        )
+    }
+
+    private fun pearson(xs: List<Double>, ys: List<Double>): Double {
+        val n = xs.size
+        if (n < 2) return 0.0
+        val mx = xs.average()
+        val my = ys.average()
+        val num = xs.indices.sumOf { (xs[it] - mx) * (ys[it] - my) }
+        val dx = sqrt(xs.sumOf { (it - mx).pow(2) })
+        val dy = sqrt(ys.sumOf { (it - my).pow(2) })
+        val denom = dx * dy
+        return if (denom < 1e-10) 0.0 else (num / denom).coerceIn(-1.0, 1.0)
+    }
+
+    private fun corrLabel(r: Double): String {
+        val absR = abs(r)
+        val dir = if (r >= 0) "양의" else "음의"
+        return when {
+            absR < 0.1 -> "거의 무관"
+            absR < 0.3 -> "${dir} 약한 상관"
+            absR < 0.5 -> "${dir} 중간 상관"
+            else -> "${dir} 강한 상관"
+        }
+    }
 
     companion object {
         // 이 미만이면 통계적으로 신뢰 곤란 → confident=false.
