@@ -228,32 +228,34 @@ struct BriefingView: View {
                         .font(.caption).foregroundColor(color)
                 }
             }
-            if m.key == "fear_greed" {
-                Text("CNN이 매일 산출하는 시장 심리 지수예요. 0에 가까울수록 공포, 100에 가까울수록 탐욕이에요.")
-                    .font(.caption2).foregroundColor(.secondary)
-            }
-            if m.key == "tnx" {
-                Text("미국 국채 10년물 금리예요. 금리 상승은 주식 밸류에이션에 부담을, 하락은 유동성 개선 신호예요.")
-                    .font(.caption2).foregroundColor(.secondary)
-            }
-            if m.key == "kodex200_ot" {
-                Text("코스피200 추종 ETF의 시간외 단일가예요. 장 전(8~9시)엔 오늘 코스피 출발 방향을, 장 후(16~18시)엔 연장 거래 방향을 보여줘요.")
-                    .font(.caption2).foregroundColor(.secondary)
-            }
-            if m.key == "ewy" {
-                Text("미국 NYSE에 상장된 한국 주식 ETF예요. 미국 시장이 열리는 동안(한국 기준 밤~새벽) 외국인이 한국 주식을 어떻게 평가하는지 보여줘요. 다음 날 코스피 방향의 선행 신호로 봐요.")
-                    .font(.caption2).foregroundColor(.secondary)
-            }
-            if m.key == "sox" {
-                Text("미국 필라델피아 반도체 지수예요. 반도체 관련주의 방향을 선행하는 지표로, 삼성전자·SK하이닉스 등 반도체 종목에 직접적인 영향을 줘요.")
-                    .font(.caption2).foregroundColor(.secondary)
-            }
-            if m.key == "rut" {
-                Text("미국 소형주 2000개로 구성된 러셀2000 지수예요. 나스닥·S&P500과 함께 미국 증시 전반의 위험 선호 심리를 가늠하는 지표예요.")
+            if let desc = macroDescription(m.key) {
+                Text(verbatim: desc)
                     .font(.caption2).foregroundColor(.secondary)
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private func macroDescription(_ key: String) -> String? {
+        switch key {
+        case "kodex200_ot": return "코스피200 추종 ETF의 시간외 단일가예요. 장 전(8-9시)엔 오늘 코스피 출발 방향을, 장 후(16-18시)엔 연장 거래 방향을 보여줘요."
+        case "kospi":       return "국내 대형주 중심 종합주가지수예요. 코스피 방향이 국내 주식 전반의 흐름을 결정해요."
+        case "kosdaq":      return "중소형·기술주 중심 지수예요. 코스피보다 변동성이 크고 성장주 비중이 높아요."
+        case "usdkrw":      return "원화 대비 달러 환율이에요. 오를수록 원화 약세로, 외국인 매도 압력이 생기는 경향이 있어요."
+        case "ewy":         return "미국에 상장된 한국 주식 ETF예요. 미국 장중(한국 기준 밤)에 외국인이 한국 주식을 어떻게 평가하는지 보여줘요."
+        case "nasdaq":      return "미국 기술주 중심 지수예요. AI·반도체·플랫폼 등 성장주 방향을 가장 잘 나타내요."
+        case "sox":         return "미국 필라델피아 반도체 지수예요. 삼성전자·SK하이닉스 등 반도체 종목 흐름의 선행 지표예요."
+        case "sp500":       return "미국 대형주 500개 평균이에요. 미국 증시 전반의 건강을 가장 균형 있게 보여줘요."
+        case "dow":         return "미국 블루칩 30개 산업주 평균이에요. 역사가 긴 지수지만 기술주 비중이 낮아요."
+        case "rut":         return "미국 소형주 2000개 지수예요. 대형주보다 경기 민감도가 높아 위험 선호 심리를 가늠해요."
+        case "tnx":         return "미국 국채 10년물 금리예요. 금리 상승은 주식 밸류에이션에 부담을, 하락은 유동성 개선 신호예요."
+        case "dxy":         return "달러의 상대적 강세를 나타내는 지수예요. 오를수록 신흥국 자금이 미국으로 이동하는 경향이 있어요."
+        case "rate3y":      return "한국 국고채 3년물 금리예요. 국내 시장금리 기준으로, 상승 시 성장주 밸류에이션 부담이 생겨요."
+        case "crude":       return "국제 원유 기준 가격이에요. 에너지·운송 비용과 인플레이션 압력에 영향을 줘요."
+        case "copper":      return "구리는 글로벌 경기 선행 지표예요. 오르면 경기 회복, 내리면 경기 둔화 우려를 반영해요."
+        case "fear_greed":  return "CNN이 매일 산출하는 시장 심리 지수예요. 0에 가까울수록 공포, 100에 가까울수록 탐욕이에요."
+        default:            return nil
+        }
     }
 
     // 공포탐욕지수는 0–100 점수라 소수 1자리, 미10년물 금리는 "%p" 단위로 소수 2자리, 나머지는 천단위 구분 + 소수 2자리.
