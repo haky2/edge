@@ -1221,16 +1221,17 @@ struct StockDetailView: View {
     private func flowSensitivityCard(_ fs: FlowSensitivity) -> some View {
         let shown = fs.items.filter { $0.n > 0 }
         guard !shown.isEmpty else { return AnyView(EmptyView()) }
+        let days = Int(shown.first?.n ?? 0)
         return AnyView(
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("수급-가격 민감도").font(.subheadline.weight(.semibold))
                     Spacer()
-                    Text("수급 규모 ↔ 당일 등락률").font(.caption2).foregroundColor(.secondary)
+                    Text("최근 \(days)거래일 기준").font(.caption2).foregroundColor(.secondary)
                 }
                 .padding(.top, 4)
 
-                Text("수급 주체가 많이 사고팔수록 이 종목 당일 주가가 같이 움직이는 정도예요.")
+                Text("외인·기관이 많이 살수록 이 종목 주가가 그날 같이 올랐나요?")
                     .font(.caption2).foregroundColor(.secondary)
 
                 ForEach(Array(shown.enumerated()), id: \.offset) { idx, fc in
@@ -1238,7 +1239,7 @@ struct StockDetailView: View {
                     flowCorrRow(fc)
                 }
 
-                Text("과거 표본 통계로 미래를 보장하지 않아요. 표본(n)이 작으면 참고만 하세요.")
+                Text("수급은 전일까지 장후 확정값 기준이에요. 과거 통계라 미래를 보장하지 않아요.")
                     .font(.caption2).foregroundColor(.secondary)
             }
             .padding()
@@ -1249,60 +1250,57 @@ struct StockDetailView: View {
     private func flowCorrRow(_ fc: FlowCorrelation) -> some View {
         let r = fc.r
         let confident = fc.confident
-        // r: -1~+1 → 바 너비는 abs(r), 방향으로 색상
-        let accent: Color = r >= 0 ? .red : .blue
-        let rPct = min(abs(r), 1.0)
+        let absR = abs(r)
+        let isPositive = r >= 0
+        let accent: Color = absR < 0.1 ? .gray : (isPositive ? .red : .blue)
+
+        // 사용자에게 친숙한 한마디
+        let plainLabel: String
+        if !confident {
+            plainLabel = "표본 부족"
+        } else if absR < 0.1 {
+            plainLabel = "별 관계 없어요"
+        } else if isPositive {
+            plainLabel = absR < 0.3 ? "조금 같이 올라요" : absR < 0.5 ? "어느 정도 같이 올라요" : "강하게 같이 올라요"
+        } else {
+            plainLabel = absR < 0.3 ? "조금 반대로 움직여요" : absR < 0.5 ? "어느 정도 반대로 움직여요" : "강하게 반대로 움직여요"
+        }
+
+        // 한 줄 설명
+        let desc: String?
+        if confident && absR >= 0.1 {
+            desc = isPositive
+                ? "\(fc.investor)이 많이 살수록 그날 주가가 같이 오른 경향이에요"
+                : "\(fc.investor)이 많이 살수록 그날 주가가 오히려 내린 경향이에요"
+        } else {
+            desc = nil
+        }
+
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Text(fc.investor).font(.caption.weight(.semibold))
-                Text("표본 \(Int(fc.n))일").font(.caption2).foregroundColor(.secondary)
+                Text("\(Int(fc.n))일").font(.caption2).foregroundColor(.secondary)
                 Spacer()
-                if confident {
-                    Text(fc.label)
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(abs(r) < 0.1 ? Color.gray.opacity(0.15) : accent.opacity(0.15))
-                        .foregroundColor(abs(r) < 0.1 ? .secondary : accent)
-                        .cornerRadius(8)
-                } else {
-                    Text("표본 부족")
-                        .font(.caption2)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.gray.opacity(0.15)).foregroundColor(.secondary).cornerRadius(8)
-                }
+                Text(plainLabel)
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background((confident && absR >= 0.1 ? accent : Color.gray).opacity(0.15))
+                    .foregroundColor(confident && absR >= 0.1 ? accent : .secondary)
+                    .cornerRadius(8)
             }
-            // r값 바: 중앙이 0, 왼쪽=음(파랑), 오른쪽=양(빨강)
+            // 강도 바: 0~1 범위, 색상으로 방향 구분
             GeometryReader { geo in
-                let mid = geo.size.width / 2
-                let barW = geo.size.width / 2 * CGFloat(rPct)
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(Color.gray.opacity(0.18)).frame(height: 6)
-                    if r >= 0 {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill((confident ? accent : Color.gray).opacity(confident ? 0.7 : 0.4))
-                            .frame(width: barW, height: 6)
-                            .offset(x: mid)
-                    } else {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill((confident ? accent : Color.gray).opacity(confident ? 0.7 : 0.4))
-                            .frame(width: barW, height: 6)
-                            .offset(x: mid - barW)
-                    }
-                    // 중앙선(r=0 기준)
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.4))
-                        .frame(width: 1.5, height: 10)
-                        .offset(x: mid - 0.75, y: -2)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill((confident ? accent : Color.gray).opacity(confident ? 0.7 : 0.4))
+                        .frame(width: geo.size.width * CGFloat(min(absR, 1.0)), height: 6)
                 }
             }
-            .frame(height: 10)
-            HStack {
-                Text("r = \(String(format: "%+.2f", r))")
-                    .font(.caption2).foregroundColor(confident ? .primary : .secondary)
-                Spacer()
-                Text(r >= 0 ? "매수↑ 시 상승 경향" : "매수↑ 시 하락 경향")
-                    .font(.caption2).foregroundColor(.secondary)
+            .frame(height: 6)
+            if let desc {
+                Text(desc).font(.caption2).foregroundColor(.secondary)
             }
         }
         .opacity(confident ? 1.0 : 0.6)
