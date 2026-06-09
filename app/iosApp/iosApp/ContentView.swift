@@ -192,6 +192,18 @@ struct WatchlistView: View {
     }
 }
 
+// 분석 모드 — 전역 설정값. 백엔드로 넘기는 쿼리값과 동일한 문자열을 그대로 저장한다.
+// 슬라이스 4는 market-mood 한 곳에만 적용, 슬라이스 5에서 종목상세·macro-impact로 확대 예정.
+enum AnalysisMode: String, CaseIterable {
+    case defensive   // 방어적: 사실 + 방향만
+    case aggressive  // 공격적: 시장 스탠스 의견까지
+
+    var label: String { self == .aggressive ? "공격 ⚔️" : "방어 🛡️" }
+}
+
+// @AppStorage 키. SettingsView와 BriefingView가 같은 값을 공유한다.
+let analysisModeKey = "analysisMode"
+
 struct ContentView: View {
     var body: some View {
         TabView {
@@ -203,6 +215,39 @@ struct ContentView: View {
                 .tabItem { Label("브리핑", systemImage: "newspaper") }
             StatsView()
                 .tabItem { Label("내 패턴", systemImage: "chart.line.uptrend.xyaxis") }
+            SettingsView()
+                .tabItem { Label("설정", systemImage: "gearshape") }
+        }
+    }
+}
+
+// 설정 탭. 현재는 분석 모드 하나. 전역 @AppStorage라 어느 화면에서든 같은 값을 읽는다.
+struct SettingsView: View {
+    @AppStorage(analysisModeKey) private var modeRaw = AnalysisMode.defensive.rawValue
+
+    private var mode: AnalysisMode { AnalysisMode(rawValue: modeRaw) ?? .defensive }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("분석 모드", selection: $modeRaw) {
+                        ForEach(AnalysisMode.allCases, id: \.rawValue) { m in
+                            Text(m.label).tag(m.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("분석 모드")
+                } footer: {
+                    if mode == .aggressive {
+                        Text("⚔️ 공격적 모드는 계산된 지표에 근거한 적극적 시장 스탠스 의견(위험자산 비중·현금 확보·분할 접근 등)을 보여줘요. 매매 의견은 참고용이며 투자 책임은 본인에게 있어요.")
+                    } else {
+                        Text("🛡️ 방어적 모드는 사실과 방향만 담백하게 전달해요. 적극적인 시장 스탠스 의견을 보려면 공격으로 바꿔보세요.")
+                    }
+                }
+            }
+            .navigationTitle("설정")
         }
     }
 }

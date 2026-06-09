@@ -9,6 +9,10 @@ private enum BriefingTab: String, CaseIterable {
 struct BriefingView: View {
     private let api = Db.api
 
+    // 설정 탭에서 정한 분석 모드(전역). 시장 분위기 코멘트 톤을 결정한다.
+    @AppStorage(analysisModeKey) private var modeRaw = AnalysisMode.defensive.rawValue
+    private var analysisMode: AnalysisMode { AnalysisMode(rawValue: modeRaw) ?? .defensive }
+
     @State private var selectedTab: BriefingTab = .myStocks
 
     // quotes 로드 중: 전체 화면 스피너. false가 되면 하이라이트/보유현황 즉시 표시.
@@ -93,6 +97,11 @@ struct BriefingView: View {
             }
             .task { await load() }
             .refreshable { await load() }
+            // 설정에서 모드를 바꾸면 시장 분위기만 다시 받아온다(다른 섹션은 모드 무관).
+            .onChange(of: modeRaw) {
+                moodLoading = true
+                Task { await buildMarketMood() }
+            }
         }
     }
 
@@ -131,7 +140,7 @@ struct BriefingView: View {
 
     @ViewBuilder
     private var marketMoodSection: some View {
-        Section("오늘 시장 분위기") {
+        Section {
             if moodLoading {
                 HStack {
                     ProgressView().scaleEffect(0.8)
@@ -147,6 +156,18 @@ struct BriefingView: View {
                             .font(.caption2).foregroundColor(.secondary)
                     }
                     if moodExpanded { proseBlock(moodComment) }
+                }
+            }
+        } header: {
+            HStack(spacing: 6) {
+                Text("오늘 시장 분위기")
+                if analysisMode == .aggressive {
+                    Text("⚔️ 공격적 모드")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.15))
+                        .foregroundColor(.orange)
+                        .clipShape(Capsule())
                 }
             }
         }
@@ -838,7 +859,7 @@ struct BriefingView: View {
 
     private func buildMarketMood() async {
         defer { moodLoading = false }
-        guard let result = try? await api.getMarketMood() else { return }
+        guard let result = try? await api.getMarketMood(mode: analysisMode.rawValue) else { return }
         moodComment = result.comment
         moodGeneratedAt = result.generatedAt
     }

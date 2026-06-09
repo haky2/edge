@@ -122,12 +122,15 @@ class EdgeApi(
         client.get("$baseUrl/macro").body()
 
     /**
-     * 오늘 시장 분위기(코스피 출발 방향) Claude 해석. 기존 10개 매크로 지표 재사용.
-     * Claude 호출이라 첫 생성은 수 초 걸리고 백엔드가 당일 캐시한다.
+     * 오늘 시장 분위기(코스피 출발 방향) Claude 해석. 기존 매크로 지표 재사용.
+     * mode="defensive"(사실+방향) | "aggressive"(시장 스탠스 의견까지). 모드별 당일 공유 캐시.
+     * Claude 호출이라 첫 생성은 수 초 걸린다.
      */
     @Throws(Exception::class)
-    suspend fun getMarketMood(): MarketMood =
-        client.get("$baseUrl/market-mood").body()
+    suspend fun getMarketMood(mode: String = "defensive"): MarketMood =
+        client.get("$baseUrl/market-mood") {
+            parameter("mode", mode)
+        }.body()
 
     /**
      * 매크로 → 내 종목 영향 분석. 보유/관심 종목 코드를 넘기면 종목별 영향(계산) + Claude 종합 해석.
