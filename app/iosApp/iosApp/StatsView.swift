@@ -18,6 +18,7 @@ struct StatsView: View {
     @AppStorage("statsRecentExpanded") private var recentExpanded = false
     @AppStorage("statsCodeExpanded")   private var codeExpanded   = false
     @AppStorage("statsHoldExpanded")   private var holdExpanded   = false
+    @AppStorage("statsReasonExpanded") private var reasonExpanded = false
 
     var body: some View {
         NavigationStack {
@@ -41,7 +42,7 @@ struct StatsView: View {
             disciplineSection
             winRateSection
             missedSection
-            if !reasonRows.isEmpty { reasonSection }
+            reasonSection
             recentSection
             codeSection
             if avgHoldDays != nil || !pairRows.isEmpty { holdSection }
@@ -107,10 +108,8 @@ struct StatsView: View {
                 disclosureLabel("매수 → 매도 보유기간", sub: pairRows.isEmpty ? nil : "\(pairRows.count)쌍")
             }
         } footer: {
-            if holdExpanded {
-                Text("매수 기록 후 같은 종목을 매도하기까지 걸린 시간. 7일 이하는 단타로 표시돼요.")
-                    .font(.caption2)
-            }
+            Text("매수 기록 후 같은 종목을 매도하기까지 걸린 시간. 7일 이하는 단타로 표시돼요.")
+                .font(.caption2)
         }
     }
 
@@ -283,7 +282,7 @@ struct StatsView: View {
                     Text("현재가 확인 중…").font(.footnote).foregroundColor(.secondary)
                 }
             } else if missedRows.isEmpty {
-                Text("관심만 하고 매수하지 않은 종목이 없어요").font(.footnote).foregroundColor(.secondary)
+                Text("관심 기록 후 매수하지 않은 종목이 없어요").font(.footnote).foregroundColor(.secondary)
             } else {
                 ForEach(missedRows) { row in
                     missedRow(row)
@@ -292,7 +291,7 @@ struct StatsView: View {
         } header: {
             Text("놓친 종목 (관심 후 미매수 \(missedRows.count)개)")
         } footer: {
-            Text("관심은 눌렀지만 매수하지 않은 종목. 그때 샀다면 지금 얼마였는지 가상 수익률로 보여줘요.")
+            Text("종목 상세 화면 하단의 '관심 기록' 버튼을 눌러야 여기 집계돼요. 그 종목을 매수하지 않았다면, 그때 샀을 경우 지금 수익률이 얼마였는지 보여줘요.")
                 .font(.caption2)
         }
     }
@@ -327,25 +326,32 @@ struct StatsView: View {
         .padding(.vertical, 2)
     }
 
-    // MARK: - 섹션: 사유 분포
+    // MARK: - 섹션: 사유 태그 (접기/펼치기)
 
     private var reasonSection: some View {
         Section {
-            ForEach(reasonRows.prefix(8), id: \.reason) { row in
-                HStack {
-                    Text(row.reason).font(.body)
-                    Spacer()
-                    Text("\(row.count)회").font(.caption.weight(.semibold)).foregroundColor(.secondary)
-                    if let max = reasonRows.first?.count, max > 0 {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(Color.purple.opacity(0.5))
-                            .frame(width: CGFloat(row.count) / CGFloat(max) * 60, height: 6)
+            DisclosureGroup(isExpanded: $reasonExpanded) {
+                if reasonRows.isEmpty {
+                    Text("아직 사유 태그 기록이 없어요")
+                        .font(.footnote).foregroundColor(.secondary)
+                } else {
+                    ForEach(reasonRows.prefix(8), id: \.reason) { row in
+                        HStack {
+                            Text(row.reason).font(.body)
+                            Spacer()
+                            Text("\(row.count)회").font(.caption.weight(.semibold)).foregroundColor(.secondary)
+                            if let max = reasonRows.first?.count, max > 0 {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color.purple.opacity(0.5))
+                                    .frame(width: CGFloat(row.count) / CGFloat(max) * 60, height: 6)
+                            }
+                        }
+                        .padding(.vertical, 2)
                     }
                 }
-                .padding(.vertical, 2)
+            } label: {
+                disclosureLabel("사유 태그", sub: reasonRows.isEmpty ? nil : "Top \(min(reasonRows.count, 8))개")
             }
-        } header: {
-            Text("사유 태그 (Top \(min(reasonRows.count, 8))개)")
         } footer: {
             Text("관심·매수·매도 기록 시 입력한 사유 태그 빈도. 내가 어떤 이유로 행동하는지 패턴을 볼 수 있어요.")
                 .font(.caption2)
@@ -374,10 +380,8 @@ struct StatsView: View {
                 disclosureLabel("종목별 활동", sub: "\(codeRows.count)종목")
             }
         } footer: {
-            if codeExpanded {
-                Text("종목마다 관심·매수·매도를 몇 번 기록했는지. 자주 들여다본 종목이 위에 나와요.")
-                    .font(.caption2)
-            }
+            Text("종목마다 관심·매수·매도를 몇 번 기록했는지. 자주 들여다본 종목이 위에 나와요.")
+                .font(.caption2)
         }
     }
 
@@ -408,10 +412,8 @@ struct StatsView: View {
                 disclosureLabel("최근 활동", sub: "최근 \(min(entries.count, 20))건")
             }
         } footer: {
-            if recentExpanded {
-                Text("가장 최근 기록 20건. 상세 화면에서 관심·매수·매도 버튼을 누를 때마다 쌓여요.")
-                    .font(.caption2)
-            }
+            Text("가장 최근 기록 20건. 상세 화면에서 관심·매수·매도 버튼을 누를 때마다 쌓여요.")
+                .font(.caption2)
         }
     }
 
@@ -443,7 +445,8 @@ struct StatsView: View {
             guard let r = e.reason, !r.isEmpty else { continue }
             counts[r, default: 0] += 1
         }
-        return counts.map { ($0.key, $0.value) }.sorted { $0.count > $1.count }
+        return counts.map { (reason: $0.key, count: $0.value) }
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.reason < $1.reason }
     }
 
     private var codeRows: [(code: String, buys: Int, sells: Int, interests: Int)] {
