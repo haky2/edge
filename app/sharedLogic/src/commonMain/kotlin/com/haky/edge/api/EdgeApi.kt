@@ -106,12 +106,15 @@ class EdgeApi(
         }.body()
 
     /**
-     * 종목 종합 코멘트(시세·52주·PER·수급·뉴스 → Claude 해석). 백엔드가 당일 캐시.
+     * 종목 종합 코멘트(시세·52주·PER·수급·뉴스 → Claude 해석). 백엔드가 당일·모드별 캐시.
      * 포지션 없는 일반 버전 — 전 유저 공유 캐시.
+     * mode="defensive"(기본) | "aggressive"(개별 종목 매매 판단까지).
      */
     @Throws(Exception::class)
-    suspend fun getAnalysis(code: String): Analysis =
-        client.get("$baseUrl/analysis/$code").body()
+    suspend fun getAnalysis(code: String, mode: String = "defensive"): Analysis =
+        client.get("$baseUrl/analysis/$code") {
+            if (mode != "defensive") parameter("mode", mode)
+        }.body()
 
     /**
      * 매크로 지표(코스피·코스닥·원/달러·다우·나스닥·S&P500). 브리핑 "시장 지표" 섹션용.
@@ -218,11 +221,13 @@ class EdgeApi(
         qty: Long,
         targetPrice: Double,
         stopPrice: Double,
+        mode: String = "defensive",
     ): Analysis = client.get("$baseUrl/analysis/$code") {
         parameter("avgPrice", avgPrice)
         parameter("qty", qty)
         if (targetPrice > 0.0) parameter("targetPrice", targetPrice)
         if (stopPrice > 0.0) parameter("stopPrice", stopPrice)
+        if (mode != "defensive") parameter("mode", mode)
     }.body()
 
     /** 종목 공매도 거래량·잔고 요약. KRX 데이터, 당일 캐시. 데이터 없으면 null. */

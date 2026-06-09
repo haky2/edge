@@ -7,6 +7,7 @@ import com.haky.edge.kis.DailyBar
 import com.haky.edge.kis.InvestorFlow
 import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.Quote
+import com.haky.edge.macro.AnalysisMode
 import com.haky.edge.macro.KrxShortSellingClient
 import com.haky.edge.macro.MacroImpactService
 import com.haky.edge.macro.ShortSellingSummary
@@ -54,9 +55,11 @@ data class Position(
  * 종목 종합 코멘트 생성(② Claude 층).
  *
  * 원칙: **사실은 우리가 수집(시세·52주·PER·수급·가격흐름·재무·뉴스) → Claude 는 해석만.** 수치 날조 금지, 참고용.
- * 비용: 같은 종목·같은 날은 1회만 생성하고 인메모리 캐시로 공유(CLAUDE.md 비용 정책).
- *   - position 없음: (code,date) 공유 캐시 — 전 유저 동일 코멘트.
- *   - position 있음: (code,date,avgPrice,qty) 별도 캐시 — 포지션별로 개인화.
+ * 모드: DEFENSIVE(기본, 매매 지시 금지) / AGGRESSIVE(평단·신호 사실에 묶은 개별 종목 매매 판단까지 허용).
+ * 비용·캐시: 같은 종목·같은 날·같은 모드는 1회만 생성하고 인메모리+파일 캐시로 공유(CLAUDE.md 비용 정책).
+ *   - position 없음: (code,date,mode) 공유 캐시 — 전 유저 동일 코멘트.
+ *   - position 있음: (code,date,mode,avgPrice,qty) 별도 캐시 — 포지션별 개인화. 공격 모드의
+ *     평단 기반 매매 판단이 다른 사용자에게 새지 않게 분리(평단·수량은 장중 불변이라 재호출 churn 없음).
  */
 class AnalysisService(
     private val kis: KisClient,
@@ -74,10 +77,12 @@ class AnalysisService(
     private val cache = ConcurrentHashMap<String, Cached>()
     private val fileCache = FileCache("analysis", Analysis.serializer())
 
-    suspend fun analyze(code: String, position: Position? = null): Analysis {
+    suspend fun analyze(code: String, position: Position? = null, mode: AnalysisMode = AnalysisMode.DEFENSIVE): Analysis {
         val today = LocalDate.now().toString()
-        // 키 = code+날짜. 같은 날 포지션이 바뀌어도 캐시 재사용(하루 1회 호출 원칙).
-        val key = "$code:$today"
+        // 캐시 키: 포지션 없으면 (code,date,mode) 전 유저 공유. 포지션 있으면 평단·수량까지 포함해
+        // 사용자별 분리 — 공격 모드의 평단 기반 매매 판단이 다른 사용자에게 새지 않게(평단·수량은 장중 불변→churn 없음).
+        val key = if (position == null) "$code:$today:${mode.name}"
+            else "$code:$today:${mode.name}:${position.avgPrice.toLong()}:${position.qty}"
         cache[key]?.let { return it.analysis }
         fileCache.get(key)?.let { cache[key] = Cached(it); return it }
 
@@ -102,7 +107,8 @@ class AnalysisService(
 
         val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, valuationBand, backtest, flowSensitivity, quarterlyIncome, position)
         // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
-        val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 3500)
+        val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
+        val comment = claude.complete(prompt, facts, maxTokens = 3500)
         warnHallucinatedNumbers(code, facts, comment)
 
         val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
@@ -511,8 +517,8 @@ class AnalysisService(
     }
 
     companion object {
-        // 시스템 프롬프트(캐시 대상). 사실/해석 분리·환각 가드·참고용 디스클레이머를 명시.
-        private val SYSTEM_PROMPT = """
+        // 방어 모드 시스템 프롬프트(캐시 대상). 사실/해석 분리·환각 가드·매매 지시 금지.
+        private val DEFENSIVE_PROMPT = """
             너는 한국 주식 투자 보조 앱의 분석 어시스턴트다.
             독자는 주식에 관심이 있지만 전문 트레이더가 아닌 일반인이다. 전문 용어를 쓸 때는 괄호 안에 짧게 뜻을 달아준다.
             예) PER(주가가 1년 순이익의 몇 배인지), PBR(주가가 순자산의 몇 배인지), 수급(외국인·기관·개인 중 누가 사고 파는지), 컨센서스 목표주가(여러 증권사 애널리스트가 제시한 평균 목표값)
@@ -529,11 +535,42 @@ class AnalysisService(
             4. 사실과 해석을 구분해서, 근거 없는 단정은 "~로 보인다", "~일 수 있다"처럼 신중하게.
             5. "지금 사라/팔라"처럼 매매를 지시하지 마라.
             6. 어려운 금융 영어(모멘텀, 밸류에이션, 멀티플 등)는 가급적 한국어로 바꾸거나 괄호 설명을 붙여라.
-            7. 형식: 불릿·번호 목록 금지(흐르는 문장으로). 각 단락 첫 줄에 **소제목**(예: **최근 흐름**, **실적 확인**, **수급**, **공매도·신호**, **밸류·목표가**, **종합**)만 굵게 넣고, 그 다음 줄부터 본문. 소제목과 본문 사이, 단락과 단락 사이는 빈 줄 하나(\n\n).
+            7. 형식: 불릿·번호 목록, --- 구분선 금지(흐르는 문장으로). 각 단락 첫 줄에 **소제목**(예: **최근 흐름**, **실적 확인**, **수급**, **공매도·신호**, **밸류·목표가**, **종합**)만 굵게 넣고, 그 다음 줄부터 본문. 소제목과 본문 사이, 단락과 단락 사이는 빈 줄 하나(\n\n).
             8. 핵심 수치는 **굵게** 표시해 눈에 띄게 하라 — 등락률·주가·승률·목표주가·PER/PBR 등 독자가 기억할 숫자. 단, 문장 전체를 굵게 하지 말고 숫자/짧은 구절만.
             9. 뉴스는 종목과 무관한 것이 섞일 수 있다. 관련 있어 보이는 것만 쓰고 억지로 연결하지 마라.
             10. "내 포지션" 섹션이 있으면 평단가 기준 현재 손익과 목표가까지 남은 거리를 마지막 단락에 자연스럽게 녹여준다.
             11. "검증된 신호" 섹션이 있으면 수급 단락에서 활용하되, "이 종목 과거 통계상" 같은 한정을 붙이고 표본이 작을 수 있음을 신중하게 다뤄라. 승률과 평균이 다르면 그 의미(소수 급등일 영향)도 짚어준다. 절대 미래 수익을 단정하지 마라.
+        """.trimIndent()
+
+        // 공격 모드 시스템 프롬프트. 방어 모드와 같은 사실·환각가드 위에서, 개별 종목 매매 판단까지
+        // 단호하게 허용한다(macro-impact 공격 모드는 섹터 레벨까지만 — 여기는 개별 종목 가능).
+        // 단 모든 판단은 반드시 계산된 사실(평단 손익·손절/목표가 거리·신호 승률·밸류 위치·수급)에 묶고,
+        // 결과 단정·환각은 계속 금지. iOS 카드가 **소제목** 섹션을 파싱하므로 소제목 형식은 방어 모드와 동일 유지.
+        private val AGGRESSIVE_PROMPT = """
+            너는 한국 주식 투자 보조 앱의 분석 어시스턴트다.
+            지금은 "공격적 모드" — 사용자가 이 종목에 대한 단호한 매매 판단을 직접 요청해 켠 상태다.
+            에두르거나 "~수도 있다"식 양비론으로 빠지지 말고, 사실에 묶인 결론을 자신감 있게 딱 잘라 말하라.
+            독자는 전문 트레이더가 아닌 일반인이다. 전문 용어를 쓸 때는 괄호 안에 짧게 뜻을 달아준다.
+            예) PER(주가가 1년 순이익의 몇 배인지), PBR(주가가 순자산의 몇 배인지), 수급(외국인·기관·개인 중 누가 사고 파는지)
+
+            규칙(반드시 지킬 것):
+            1. 아래 user 메시지의 "사실 데이터"에 있는 값만 근거로 삼는다. 거기 없는 수치를 절대 지어내지 마라.
+               모든 매매 판단은 반드시 계산된 사실에 묶어라 — 평단 대비 손익, 손절·목표가까지 거리, 검증된 신호 승률, 밸류 밴드 위치, 수급 방향.
+            2. 다음 주제들을 자연스럽게 이어지는 단락으로 풀어라. 있는 재료만 다루고, 없는 주제는 건너뛴다:
+               - 최근 흐름: 주가가 왜 이렇게 움직였나 — 뉴스와 가격 흐름을 연결.
+               - 실적 확인: 그 움직임이 일시적 기대인지 실제 실적 변화인지 — "회사 재무"가 있으면 추세와 비교.
+               - 수급·신호: 외국인·기관 방향, 공매도, "검증된 신호"를 묶어 누가 어느 방향인지.
+               - 밸류·목표가: PER/PBR·밸류에이션 밴드·컨센서스 목표주가로 지금 이 가격이 어느 수준인지.
+               - 종합·액션: 위 사실을 종합해 "지금 이 종목을 어떻게 할지" 단호하게 못박아 마무리.
+            3. (방어 모드와 핵심 차이) 개별 종목 매매 판단을 허용한다. 단 반드시 포지션·신호 사실에 묶을 것:
+               - 보유 중이면: 평단 대비 손익과 손절·목표가 거리를 근거로 — "비중을 줄여라 / 분할 추가 여력을 써라 / 손절 라인을 지켜라 / 목표가에서 차익 실현하라".
+               - 미보유면: 밸류 밴드·신호·수급을 근거로 — "이 가격대는 분할 진입 구간이다 / 지금은 관망하고 ~선까지 기다려라".
+            4. 결과를 확정하지 마라("반드시 오른다/떨어진다" 금지). 스탠스는 단호하게 내되, 미래 단정은 하지 마라.
+            5. "검증된 신호" 섹션이 있으면 "이 종목 과거 통계상" 같은 한정을 붙이고 표본이 작을 수 있음을 신중히 다뤄라. 승률과 평균이 어긋나면 그 의미(소수 급등일 영향)도 짚어라. 미래 수익을 단정하지 마라.
+            6. 가독성: 한 단락엔 한 주제만. 한 단락이 6문장을 넘으면 두 단락으로 쪼개라. 어려운 금융 영어는 한국어로 바꾸거나 괄호 설명을 붙여라.
+            7. 형식: 불릿·번호 목록 금지(흐르는 문장으로). 각 단락 첫 줄에 **소제목**(예: **최근 흐름**, **실적 확인**, **수급·신호**, **밸류·목표가**, **종합·액션**)만 굵게 넣고, 그 다음 줄부터 본문. 소제목과 본문 사이, 단락과 단락 사이는 빈 줄 하나(\n\n).
+            8. 핵심 수치는 **굵게** 표시하라 — 등락률·주가·승률·목표주가·PER/PBR·평단 대비 손익 등. 문장 전체를 굵게 하지 말고 숫자/짧은 구절만.
+            9. 뉴스는 종목과 무관한 것이 섞일 수 있다. 관련 있어 보이는 것만 쓰고 억지로 연결하지 마라.
         """.trimIndent()
     }
 }

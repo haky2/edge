@@ -33,6 +33,8 @@ struct StockDetailView: View {
     @State private var chartPeriod: ChartPeriod = .m3   // 가격 차트 기간 토글
     @State private var trendLineHelpExpanded = false     // 20일 추세선 설명 토글
     @State private var commentExpanded = false   // AI 코멘트 더보기/접기
+    @AppStorage(analysisModeKey) private var modeRaw = AnalysisMode.defensive.rawValue
+    private var analysisMode: AnalysisMode { AnalysisMode(rawValue: modeRaw) ?? .defensive }
     @State private var analyzing = false
     @State private var loading = false
     @State private var showEdit = false
@@ -102,6 +104,10 @@ struct StockDetailView: View {
         }
         .task { await load() }             // 진입 시 시세·수급·뉴스 갱신(빠름)
         .task { await loadAnalysis() }     // AI 코멘트는 느려서 별도로(동시 진행)
+        .onChange(of: modeRaw) {
+            analysis = nil   // 이전 모드 코멘트 즉시 제거 → 로딩 상태 바로 표시
+            Task { await loadAnalysis() }
+        }
         .onAppear { loadLogs() }
         .sheet(isPresented: $showEdit) {
             PositionEditView(item: item) { updated in item = updated }  // 저장 시 화면 즉시 반영
@@ -689,6 +695,14 @@ struct StockDetailView: View {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles").foregroundColor(.purple)
                 Text("AI 종합 코멘트").font(.subheadline.weight(.semibold))
+                if analysisMode == .aggressive {
+                    Text("⚔️ 공격적 모드")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.15))
+                        .foregroundColor(.orange)
+                        .clipShape(Capsule())
+                }
                 Spacer()
                 if analyzing { ProgressView().scaleEffect(0.8) }
             }
@@ -1734,7 +1748,7 @@ struct StockDetailView: View {
     private func parseCommentSections(_ comment: String) -> [CommentSection] {
         let blocks = comment.components(separatedBy: "\n\n")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+            .filter { !$0.isEmpty && $0 != "---" }
         var sections: [CommentSection] = []
         var heading: String? = nil
         var body: [String] = []
@@ -1795,16 +1809,18 @@ struct StockDetailView: View {
 
     private func loadAnalysis() async {
         analyzing = true
+        commentExpanded = false
         if let avgNum = item.avgPrice, let qtyNum = item.qty {
             analysis = try? await api.getAnalysisPersonalized(
                 code: item.code,
                 avgPrice: avgNum.doubleValue,
                 qty: qtyNum.int64Value,
                 targetPrice: item.targetPrice?.doubleValue ?? 0.0,
-                stopPrice: item.stopPrice?.doubleValue ?? 0.0
+                stopPrice: item.stopPrice?.doubleValue ?? 0.0,
+                mode: analysisMode.rawValue
             )
         } else {
-            analysis = try? await api.getAnalysis(code: item.code)
+            analysis = try? await api.getAnalysis(code: item.code, mode: analysisMode.rawValue)
         }
         analyzing = false
     }
