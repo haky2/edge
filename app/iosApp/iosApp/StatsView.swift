@@ -108,7 +108,7 @@ struct StatsView: View {
                 disclosureLabel("매수 → 매도 보유기간", sub: pairRows.isEmpty ? nil : "\(pairRows.count)쌍")
             }
         } footer: {
-            Text("매수 기록 후 같은 종목을 매도하기까지 걸린 시간. 7일 이하는 단타로 표시돼요.")
+            Text("매수 기록 후 같은 종목을 매도하기까지 걸린 시간. 7일 이하는 주황색으로 강조돼요.")
                 .font(.caption2)
         }
     }
