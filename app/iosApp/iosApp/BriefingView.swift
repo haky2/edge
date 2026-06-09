@@ -64,7 +64,7 @@ struct BriefingView: View {
     // 접기/펼치기 상태 (기본 접힘)
     @State private var dartExpanded = false
     @State private var earningsExpanded = false
-    @State private var impactSectionExpanded = true   // 내 종목 영향: 섹션 전체 접기
+    @State private var impactSectionExpanded = false  // 내 종목 영향: 섹션 전체 접기
     @State private var impactExpanded = false        // 내 종목 영향: AI 코멘트(프로즈) 접기
     @State private var impactWatchExpanded = false   // 내 종목 영향: 관심 종목 목록 접기
     @State private var marketExpanded = false
