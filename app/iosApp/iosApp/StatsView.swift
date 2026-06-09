@@ -14,6 +14,11 @@ struct StatsView: View {
     @State private var missedRows: [MissedRow] = []
     @State private var missedLoading = false
 
+    // 접기/펼치기 상태 (앱 재시작 시 유지)
+    @AppStorage("statsRecentExpanded") private var recentExpanded = false
+    @AppStorage("statsCodeExpanded")   private var codeExpanded   = false
+    @AppStorage("statsHoldExpanded")   private var holdExpanded   = false
+
     var body: some View {
         NavigationStack {
             Group {
@@ -33,13 +38,13 @@ struct StatsView: View {
     private var contentList: some View {
         List {
             summarySection
-            if avgHoldDays != nil || !pairRows.isEmpty { holdSection }
-            winRateSection
             disciplineSection
+            winRateSection
             missedSection
             if !reasonRows.isEmpty { reasonSection }
-            codeSection
             recentSection
+            codeSection
+            if avgHoldDays != nil || !pairRows.isEmpty { holdSection }
         }
     }
 
@@ -72,36 +77,40 @@ struct StatsView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - 섹션: 보유기간
+    // MARK: - 섹션: 보유기간 (접기/펼치기)
 
     private var holdSection: some View {
         Section {
-            if let avg = avgHoldDays {
-                HStack {
-                    Text("평균 보유기간")
-                    Spacer()
-                    Text(holdLabel(avg)).fontWeight(.semibold)
-                    Text("(\(pairRows.count)쌍 기준)").font(.caption).foregroundColor(.secondary)
-                }
-            }
-            ForEach(pairRows, id: \.id) { row in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(nameMap[row.code] ?? row.code).font(.body)
-                        Text("\(shortDate(row.buyAt)) → \(shortDate(row.sellAt))")
-                            .font(.caption2).foregroundColor(.secondary)
+            DisclosureGroup(isExpanded: $holdExpanded) {
+                if let avg = avgHoldDays {
+                    HStack {
+                        Text("평균 보유기간")
+                        Spacer()
+                        Text(holdLabel(avg)).fontWeight(.semibold)
+                        Text("(\(pairRows.count)쌍 기준)").font(.caption).foregroundColor(.secondary)
                     }
-                    Spacer()
-                    Text(holdLabel(Double(row.days))).font(.caption.weight(.semibold))
-                        .foregroundColor(row.days <= 7 ? .orange : .secondary)
                 }
-                .padding(.vertical, 2)
+                ForEach(pairRows, id: \.id) { row in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(nameMap[row.code] ?? row.code).font(.body)
+                            Text("\(shortDate(row.buyAt)) → \(shortDate(row.sellAt))")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Text(holdLabel(Double(row.days))).font(.caption.weight(.semibold))
+                            .foregroundColor(row.days <= 7 ? .orange : .secondary)
+                    }
+                    .padding(.vertical, 2)
+                }
+            } label: {
+                disclosureLabel("매수 → 매도 보유기간", sub: pairRows.isEmpty ? nil : "\(pairRows.count)쌍")
             }
-        } header: {
-            Text("매수 → 매도 보유기간")
         } footer: {
-            Text("매수 기록 후 같은 종목을 매도하기까지 걸린 시간. 7일 이하는 단타로 표시돼요.")
-                .font(.caption2)
+            if holdExpanded {
+                Text("매수 기록 후 같은 종목을 매도하기까지 걸린 시간. 7일 이하는 단타로 표시돼요.")
+                    .font(.caption2)
+            }
         }
     }
 
@@ -343,58 +352,66 @@ struct StatsView: View {
         }
     }
 
-    // MARK: - 섹션: 종목별 활동
+    // MARK: - 섹션: 종목별 활동 (접기/펼치기)
 
     private var codeSection: some View {
         Section {
-            ForEach(codeRows, id: \.code) { row in
-                HStack(spacing: 8) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(nameMap[row.code] ?? row.code).font(.body)
-                        Text(row.code).font(.caption2).foregroundColor(.secondary)
+            DisclosureGroup(isExpanded: $codeExpanded) {
+                ForEach(codeRows, id: \.code) { row in
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(nameMap[row.code] ?? row.code).font(.body)
+                            Text(row.code).font(.caption2).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        if row.buys > 0  { actionPill("\(row.buys)매수",  .red) }
+                        if row.sells > 0 { actionPill("\(row.sells)매도", .blue) }
+                        if row.interests > 0 { actionPill("\(row.interests)관심", .orange) }
                     }
-                    Spacer()
-                    if row.buys > 0  { actionPill("\(row.buys)매수",  .red) }
-                    if row.sells > 0 { actionPill("\(row.sells)매도", .blue) }
-                    if row.interests > 0 { actionPill("\(row.interests)관심", .orange) }
+                    .padding(.vertical, 2)
                 }
-                .padding(.vertical, 2)
+            } label: {
+                disclosureLabel("종목별 활동", sub: "\(codeRows.count)종목")
             }
-        } header: {
-            Text("종목별 활동")
         } footer: {
-            Text("종목마다 관심·매수·매도를 몇 번 기록했는지. 자주 들여다본 종목이 위에 나와요.")
-                .font(.caption2)
+            if codeExpanded {
+                Text("종목마다 관심·매수·매도를 몇 번 기록했는지. 자주 들여다본 종목이 위에 나와요.")
+                    .font(.caption2)
+            }
         }
     }
 
-    // MARK: - 섹션: 최근 활동
+    // MARK: - 섹션: 최근 활동 (접기/펼치기)
 
     private var recentSection: some View {
         Section {
-            ForEach(entries.prefix(20), id: \.id) { e in
-                HStack(spacing: 8) {
-                    actionPill(actionLabel(e.action), actionColor(e.action))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(nameMap[e.code] ?? e.code).font(.body)
-                        if let r = e.reason { Text(r).font(.caption2).foregroundColor(.secondary) }
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 1) {
-                        Text(shortTs(e.createdAt)).font(.caption2).foregroundColor(.secondary)
-                        if let p = e.price {
-                            Text("\(p.int64Value.formatted())원")
-                                .font(.caption2).foregroundColor(.secondary)
+            DisclosureGroup(isExpanded: $recentExpanded) {
+                ForEach(entries.prefix(20), id: \.id) { e in
+                    HStack(spacing: 8) {
+                        actionPill(actionLabel(e.action), actionColor(e.action))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(nameMap[e.code] ?? e.code).font(.body)
+                            if let r = e.reason { Text(r).font(.caption2).foregroundColor(.secondary) }
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 1) {
+                            Text(shortTs(e.createdAt)).font(.caption2).foregroundColor(.secondary)
+                            if let p = e.price {
+                                Text("\(p.int64Value.formatted())원")
+                                    .font(.caption2).foregroundColor(.secondary)
+                            }
                         }
                     }
+                    .padding(.vertical, 2)
                 }
-                .padding(.vertical, 2)
+            } label: {
+                disclosureLabel("최근 활동", sub: "최근 \(min(entries.count, 20))건")
             }
-        } header: {
-            Text("최근 활동")
         } footer: {
-            Text("가장 최근 기록 20건. 상세 화면에서 관심·매수·매도 버튼을 누를 때마다 쌓여요.")
-                .font(.caption2)
+            if recentExpanded {
+                Text("가장 최근 기록 20건. 상세 화면에서 관심·매수·매도 버튼을 누를 때마다 쌓여요.")
+                    .font(.caption2)
+            }
         }
     }
 
@@ -652,6 +669,17 @@ struct StatsView: View {
         }
 
         missedRows = rows.sorted { $0.lastInterestAt > $1.lastInterestAt }
+    }
+
+    // MARK: - DisclosureGroup 라벨
+
+    private func disclosureLabel(_ title: String, sub: String?) -> some View {
+        HStack(spacing: 4) {
+            Text(title).foregroundColor(.primary)
+            if let sub = sub {
+                Text(sub).font(.caption).foregroundColor(.secondary)
+            }
+        }
     }
 
     // MARK: - 포맷 헬퍼
