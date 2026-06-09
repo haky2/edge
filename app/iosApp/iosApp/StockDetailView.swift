@@ -509,11 +509,19 @@ struct StockDetailView: View {
             if let tp = targetPriceInfo {
                 if q.per > 0 || q.pbr > 0 || !q.sectorName.isEmpty { Divider() }
                 let upside = Double(tp.price - q.price) / Double(q.price) * 100
-                valuationRow(
-                    "컨센서스 목표주가",
-                    "\(tp.price.formatted())원  \(upside >= 0 ? "▲" : "▼")\(String(format: "%.1f%%", abs(upside)))",
-                    tp.basis
-                )
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text("컨센서스 목표주가").foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(tp.price.formatted())원")
+                            .fontWeight(.medium)
+                        Text("\(upside >= 0 ? "▲" : "▼")\(String(format: "%.1f%%", abs(upside)))")
+                            .fontWeight(.semibold)
+                            .foregroundColor(upside >= 5 ? .red : upside < -5 ? .blue : .secondary)
+                    }
+                    Text(tp.basis).font(.caption2).foregroundColor(.secondary)
+                }
+                .font(.caption)
             }
             if !streaks.isEmpty {
                 if ctx != nil || hasValuation { Divider() }

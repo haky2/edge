@@ -2,6 +2,7 @@ package com.haky.edge.ai
 
 import com.haky.edge.dart.DartClient
 import com.haky.edge.dart.FinancialSummary
+import com.haky.edge.dart.QuarterlyIncome
 import com.haky.edge.kis.DailyBar
 import com.haky.edge.kis.InvestorFlow
 import com.haky.edge.kis.KisClient
@@ -80,11 +81,12 @@ class AnalysisService(
         val valuationBand = runCatching { valuationBandSvc.getValuationBand(code) }.getOrNull()
         val backtest = runCatching { backtestSvc.getBacktest(code) }.getOrNull()
         val flowSensitivity = runCatching { backtestSvc.getFlowSensitivity(code) }.getOrNull()
+        val quarterlyIncome = runCatching { dart.getQuarterlyIncome(code) }.getOrNull()
         // 비슷한 뉴스가 도배되는 날(예: 특정 이슈)이 많아, 넉넉히 받아 유사 건을 묶고 대표 N건만 쓴다.
         val rawNews = runCatching { naver.search(name, display = 30) }.getOrElse { emptyList() }
         val news = dedupeNews(rawNews, limit = 8)
 
-        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, valuationBand, backtest, flowSensitivity, position)
+        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, valuationBand, backtest, flowSensitivity, quarterlyIncome, position)
         // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
         val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 3500)
 
@@ -111,6 +113,7 @@ class AnalysisService(
         valuationBand: ValuationBand?,
         backtest: Backtest?,
         flowSensitivity: FlowSensitivity?,
+        quarterlyIncome: QuarterlyIncome?,
         position: Position? = null,
     ): String {
         val sb = StringBuilder()
@@ -190,6 +193,7 @@ class AnalysisService(
 
         // 회사 재무(DART 연간) — 급등락이 펀더멘털 성장에 근거하는지 판단할 근거.
         financialSummaryText(financials)?.let { sb.appendLine().append(it) }
+        quarterlyIncomeText(quarterlyIncome)?.let { sb.appendLine().append(it) }
 
         if (flows.isNotEmpty()) {
             sb.appendLine("수급(일별 순매수 수량, +매수/-매도):")
@@ -344,6 +348,22 @@ class AnalysisService(
         sb.appendLine("회사 재무(DART $basis 사업보고서 ${f.fiscalYear}년, 단위 억원):")
         lines.forEach { sb.appendLine("  $it") }
         return sb.toString()
+    }
+
+    /** 분기 실적 방향 — "2026년 1분기 누적 순이익 X억 (전년 동기 대비 +Y%, 개선)" 한 줄. */
+    private fun quarterlyIncomeText(q: QuarterlyIncome?): String? {
+        if (q == null) return null
+        val ni = q.netIncome ?: return null
+        val niEok = ni / 100_000_000
+        val yoy = q.yoyPct
+        val direction = when {
+            yoy == null -> ""
+            yoy > 10    -> " (실적 개선)"
+            yoy < -10   -> " (실적 악화)"
+            else         -> " (전년 동기와 유사)"
+        }
+        val yoyText = if (yoy != null) ", 전년 동기 대비 ${if (yoy >= 0) "+" else ""}${"%.1f".format(yoy)}%$direction" else ""
+        return "${q.label} 누적 순이익: ${"%,d".format(niEok)}억$yoyText\n"
     }
 
     /** "매출액 1,234억 (전년 1,000억, YoY +23.4%)" 형태. 당기 없으면 null. */

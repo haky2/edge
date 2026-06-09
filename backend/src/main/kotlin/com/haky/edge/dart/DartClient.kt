@@ -251,6 +251,74 @@ class DartClient(private val apiKey: String) {
         }
     }
 
+    // 분기 실적 캐시. key="date|code|q".
+    private val quarterlyIncomeCache = ConcurrentHashMap<String, Optional<QuarterlyIncome>>()
+
+    /**
+     * 가장 최근 분기/반기보고서에서 당기순이익 + 전년 동기 YoY를 반환.
+     * reprt_code 우선순위: 현재연도 1Q(11013) → 전년 3Q(11014) → 전년 반기(11012) → 전년 1Q(11013)
+     * 해당 보고서가 없거나(미제출·비상장·API 실패) → null.
+     */
+    suspend fun getQuarterlyIncome(stockCode: String): QuarterlyIncome? {
+        if (apiKey.isBlank()) return null
+        val today = LocalDate.now().toString()
+        val cacheKey = "$today|$stockCode|q"
+        quarterlyIncomeCache[cacheKey]?.let { return it.value }
+
+        ensureCorpCodeMap()
+        val corpCode = corpCodeMap?.get(stockCode)
+        if (corpCode == null) { quarterlyIncomeCache[cacheKey] = Optional(null); return null }
+
+        val now = LocalDate.now()
+        val year = now.year
+        val month = now.monthValue
+
+        data class Candidate(val year: Int, val reprtCode: String, val label: String)
+        val candidates = buildList {
+            if (month >= 5)  add(Candidate(year,     "11013", "${year}년 1분기"))
+            if (month >= 8)  add(Candidate(year,     "11012", "${year}년 반기"))
+            if (month >= 11) add(Candidate(year,     "11014", "${year}년 3분기"))
+            add(Candidate(year - 1, "11014", "${year - 1}년 3분기"))
+            add(Candidate(year - 1, "11012", "${year - 1}년 반기"))
+            add(Candidate(year - 1, "11013", "${year - 1}년 1분기"))
+        }
+
+        for (c in candidates) {
+            val resp = runCatching {
+                http.get("https://opendart.fss.or.kr/api/fnlttSinglAcnt.json") {
+                    parameter("crtfc_key", apiKey)
+                    parameter("corp_code", corpCode)
+                    parameter("bsns_year", c.year.toString())
+                    parameter("reprt_code", c.reprtCode)
+                }.body<DartFinanceResponse>()
+            }.getOrNull() ?: continue
+            if (resp.status != "000") continue
+            val rows = resp.list ?: continue
+
+            val consolidated = rows.any { it.fsDiv == "CFS" }
+            val scoped = rows.filter { it.fsDiv == (if (consolidated) "CFS" else "OFS") }
+            val net = scoped.firstOrNull { r ->
+                listOf("당기순이익", "분기순이익", "반기순이익").any { r.accountName.replace(" ", "").contains(it) }
+            } ?: continue
+
+            val ni = net.thisAmount()
+            val niPrev = net.prevAmount()
+            val yoy = if (ni != null && niPrev != null && niPrev != 0L)
+                (ni - niPrev).toDouble() / kotlin.math.abs(niPrev) * 100
+            else null
+
+            val result = QuarterlyIncome(label = c.label, netIncome = ni, netIncomePrev = niPrev, yoyPct = yoy)
+            quarterlyIncomeCache[cacheKey] = Optional(result)
+            return result
+        }
+
+        quarterlyIncomeCache[cacheKey] = Optional(null)
+        return null
+    }
+
+    // ConcurrentHashMap은 null value를 넣을 수 없어 Optional로 감싼다.
+    private data class Optional<T>(val value: T?)
+
     // corpCode 맵을 최초 1회만 다운로드·파싱한다(Mutex로 중복 다운로드 방지).
     private suspend fun ensureCorpCodeMap() {
         if (corpCodeMap != null) return
@@ -386,5 +454,18 @@ private data class DartFinanceRow(
     fun thisAmount(): Long? = thisAmount.replace(",", "").trim().toLongOrNull()
     fun prevAmount(): Long? = prevAmount.replace(",", "").trim().toLongOrNull()
 }
+
+// ── 분기 실적 요약(분석 facts용, 내부 사용) ────────────────────────────────────
+
+/**
+ * 가장 최근 분기/반기보고서의 당기순이익 + 전년 동기 비교.
+ * netIncome/netIncomePrev 단위는 원(DART 원본). yoyPct=null이면 전년 동기 없음.
+ */
+data class QuarterlyIncome(
+    val label: String,          // "2026년 1분기", "2025년 3분기" 등
+    val netIncome: Long?,       // 당기 순이익(누적)
+    val netIncomePrev: Long?,   // 전년 동기 순이익(누적)
+    val yoyPct: Double?,        // YoY % (null = 비교 불가)
+)
 
 class DartException(message: String) : RuntimeException(message)

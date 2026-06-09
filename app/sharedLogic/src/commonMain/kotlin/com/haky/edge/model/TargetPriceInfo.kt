@@ -7,5 +7,5 @@ import kotlinx.serialization.Serializable
 data class TargetPriceInfo(
     val code: String,
     val price: Long,
-    val basis: String,
+    val basis: String = "최근 3개월 증권사 컨센서스 평균 (네이버 금융)",
 )
