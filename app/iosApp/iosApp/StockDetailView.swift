@@ -1001,13 +1001,14 @@ struct StockDetailView: View {
         Text(flowText(n)).foregroundColor(n > 0 ? .red : (n < 0 ? .blue : .secondary))
     }
 
-    // 순매수 수량 축약: 1.2억 / 1102만 / 1,234. 부호 포함.
+    // 순매수 수량 축약: 1.2억 / 14만 / 0.5만 / 234. 부호 포함.
     private func flowText(_ n: Int64) -> String {
         if n == 0 { return "0" }
         let sign = n > 0 ? "+" : "-"
         let a = Double(abs(n))
         if a >= 1e8 { return sign + String(format: "%.1f억", a / 1e8) }
         if a >= 1e4 { return sign + String(format: "%.0f만", a / 1e4) }
+        if a >= 1e3 { return sign + String(format: "%.1f만", a / 1e4) }
         return sign + Int64(a).formatted()
     }
 
