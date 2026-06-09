@@ -94,7 +94,7 @@ struct StockDetailView: View {
                 if loading {
                     ProgressView()
                 } else {
-                    Button { Task { await load() } } label: {
+                    Button { Task { await load(); await loadAnalysis() } } label: {
                         Image(systemName: "arrow.clockwise")
                     }
                 }

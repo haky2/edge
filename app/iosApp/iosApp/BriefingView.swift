@@ -143,7 +143,7 @@ struct BriefingView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     aiCommentToggle(expanded: moodExpanded) { withAnimation { moodExpanded.toggle() } }
                     if !moodGeneratedAt.isEmpty {
-                        Text("오늘 \(moodGeneratedAt) 생성 (당일 캐시)")
+                        Text("오늘 \(moodGeneratedAt) 생성")
                             .font(.caption2).foregroundColor(.secondary)
                     }
                     if moodExpanded { proseBlock(moodComment) }
@@ -325,7 +325,7 @@ struct BriefingView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     aiCommentToggle(expanded: sectorBriefingExpanded) { withAnimation { sectorBriefingExpanded.toggle() } }
                     if !sectorBriefingGeneratedAt.isEmpty {
-                        Text("오늘 \(sectorBriefingGeneratedAt) 생성 (당일 캐시)")
+                        Text("오늘 \(sectorBriefingGeneratedAt) 생성")
                             .font(.caption2).foregroundColor(.secondary)
                     }
                     if sectorBriefingExpanded { proseBlock(sectorBriefingComment) }
@@ -470,7 +470,7 @@ struct BriefingView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         aiCommentToggle(expanded: impactExpanded) { withAnimation { impactExpanded.toggle() } }
                         if !impactGeneratedAt.isEmpty {
-                            Text("오늘 \(impactGeneratedAt) 생성 (당일 캐시)")
+                            Text("오늘 \(impactGeneratedAt) 생성")
                                 .font(.caption2).foregroundColor(.secondary)
                         }
                         if impactExpanded { proseBlock(impactComment) }
