@@ -103,6 +103,7 @@ class AnalysisService(
         val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, valuationBand, backtest, flowSensitivity, quarterlyIncome, position)
         // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
         val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 3500)
+        warnHallucinatedNumbers(code, facts, comment)
 
         val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
@@ -444,6 +445,69 @@ class AnalysisService(
         if (a.isEmpty() || b.isEmpty()) return 0.0
         val inter = a.count { it in b }
         return inter.toDouble() / (a.size + b.size - inter)
+    }
+
+    /**
+     * Claude 응답에서 facts에 없는 수치를 탐지해 백엔드 로그에 경고.
+     * 수치 지어내기(환각)를 관찰하기 위한 탐지 단계 — 응답은 수정하지 않는다.
+     *
+     * 매칭: 한국어 복합 단위(N조 M억, N만 M) 먼저 파싱해 단일 수치로 변환 후,
+     * facts 수치와 ±5% 근접 비교. Claude가 단위를 바꿔 표현해도 오탐 최소화.
+     * 절댓값 < 10 은 서수·카운트 등 자연 출현이 많아 건너뜀.
+     */
+    private fun warnHallucinatedNumbers(code: String, facts: String, comment: String) {
+        val factsNums = extractNumbers(facts)
+        val suspicious = extractNumbers(comment).filter { v ->
+            if (kotlin.math.abs(v) < 10.0) return@filter false
+            factsNums.none { f ->
+                val larger = maxOf(kotlin.math.abs(v), kotlin.math.abs(f))
+                if (larger == 0.0) v == f
+                else kotlin.math.abs(v - f) / larger <= 0.05
+            }
+        }
+        if (suspicious.isNotEmpty()) {
+            println("[NumberGuard] $code: facts에 없는 수치 발견(${suspicious.size}건): ${suspicious.joinToString()}")
+        }
+    }
+
+    /**
+     * 텍스트에서 수치 집합 추출. 한국어 복합 단위를 먼저 파싱해 단일 값으로 변환하고
+     * 해당 부분을 텍스트에서 제거한 뒤 나머지 단순 숫자를 추출 — 부분 숫자 중복 방지.
+     * 예) "13조 9,298억" → 139298.0 / "144만 3,170주" → 1443170.0
+     */
+    private fun extractNumbers(text: String): Set<Double> {
+        val result = mutableSetOf<Double>()
+        var remaining = text
+
+        val joEok = Regex("""([\d,]+)조\s*([\d,]+)억""")
+        for (m in joEok.findAll(text)) {
+            val jo = m.groupValues[1].replace(",", "").toLongOrNull() ?: continue
+            val eok = m.groupValues[2].replace(",", "").toLongOrNull() ?: continue
+            result.add((jo * 10_000 + eok).toDouble())
+        }
+        remaining = joEok.replace(remaining, " ")
+
+        val manN = Regex("""([\d,]+)만\s*([\d,]+)""")
+        for (m in manN.findAll(remaining)) {
+            val man = m.groupValues[1].replace(",", "").toLongOrNull() ?: continue
+            val rest = m.groupValues[2].replace(",", "").toLongOrNull() ?: continue
+            result.add((man * 10_000 + rest).toDouble())
+        }
+        remaining = manN.replace(remaining, " ")
+
+        val manOnly = Regex("""([\d,]+)만""")
+        for (m in manOnly.findAll(remaining)) {
+            val man = m.groupValues[1].replace(",", "").toLongOrNull() ?: continue
+            result.add((man * 10_000).toDouble())
+        }
+        remaining = manOnly.replace(remaining, " ")
+
+        val numRegex = Regex("""-?[\d][\d,]*(?:\.\d+)?""")
+        for (m in numRegex.findAll(remaining)) {
+            val value = m.value.replace(",", "").toDoubleOrNull() ?: continue
+            result.add(value)
+        }
+        return result
     }
 
     companion object {
