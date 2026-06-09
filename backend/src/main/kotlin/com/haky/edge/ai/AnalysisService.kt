@@ -18,6 +18,19 @@ import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.util.concurrent.ConcurrentHashMap
 
+/** 코멘트 생성 시 사용된 데이터 소스 유무. 앱에서 "근거 두께" 표시에 쓴다. */
+@Serializable
+data class FactsRichness(
+    val newsCount: Int = 0,
+    val hasInvestorFlow: Boolean = false,
+    val hasFinancials: Boolean = false,
+    val hasQuarterlyIncome: Boolean = false,
+    val hasShortSelling: Boolean = false,
+    val hasValuationBand: Boolean = false,
+    val hasBacktest: Boolean = false,
+    val hasFlowSensitivity: Boolean = false,
+)
+
 /** 앱에 내려주는 분석 결과. comment 는 참고용 종합 코멘트. */
 @Serializable
 data class Analysis(
@@ -26,6 +39,7 @@ data class Analysis(
     val date: String,       // 생성 기준일 (YYYY-MM-DD)
     val comment: String,
     val generatedAt: String = "",  // 캐시 최초 생성 시각 HH:mm (KST)
+    val factsRichness: FactsRichness? = null,
 )
 
 /** 개인 포지션 정보. avgPrice·qty 가 있을 때만 생성. targetPrice·stopPrice 는 0.0 = 미입력. */
@@ -92,7 +106,17 @@ class AnalysisService(
 
         val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
-        val analysis = Analysis(code = code, name = name, date = today, comment = comment, generatedAt = now)
+        val richness = FactsRichness(
+            newsCount = news.size,
+            hasInvestorFlow = flows.isNotEmpty(),
+            hasFinancials = financials != null,
+            hasQuarterlyIncome = quarterlyIncome?.netIncome != null,
+            hasShortSelling = shortSelling != null,
+            hasValuationBand = valuationBand != null && valuationBand.yearsUsed > 0,
+            hasBacktest = backtest?.signals?.any { it.confident } == true,
+            hasFlowSensitivity = flowSensitivity?.items?.any { it.confident } == true,
+        )
+        val analysis = Analysis(code = code, name = name, date = today, comment = comment, generatedAt = now, factsRichness = richness)
         cache[key] = Cached(analysis)
         fileCache.put(key, analysis)
         return analysis

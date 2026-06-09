@@ -738,6 +738,11 @@ struct StockDetailView: View {
                     .padding(.top, 2)
                 }
 
+                if let r = a.factsRichness {
+                    factsRichnessRow(r)
+                        .padding(.top, 4)
+                }
+
                 Text(aiCommentFreshLabel(a) + " · 투자 판단과 책임은 본인에게 있습니다")
                     .font(.caption2).foregroundColor(.secondary)
                     .padding(.top, 2)
@@ -1031,6 +1036,35 @@ struct StockDetailView: View {
             }
         }
         return "참고용 · \(a.date) 기준"
+    }
+
+    // 근거 데이터 두께 — 코멘트 생성에 사용된 소스를 작은 칩으로 표시.
+    @ViewBuilder
+    private func factsRichnessRow(_ r: FactsRichness) -> some View {
+        let chips: [(String, Bool)] = [
+            (r.newsCount > 0 ? "뉴스 \(r.newsCount)건" : "뉴스 없음", r.newsCount > 0),
+            ("수급", r.hasInvestorFlow),
+            ("연간재무", r.hasFinancials),
+            ("분기실적", r.hasQuarterlyIncome),
+            ("공매도", r.hasShortSelling),
+            ("밸류밴드", r.hasValuationBand),
+            ("백테스트", r.hasBacktest),
+            ("수급민감도", r.hasFlowSensitivity),
+        ]
+        VStack(alignment: .leading, spacing: 4) {
+            Text("근거 데이터").font(.caption2).foregroundColor(.secondary)
+            HStack(spacing: 4) {
+                ForEach(Array(chips.enumerated()), id: \.offset) { _, chip in
+                    Text(chip.0)
+                        .font(.caption2)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(chip.1 ? Color.purple.opacity(0.12) : Color(.systemFill))
+                        .foregroundColor(chip.1 ? .purple : .secondary)
+                        .cornerRadius(4)
+                }
+                Spacer(minLength: 0)
+            }
+        }
     }
 
     // "전일 확정", "실시간" 등 데이터 출처를 나타내는 작은 pill 태그.
