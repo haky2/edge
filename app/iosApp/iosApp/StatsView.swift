@@ -10,6 +10,7 @@ struct StatsView: View {
 
     @State private var entries: [ActionLogEntry] = []
     @State private var nameMap: [String: String] = [:]    // code → 종목명
+    @State private var positionMap: [String: WatchItem] = [:]  // code → stop/target
     @State private var missedRows: [MissedRow] = []
     @State private var missedLoading = false
 
@@ -34,6 +35,7 @@ struct StatsView: View {
             summarySection
             if avgHoldDays != nil || !pairRows.isEmpty { holdSection }
             winRateSection
+            disciplineSection
             missedSection
             if !reasonRows.isEmpty { reasonSection }
             codeSection
@@ -158,6 +160,107 @@ struct StatsView: View {
             .frame(height: 6)
         }
         .padding(.vertical, 4)
+    }
+
+    // MARK: - 섹션: 손절/익절 규율
+
+    @ViewBuilder
+    private var disciplineSection: some View {
+        let rows = disciplineRows
+        let violations = rows.filter { $0.status == .stopViolated }
+        let targets    = rows.filter { $0.status == .targetReached }
+        Section {
+            if rows.isEmpty {
+                Text("기준가(목표가·손절가)가 설정된\n매수→매도 쌍이 필요해요")
+                    .font(.footnote).foregroundColor(.secondary)
+                    .padding(.vertical, 4)
+            } else {
+                HStack(spacing: 0) {
+                    discCell(count: violations.count, label: "손절 어김", color: .blue)
+                    Divider().frame(height: 36)
+                    discCell(count: targets.count,    label: "목표 달성", color: .red)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+
+                if !violations.isEmpty {
+                    let overshoots = violations.compactMap { $0.stopOvershootPct }
+                    let avg = overshoots.reduce(0, +) / Double(overshoots.count)
+                    HStack {
+                        Text("평균 손절선 초과")
+                        Spacer()
+                        Text(String(format: "%.1f%%p", avg))
+                            .font(.body.weight(.semibold))
+                            .foregroundColor(.blue)
+                        Text("더 손실 후 매도")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                }
+
+                ForEach(rows) { row in discRow(row) }
+            }
+        } header: {
+            Text(rows.isEmpty ? "손절/익절 규율" : "손절/익절 규율 (\(rows.count)쌍)")
+        } footer: {
+            Text("종목 상세에서 설정한 손절가·목표가 기준으로 실제 매도가 규율을 지켰는지 확인해요.")
+                .font(.caption2)
+        }
+    }
+
+    private func discCell(count: Int, label: String, color: Color) -> some View {
+        VStack(spacing: 2) {
+            Text("\(count)")
+                .font(.title2.weight(.semibold))
+                .foregroundColor(count > 0 ? color : .secondary)
+            Text(label).font(.caption).foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func discRow(_ row: DisciplineRow) -> some View {
+        HStack(spacing: 8) {
+            discBadge(row.status)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(nameMap[row.code] ?? row.code).font(.body)
+                Text("\(shortDate(row.buyAt)) → \(shortDate(row.sellAt))")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                let ret = row.actualReturnPct
+                Text((ret >= 0 ? "+" : "") + String(format: "%.1f%%", ret))
+                    .font(.body.weight(.semibold))
+                    .foregroundColor(ret >= 0 ? .red : .blue)
+                if let ov = row.stopOvershootPct {
+                    Text(String(format: "손절선 대비 %.1f%%p", ov))
+                        .font(.caption2).foregroundColor(.blue.opacity(0.8))
+                } else if row.status == .stopRespected, let s = row.stopPrice {
+                    Text("손절선 \(s.formatted())원 위")
+                        .font(.caption2).foregroundColor(.secondary)
+                } else if row.status == .targetReached, let t = row.targetPrice {
+                    Text("목표 \(t.formatted())원 달성")
+                        .font(.caption2).foregroundColor(.red.opacity(0.7))
+                }
+            }
+        }
+        .padding(.vertical, 3)
+    }
+
+    private func discBadge(_ status: DisciplineRow.Status) -> some View {
+        let label: String
+        let color: Color
+        switch status {
+        case .stopViolated:  label = "손절 어김"; color = .blue
+        case .stopRespected: label = "손절 지킴"; color = .teal
+        case .targetReached: label = "목표 달성"; color = .red
+        case .profitExit:    label = "수익 청산"; color = .orange
+        }
+        return Text(label)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(color.opacity(0.15))
+            .foregroundColor(color)
+            .clipShape(Capsule())
     }
 
     // MARK: - 섹션: 놓친 종목
@@ -368,6 +471,41 @@ struct StatsView: View {
         var rate: Double { total > 0 ? Double(wins) / Double(total) * 100 : 0 }
     }
 
+    private struct DisciplineRow: Identifiable {
+        let id: String
+        let code: String
+        let buyAt: Int64
+        let sellAt: Int64
+        let buyPrice: Int64
+        let sellPrice: Int64
+        let stopPrice: Int64?
+        let targetPrice: Int64?
+
+        var actualReturnPct: Double {
+            (Double(sellPrice) - Double(buyPrice)) / Double(buyPrice) * 100
+        }
+
+        enum Status {
+            case stopViolated   // 손절선 이하로 매도
+            case stopRespected  // 손실 매도이나 손절선 위
+            case targetReached  // 목표가 달성
+            case profitExit     // 수익 매도 (목표 미달)
+        }
+
+        var status: Status {
+            if let t = targetPrice, sellPrice >= t { return .targetReached }
+            if let s = stopPrice, sellPrice < s    { return .stopViolated }
+            if stopPrice != nil, sellPrice < buyPrice { return .stopRespected }
+            return .profitExit
+        }
+
+        // 손절선 대비 초과 손실 %p (stopViolated일 때만)
+        var stopOvershootPct: Double? {
+            guard status == .stopViolated, let s = stopPrice else { return nil }
+            return (Double(sellPrice) - Double(s)) / Double(buyPrice) * 100
+        }
+    }
+
     private var pairRows: [HoldPair] {
         var result: [HoldPair] = []
         let codes = Set(entries.map { $0.code })
@@ -414,6 +552,22 @@ struct StatsView: View {
         return Double(pairRows.map { $0.days }.reduce(0, +)) / Double(pairRows.count)
     }
 
+    private var disciplineRows: [DisciplineRow] {
+        pairRows.compactMap { pair in
+            guard let bp = pair.buyPrice, let sp = pair.sellPrice else { return nil }
+            let item = positionMap[pair.code]
+            let stop   = item.flatMap { w in w.stopPrice.map   { Int64($0.doubleValue) } }
+            let target = item.flatMap { w in w.targetPrice.map { Int64($0.doubleValue) } }
+            guard stop != nil || target != nil else { return nil }
+            return DisciplineRow(
+                id: pair.id, code: pair.code,
+                buyAt: pair.buyAt, sellAt: pair.sellAt,
+                buyPrice: bp, sellPrice: sp,
+                stopPrice: stop, targetPrice: target
+            )
+        }
+    }
+
     // MARK: - 놓친 종목 모델
 
     struct MissedRow: Identifiable {
@@ -441,6 +595,7 @@ struct StatsView: View {
         entries = logRepo.getAll()
         let watchItems = watchRepo.all()
         nameMap = Dictionary(uniqueKeysWithValues: watchItems.map { ($0.code, $0.name) })
+        positionMap = Dictionary(uniqueKeysWithValues: watchItems.map { ($0.code, $0) })
         Task { await loadMissed() }
     }
 
