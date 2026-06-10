@@ -4,6 +4,7 @@ import com.haky.edge.ai.AnalysisService
 import com.haky.edge.ai.BacktestService
 import com.haky.edge.ai.ClaudeClient
 import com.haky.edge.ai.ClaudeException
+import com.haky.edge.ai.ComparisonService
 import com.haky.edge.ai.ValuationBandService
 import com.haky.edge.dart.DartClient
 import com.haky.edge.dart.DartException
@@ -24,6 +25,7 @@ import com.haky.edge.news.NaverTargetPriceClient
 import com.haky.edge.news.NewsException
 import com.haky.edge.routes.analysisRoutes
 import com.haky.edge.routes.backtestRoutes
+import com.haky.edge.routes.comparisonRoutes
 import com.haky.edge.routes.chartRoutes
 import com.haky.edge.routes.dartRoutes
 import com.haky.edge.routes.earningsRoutes
@@ -122,6 +124,7 @@ fun Application.module() {
     val valuationBand = ValuationBandService(kis, dart)
     val backtest = BacktestService(kis)
     val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling, valuationBand, backtest)
+    val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand)
     val moodLog = MarketMoodLogService()
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, moodLog)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
@@ -146,5 +149,6 @@ fun Application.module() {
         targetPriceRoutes(naverTargetPrice)
         valuationBandRoutes(valuationBand)
         backtestRoutes(backtest)
+        comparisonRoutes(comparison)
     }
 }

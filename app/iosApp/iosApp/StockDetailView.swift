@@ -45,6 +45,9 @@ struct StockDetailView: View {
     @State private var loading = false
     @State private var showEdit = false
     @State private var showLogSheet = false
+    @State private var showComparePicker = false
+    @State private var compareTarget: WatchItem? = nil
+    @State private var showComparison = false
 
     init(item: WatchItem, quote: Quote?, api: EdgeApi, logRepo: ActionLogRepository = Db.actionLog) {
         _item = State(initialValue: item)
@@ -91,6 +94,10 @@ struct StockDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                Button { showComparePicker = true } label: { Image(systemName: "arrow.left.arrow.right") }
+                    .help("다른 종목과 비교")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { showLogSheet = true } label: { Image(systemName: "pencil.and.list.clipboard") }
                     .help("매매 기록")
             }
@@ -117,10 +124,24 @@ struct StockDetailView: View {
         }
         .onAppear { loadLogs() }
         .sheet(isPresented: $showEdit) {
-            PositionEditView(item: item) { updated in item = updated }  // 저장 시 화면 즉시 반영
+            PositionEditView(item: item) { updated in item = updated }
         }
         .sheet(isPresented: $showLogSheet, onDismiss: loadLogs) {
             ActionLogSheetView(code: item.code, logRepo: logRepo, currentPrice: quote?.price ?? 0)
+        }
+        .sheet(isPresented: $showComparePicker) {
+            ComparePickerView(
+                currentCode: item.code,
+                watchlist: Db.watchlist.all()
+            ) { selected in
+                compareTarget = selected
+                showComparison = true
+            }
+        }
+        .navigationDestination(isPresented: $showComparison) {
+            if let target = compareTarget {
+                ComparisonView(itemA: item, itemB: target, api: api)
+            }
         }
     }
 
