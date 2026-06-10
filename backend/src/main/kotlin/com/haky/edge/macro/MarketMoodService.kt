@@ -49,6 +49,7 @@ class MarketMoodService(
     private val copper: CopperClient,
     private val ecos: EcosClient,
     private val yahoo: YahooMacroClient,
+    val moodLog: MarketMoodLogService = MarketMoodLogService(),
 ) {
     private val cache = ConcurrentHashMap<String, MarketMood>()
     private val fileCache = FileCache("market_mood", MarketMood.serializer())
@@ -59,6 +60,10 @@ class MarketMoodService(
         val kodexOt = runCatching { kis.getKodexOvertimeSignal() }.getOrNull()
         val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get(), kodexOt) + yahoo.get()
         val indicators = kisIndicators + extras
+
+        // 예측 방향 계산 + 로그 기록 (장 마감 후 재조회 시 KOSPI 실제값으로 자동 채점됨)
+        val direction = moodLog.inferDirection(indicators)
+        moodLog.addOrUpdateEntry(today, direction, indicators)
 
         // 키 = 날짜 + 모드. 두 모드가 서로 안 덮어쓰게(각각 당일 1회 호출·전 유저 공유).
         // 지표가 바뀌어도 당일은 캐시 재사용. force=true면 캐시 건너뜀.

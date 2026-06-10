@@ -18,6 +18,7 @@ import com.haky.edge.model.SectorIndex
 import com.haky.edge.model.ShortSellingSummary
 import com.haky.edge.model.StockInfo
 import com.haky.edge.model.TargetPriceInfo
+import com.haky.edge.model.MoodAccuracyReport
 import com.haky.edge.model.ValuationBand
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -270,4 +271,9 @@ class EdgeApi(
     suspend fun getFlowSensitivity(code: String): FlowSensitivity? = runCatching {
         client.get("$baseUrl/flow-sensitivity/$code").body<FlowSensitivity>()
     }.getOrNull()
+
+    /** AI 시장 방향 예측 적중률 리포트. 예측(미국 지수·환율) vs 실제(코스피) 채점 결과. */
+    @Throws(Exception::class)
+    suspend fun getMoodAccuracy(): MoodAccuracyReport =
+        client.get("$baseUrl/market-mood-log").body()
 }

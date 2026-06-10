@@ -13,6 +13,7 @@ struct StatsView: View {
     @State private var positionMap: [String: WatchItem] = [:]  // code → stop/target
     @State private var missedRows: [MissedRow] = []
     @State private var missedLoading = false
+    @State private var moodAccuracy: MoodAccuracyReport? = nil
 
     // 접기/펼치기 상태 (앱 재시작 시 유지)
     @AppStorage("statsRecentExpanded") private var recentExpanded = false
@@ -22,11 +23,21 @@ struct StatsView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            List {
+                moodAccuracySection
                 if entries.isEmpty {
-                    emptyView
+                    Section {
+                        emptyPlaceholder
+                    }
                 } else {
-                    contentList
+                    summarySection
+                    disciplineSection
+                    winRateSection
+                    missedSection
+                    reasonSection
+                    recentSection
+                    codeSection
+                    if avgHoldDays != nil || !pairRows.isEmpty { holdSection }
                 }
             }
             .navigationTitle("내 패턴")
@@ -34,7 +45,7 @@ struct StatsView: View {
         }
     }
 
-    // MARK: - 메인 리스트
+    // MARK: - 메인 리스트 (하위 호환, 현재는 body에 인라인)
 
     private var contentList: some View {
         List {
@@ -76,6 +87,117 @@ struct StatsView: View {
             Text(label).font(.caption).foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - 섹션: AI 해석 적중률
+
+    private var moodAccuracySection: some View {
+        Section {
+            if let acc = moodAccuracy {
+                HStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        if acc.total > 0 {
+                            Text("\(acc.correct)/\(acc.total)회 적중")
+                                .font(.headline)
+                            let rate = Int(Double(acc.correct) / Double(acc.total) * 100)
+                            Text("\(rate)% 정확도")
+                                .font(.subheadline)
+                                .foregroundColor(rate >= 60 ? .red : rate >= 40 ? .orange : .blue)
+                        } else {
+                            Text("아직 채점된 기록 없어요")
+                                .font(.subheadline).foregroundColor(.secondary)
+                        }
+                    }
+                    Spacer()
+                    if acc.pending > 0 {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("대기 \(acc.pending)회")
+                                .font(.caption).foregroundColor(.secondary)
+                            Text("장 마감 후 자동 채점")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+
+                ForEach(acc.recentEntries.prefix(7), id: \.date) { entry in
+                    moodLogRow(entry)
+                }
+            } else {
+                HStack {
+                    ProgressView().padding(.trailing, 4)
+                    Text("불러오는 중…").foregroundColor(.secondary)
+                }
+            }
+        } header: {
+            Text("AI 시장 방향 적중률")
+        } footer: {
+            Text("미국 지수·달러 지표로 코스피 방향을 예측하고 실제 결과와 비교해요. 장 전 조회 시 \"대기\"로 표시되고 당일 장 마감 후 재조회하면 자동으로 채점돼요.")
+                .font(.caption2)
+        }
+    }
+
+    private func moodLogRow(_ entry: MoodLogEntry) -> some View {
+        HStack(spacing: 8) {
+            Text(entry.date.suffix(5).replacingOccurrences(of: "-", with: "/"))
+                .font(.caption).foregroundColor(.secondary).frame(width: 40, alignment: .leading)
+
+            directionBadge(entry.direction, isActual: false)
+
+            Image(systemName: "arrow.right")
+                .font(.caption2).foregroundColor(.secondary)
+
+            if let actual = entry.actualDirection {
+                directionBadge(actual, isActual: true)
+            } else {
+                Text("대기").font(.caption2).foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            if let correct = entry.isCorrect {
+                let isOk = correct.boolValue
+                Image(systemName: isOk ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundColor(isOk ? .green : .red)
+                    .font(.body)
+            }
+
+            if let kChange = entry.kospiChange {
+                let v = kChange.doubleValue
+                let sign = v >= 0 ? "+" : ""
+                Text("코스피 \(sign)\(String(format: "%.1f", v))%")
+                    .font(.caption2).foregroundColor(v >= 0 ? .red : .blue)
+            }
+        }
+        .padding(.vertical, 1)
+    }
+
+    private func directionBadge(_ direction: String, isActual: Bool) -> some View {
+        let (label, color): (String, Color) = switch direction {
+            case "BULLISH": ("강세↑", .red)
+            case "BEARISH": ("약세↓", .blue)
+            default:        ("보합", .secondary)
+        }
+        return Text(label)
+            .font(.caption2.weight(.semibold))
+            .foregroundColor(isActual ? .primary : color)
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(isActual ? Color.secondary.opacity(0.12) : color.opacity(0.12))
+            .clipShape(Capsule())
+    }
+
+    private var emptyPlaceholder: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "chart.line.uptrend.xyaxis")
+                .font(.system(size: 48)).foregroundColor(.secondary.opacity(0.4))
+            Text("기록이 없어요")
+                .font(.headline).foregroundColor(.secondary)
+            Text("종목 상세 화면에서 관심·매수·매도를\n기록하면 여기서 패턴을 볼 수 있어요.")
+                .font(.callout).foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
     }
 
     // MARK: - 섹션: 보유기간 (접기/펼치기)
@@ -424,22 +546,6 @@ struct StatsView: View {
         }
     }
 
-    // MARK: - 빈 화면
-
-    private var emptyView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(.system(size: 48)).foregroundColor(.secondary.opacity(0.4))
-            Text("기록이 없어요")
-                .font(.headline).foregroundColor(.secondary)
-            Text("종목 상세 화면에서 관심·매수·매도를\n기록하면 여기서 패턴을 볼 수 있어요.")
-                .font(.callout).foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
-    }
-
     // MARK: - 집계 연산
 
     private var buyCount:      Int { entries.filter { $0.action == "buy" }.count }
@@ -625,6 +731,11 @@ struct StatsView: View {
         nameMap = Dictionary(uniqueKeysWithValues: watchItems.map { ($0.code, $0.name) })
         positionMap = Dictionary(uniqueKeysWithValues: watchItems.map { ($0.code, $0) })
         Task { await loadMissed() }
+        Task { await loadMoodAccuracy() }
+    }
+
+    private func loadMoodAccuracy() async {
+        moodAccuracy = try? await api.getMoodAccuracy()
     }
 
     private func loadMissed() async {

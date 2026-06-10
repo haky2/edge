@@ -14,6 +14,7 @@ import com.haky.edge.macro.EcosClient
 import com.haky.edge.macro.FearGreedClient
 import com.haky.edge.macro.KrxShortSellingClient
 import com.haky.edge.macro.MacroImpactService
+import com.haky.edge.macro.MarketMoodLogService
 import com.haky.edge.macro.MarketMoodService
 import com.haky.edge.macro.SectorBriefingService
 import com.haky.edge.macro.YahooMacroClient
@@ -29,6 +30,7 @@ import com.haky.edge.routes.earningsRoutes
 import com.haky.edge.routes.investorRoutes
 import com.haky.edge.routes.macroImpactRoutes
 import com.haky.edge.routes.macroRoutes
+import com.haky.edge.routes.marketMoodLogRoutes
 import com.haky.edge.routes.marketMoodRoutes
 import com.haky.edge.routes.newsRoutes
 import com.haky.edge.routes.quoteRoutes
@@ -120,7 +122,8 @@ fun Application.module() {
     val valuationBand = ValuationBandService(kis, dart)
     val backtest = BacktestService(kis)
     val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling, valuationBand, backtest)
-    val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo)
+    val moodLog = MarketMoodLogService()
+    val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, moodLog)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
 
     routing {
@@ -131,6 +134,7 @@ fun Application.module() {
         macroRoutes(kis, fearGreed, copper, ecos, yahoo)
         macroImpactRoutes(macroImpact)
         marketMoodRoutes(marketMood)
+        marketMoodLogRoutes(moodLog)
         newsRoutes(naver)
         searchRoutes(master)
         analysisRoutes(analysis)

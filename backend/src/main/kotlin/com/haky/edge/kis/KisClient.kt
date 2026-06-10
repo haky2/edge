@@ -50,6 +50,11 @@ class KisClient(
     @Volatile private var cachedToken: String? = null
     @Volatile private var tokenExpiryMs: Long = 0
 
+    // 현재가 단기 캐시. shouldAutoRefresh가 캐시 적중마다 KIS 실호출하는 것을 막는다.
+    // 30초 TTL: AnalysisService의 stale 감지 쿨다운(30분)보다 훨씬 짧아 정확도 손실 없음.
+    private val priceCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Quote, Long>>()
+    private val PRICE_CACHE_TTL_MS = 30_000L
+
     // 한투 시세 호출 동시 실행 수 제한.
     // 한투 정책: "신규 고객은 신청 후 3일간 초당 3건"으로 유량 제한, 이후 기본 유량으로 자동 상향.
     // (모의투자는 제외) → 신규 키일수록 빡세서, 동시 실행을 묶어 한도 초과를 막는다.
@@ -132,6 +137,10 @@ class KisClient(
      */
     suspend fun getPrice(code: String): Quote {
         val accessToken = token()
+        // 단기 캐시 확인 — shouldAutoRefresh의 stale 감지용 호출이 KIS를 매번 치지 않게.
+        priceCache[code]?.let { (q, ts) ->
+            if (System.currentTimeMillis() - ts < PRICE_CACHE_TTL_MS) return q
+        }
         var lastMsg = ""
         repeat(MAX_ATTEMPTS) { attempt ->
             // withPermit: 동시에 최대 permits 개만 한투를 호출(나머지는 대기) → 폭주로 인한 한도 초과 완화.
@@ -139,7 +148,9 @@ class KisClient(
             val o = resp.output
             // 한투는 HTTP 200이어도 본문 rt_cd 로 성패를 알린다("0"이 성공).
             if (resp.rtCd == "0" && o != null) {
-                return o.toQuote(code)
+                val quote = o.toQuote(code)
+                priceCache[code] = Pair(quote, System.currentTimeMillis())
+                return quote
             }
             lastMsg = resp.msg1.ifBlank { "rt_cd=${resp.rtCd}" }
             if (attempt < MAX_ATTEMPTS - 1) {
