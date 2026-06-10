@@ -1064,17 +1064,29 @@ struct StockDetailView: View {
         return "\(m)/\(day)"
     }
 
-    // "참고용 · 오늘 09:32 생성" 또는 "참고용 · 2026-06-06 기준" 형태.
+    // "참고용 · 오늘 09:32 생성 · 232,000원 기준" 형태.
     private func aiCommentFreshLabel(_ a: Analysis) -> String {
+        var label: String
         if !a.generatedAt.isEmpty {
             let todayStr = todayDateString()
             if todayStr == a.date {
-                return "참고용 · 오늘 \(a.generatedAt) 생성"
+                label = "참고용 · 오늘 \(a.generatedAt) 생성"
             } else {
-                return "참고용 · \(a.date) \(a.generatedAt) 생성"
+                label = "참고용 · \(a.date) \(a.generatedAt) 생성"
+            }
+        } else {
+            label = "참고용 · \(a.date) 기준"
+        }
+        if let gp = a.generatedPrice {
+            let price = Int(gp.doubleValue)
+            if price > 0 {
+                let fmt = NumberFormatter()
+                fmt.numberStyle = .decimal
+                let priceStr = fmt.string(from: NSNumber(value: price)) ?? "\(price)"
+                label += " · \(priceStr)원 기준"
             }
         }
-        return "참고용 · \(a.date) 기준"
+        return label
     }
 
     // 근거 데이터 두께 — 코멘트 생성에 사용된 소스를 작은 칩으로 표시.
