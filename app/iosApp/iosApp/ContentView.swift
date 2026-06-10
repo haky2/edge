@@ -21,6 +21,7 @@ struct WatchlistView: View {
     @State private var errorText: String?
     @State private var loading = false
     @State private var showSearch = false
+    @State private var lastUpdated: Date?
 
     private let api = Db.api
 
@@ -48,11 +49,18 @@ struct WatchlistView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    if loading {
-                        ProgressView()
-                    } else {
-                        Button { Task { await load() } } label: {
-                            Image(systemName: "arrow.clockwise")
+                    HStack(spacing: 6) {
+                        if let t = lastUpdated {
+                            Text(shortTime(t))
+                                .font(.caption2).foregroundColor(.secondary)
+                                .monospacedDigit()
+                        }
+                        if loading {
+                            ProgressView().scaleEffect(0.8)
+                        } else {
+                            Button { Task { await load() } } label: {
+                                Image(systemName: "arrow.clockwise")
+                            }
                         }
                     }
                 }
@@ -144,6 +152,7 @@ struct WatchlistView: View {
             var map: [String: Quote] = [:]
             for q in list { map[q.code] = q }
             quotes = map
+            lastUpdated = Date()
         } catch {
             errorText = "불러오기 실패: \(error.localizedDescription)\n(백엔드 실행 확인: cd backend && ./run.sh)"
         }
@@ -190,6 +199,14 @@ struct WatchlistView: View {
         }
         supplyBadges = result
     }
+}
+
+// 툴바 ↻ 옆에 표시할 갱신 시각 — "9:32" 형태(오전/오후 생략, 짧게).
+func shortTime(_ date: Date) -> String {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "ko_KR")
+    f.dateFormat = "h:mm"
+    return f.string(from: date)
 }
 
 // 분석 모드 — 전역 설정값. 백엔드로 넘기는 쿼리값과 동일한 문자열을 그대로 저장한다.

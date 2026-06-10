@@ -33,15 +33,17 @@ fun Route.macroRoutes(
 }
 
 fun Route.macroImpactRoutes(service: MacroImpactService) {
-    // GET /macro-impact?holdings=a,b&watchlist=c,d&mode=defensive|aggressive&positions=code:avg:qty,...
+    // GET /macro-impact?holdings=a,b&watchlist=c,d&mode=defensive|aggressive&positions=code:avg:qty,...&refresh=true
     //   - mode 미지정 시 defensive 폴백.
     //   - positions: 보유 종목 포지션(공격 모드 포트폴리오 스탠스에 활용). 미전달 시 빈 맵.
+    //   - refresh=true: 캐시 bypass 재생성.
     get("/macro-impact") {
         val holdings = call.request.queryParameters["holdings"].toCodeList()
         val watchlist = call.request.queryParameters["watchlist"].toCodeList()
         val mode = AnalysisMode.from(call.request.queryParameters["mode"])
         val positionMap = call.request.queryParameters["positions"].toPositionMap()
-        call.respond(service.analyze(holdings, watchlist, mode, positionMap))
+        val force = call.request.queryParameters["refresh"] == "true"
+        call.respond(service.analyze(holdings, watchlist, mode, positionMap, force = force))
     }
 
     // GET /macro-signal/{code}

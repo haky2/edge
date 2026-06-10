@@ -17,6 +17,7 @@ struct BriefingView: View {
 
     // quotes 로드 중: 전체 화면 스피너. false가 되면 하이라이트/보유현황 즉시 표시.
     @State private var loading = false
+    @State private var lastUpdated: Date?
     // supply 로드 중: 수급 섹션 내부 스피너. quotes와 독립적으로 관리.
     @State private var supplyLoading = false
     @State private var errorText: String?
@@ -87,11 +88,19 @@ struct BriefingView: View {
             .navigationTitle("브리핑")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    if loading || supplyLoading || dartLoading || macroLoading || moodLoading || impactLoading || earningsLoading || sectorLoading || sectorBriefingLoading {
-                        ProgressView().scaleEffect(0.8)
-                    } else {
-                        Button { Task { await load() } } label: {
-                            Image(systemName: "arrow.clockwise")
+                    HStack(spacing: 6) {
+                        if let t = lastUpdated {
+                            Text(shortTime(t))
+                                .font(.caption2).foregroundColor(.secondary)
+                                .monospacedDigit()
+                        }
+                        let isLoading = loading || supplyLoading || dartLoading || macroLoading || moodLoading || impactLoading || earningsLoading || sectorLoading || sectorBriefingLoading
+                        if isLoading {
+                            ProgressView().scaleEffect(0.8)
+                        } else {
+                            Button { Task { await load() } } label: {
+                                Image(systemName: "arrow.clockwise")
+                            }
                         }
                     }
                 }
@@ -100,9 +109,7 @@ struct BriefingView: View {
             .refreshable { await load() }
             // 설정에서 모드를 바꾸면 시장 분위기 + 내 종목 영향 재호출(두 섹션이 모드 영향).
             .onChange(of: modeRaw) {
-                moodLoading = true
                 Task { await buildMarketMood() }
-                impactLoading = true
                 Task { await buildImpact(allItems: allItemsLoaded) }
             }
         }
@@ -154,9 +161,19 @@ struct BriefingView: View {
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     aiCommentToggle(expanded: moodExpanded) { withAnimation { moodExpanded.toggle() } }
-                    if !moodGeneratedAt.isEmpty {
-                        Text("오늘 \(moodGeneratedAt) 생성")
-                            .font(.caption2).foregroundColor(.secondary)
+                    HStack(alignment: .firstTextBaseline) {
+                        if !moodGeneratedAt.isEmpty {
+                            Text("오늘 \(moodGeneratedAt) 생성")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button {
+                            Task { await buildMarketMood(force: true) }
+                        } label: {
+                            Label("재생성", systemImage: "arrow.clockwise")
+                                .font(.caption2).foregroundColor(.purple)
+                        }
+                        .help("지금 시점 지표로 시장 분위기를 다시 생성합니다")
                     }
                     if moodExpanded { proseBlock(moodComment) }
                 }
@@ -358,9 +375,24 @@ struct BriefingView: View {
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     aiCommentToggle(expanded: sectorBriefingExpanded) { withAnimation { sectorBriefingExpanded.toggle() } }
-                    if !sectorBriefingGeneratedAt.isEmpty {
-                        Text("오늘 \(sectorBriefingGeneratedAt) 생성")
-                            .font(.caption2).foregroundColor(.secondary)
+                    HStack(alignment: .firstTextBaseline) {
+                        if !sectorBriefingGeneratedAt.isEmpty {
+                            Text("오늘 \(sectorBriefingGeneratedAt) 생성")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        if sectorBriefingLoading {
+                            ProgressView().scaleEffect(0.7)
+                        } else {
+                            Button {
+                                let codes = Db.watchlist.all().map { $0.code }
+                                Task { await buildSectorBriefing(codes: codes, force: true) }
+                            } label: {
+                                Label("재생성", systemImage: "arrow.clockwise")
+                                    .font(.caption2).foregroundColor(.purple)
+                            }
+                            .help("지금 섹터 흐름으로 분석을 다시 생성합니다")
+                        }
                     }
                     if sectorBriefingExpanded { proseBlock(sectorBriefingComment) }
                 }
@@ -516,9 +548,23 @@ struct BriefingView: View {
                     if !impactComment.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             aiCommentToggle(expanded: impactExpanded) { withAnimation { impactExpanded.toggle() } }
-                            if !impactGeneratedAt.isEmpty {
-                                Text("오늘 \(impactGeneratedAt) 생성")
-                                    .font(.caption2).foregroundColor(.secondary)
+                            HStack(alignment: .firstTextBaseline) {
+                                if !impactGeneratedAt.isEmpty {
+                                    Text("오늘 \(impactGeneratedAt) 생성")
+                                        .font(.caption2).foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                if impactLoading {
+                                    ProgressView().scaleEffect(0.7)
+                                } else {
+                                    Button {
+                                        Task { await buildImpact(allItems: allItemsLoaded, force: true) }
+                                    } label: {
+                                        Label("재생성", systemImage: "arrow.clockwise")
+                                            .font(.caption2).foregroundColor(.purple)
+                                    }
+                                    .help("지금 시점 지표로 종목 영향을 다시 생성합니다")
+                                }
                             }
                             if impactExpanded { proseBlock(impactComment) }
                         }
@@ -859,6 +905,7 @@ struct BriefingView: View {
         quoteMapLoaded = quoteMap
         buildHighlights(allItems: allItems, quoteMap: quoteMap)
         buildHoldings(allItems: allItems, quoteMap: quoteMap)
+        lastUpdated = Date()
         loading = false
 
         // supply·dart·macro·impact·sectorBriefing은 섹션 내부 스피너 유지하며 병렬 진행
@@ -870,9 +917,10 @@ struct BriefingView: View {
         dartLoading = false
     }
 
-    private func buildSectorBriefing(codes: [String]) async {
+    private func buildSectorBriefing(codes: [String], force: Bool = false) async {
+        sectorBriefingLoading = true
         defer { sectorBriefingLoading = false }
-        guard let result = try? await api.getSectorBriefing(codes: codes) else { return }
+        guard let result = try? await api.getSectorBriefing(codes: codes, refresh: force) else { return }
         sectorBriefingComment = result.comment
         sectorSpotlight = result.spotlight
         sectorBriefingGeneratedAt = result.generatedAt
@@ -884,9 +932,10 @@ struct BriefingView: View {
         macroItems = items
     }
 
-    private func buildMarketMood() async {
+    private func buildMarketMood(force: Bool = false) async {
+        moodLoading = true
         defer { moodLoading = false }
-        guard let result = try? await api.getMarketMood(mode: analysisMode.rawValue) else { return }
+        guard let result = try? await api.getMarketMood(mode: analysisMode.rawValue, refresh: force) else { return }
         moodComment = result.comment
         moodGeneratedAt = result.generatedAt
     }
@@ -903,7 +952,8 @@ struct BriefingView: View {
         earningsItems = items
     }
 
-    private func buildImpact(allItems: [WatchItem]) async {
+    private func buildImpact(allItems: [WatchItem], force: Bool = false) async {
+        impactLoading = true
         defer { impactLoading = false }
         // 평단·수량이 있으면 보유, 없으면 관심(미보유) — holdingsSection 판정과 동일 기준.
         let holdingItems = allItems.filter { $0.avgPrice != nil && $0.qty != nil }
@@ -920,7 +970,8 @@ struct BriefingView: View {
             holdings: holdings,
             watchlist: watchlist,
             mode: analysisMode.rawValue,
-            positions: positions
+            positions: positions,
+            refresh: force
         ) else { return }
         impactComment = impact.comment
         impactHoldings = impact.holdings

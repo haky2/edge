@@ -53,7 +53,7 @@ class MarketMoodService(
     private val cache = ConcurrentHashMap<String, MarketMood>()
     private val fileCache = FileCache("market_mood", MarketMood.serializer())
 
-    suspend fun get(mode: AnalysisMode = AnalysisMode.DEFENSIVE): MarketMood {
+    suspend fun get(mode: AnalysisMode = AnalysisMode.DEFENSIVE, force: Boolean = false): MarketMood {
         val today = LocalDate.now().toString()
         val kisIndicators = kis.getMacroIndicators()
         val kodexOt = runCatching { kis.getKodexOvertimeSignal() }.getOrNull()
@@ -61,10 +61,12 @@ class MarketMoodService(
         val indicators = kisIndicators + extras
 
         // 키 = 날짜 + 모드. 두 모드가 서로 안 덮어쓰게(각각 당일 1회 호출·전 유저 공유).
-        // 지표가 바뀌어도 당일은 캐시 재사용.
+        // 지표가 바뀌어도 당일은 캐시 재사용. force=true면 캐시 건너뜀.
         val cacheKey = "$today|${mode.name}"
-        cache[cacheKey]?.let { return it }
-        fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
+        if (!force) {
+            cache[cacheKey]?.let { return it }
+            fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
+        }
 
         val facts = buildFacts(indicators)
         val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT

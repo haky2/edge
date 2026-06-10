@@ -109,11 +109,13 @@ class EdgeApi(
      * 종목 종합 코멘트(시세·52주·PER·수급·뉴스 → Claude 해석). 백엔드가 당일·모드별 캐시.
      * 포지션 없는 일반 버전 — 전 유저 공유 캐시.
      * mode="defensive"(기본) | "aggressive"(개별 종목 매매 판단까지).
+     * refresh=true: 캐시를 건너뛰고 즉시 재생성(수동 재생성 버튼 전용).
      */
     @Throws(Exception::class)
-    suspend fun getAnalysis(code: String, mode: String = "defensive"): Analysis =
+    suspend fun getAnalysis(code: String, mode: String = "defensive", refresh: Boolean = false): Analysis =
         client.get("$baseUrl/analysis/$code") {
             if (mode != "defensive") parameter("mode", mode)
+            if (refresh) parameter("refresh", "true")
         }.body()
 
     /**
@@ -128,17 +130,20 @@ class EdgeApi(
      * 오늘 시장 분위기(코스피 출발 방향) Claude 해석. 기존 매크로 지표 재사용.
      * mode="defensive"(사실+방향) | "aggressive"(시장 스탠스 의견까지). 모드별 당일 공유 캐시.
      * Claude 호출이라 첫 생성은 수 초 걸린다.
+     * refresh=true: 캐시 bypass 재생성(수동 재생성 버튼 전용).
      */
     @Throws(Exception::class)
-    suspend fun getMarketMood(mode: String = "defensive"): MarketMood =
+    suspend fun getMarketMood(mode: String = "defensive", refresh: Boolean = false): MarketMood =
         client.get("$baseUrl/market-mood") {
             parameter("mode", mode)
+            if (refresh) parameter("refresh", "true")
         }.body()
 
     /**
      * 매크로 → 내 종목 영향 분석. 보유/관심 종목 코드를 넘기면 종목별 영향(계산) + Claude 종합 해석.
      * mode="defensive"|"aggressive". positions: code→(avgPrice, qty) 포지션 맵(공격 모드 포트폴리오 스탠스용).
      * Claude 호출이라 첫 생성은 수 초 걸리고 백엔드가 모드별 당일 캐시한다. 둘 다 비어도 호출은 됨(빈 결과).
+     * refresh=true: 캐시 bypass 재생성(수동 재생성 버튼 전용).
      */
     @Throws(Exception::class)
     suspend fun getMacroImpact(
@@ -146,17 +151,18 @@ class EdgeApi(
         watchlist: List<String>,
         mode: String = "defensive",
         positions: Map<String, Pair<Double, Long>> = emptyMap(),
+        refresh: Boolean = false,
     ): MacroImpact =
         client.get("$baseUrl/macro-impact") {
             parameter("holdings", holdings.joinToString(","))
             parameter("watchlist", watchlist.joinToString(","))
             parameter("mode", mode)
             if (positions.isNotEmpty()) {
-                // "code:avgPrice:qty,..." 포맷으로 직렬화
                 parameter("positions", positions.entries.joinToString(",") { (code, pos) ->
                     "$code:${pos.first.toLong()}:${pos.second}"
                 })
             }
+            if (refresh) parameter("refresh", "true")
         }.body()
 
     /**
@@ -170,11 +176,13 @@ class EdgeApi(
     /**
      * 오늘 섹터 트렌드 분석 + 관심종목 중 주목 종목. 브리핑 시장 탭 "섹터 분석" 섹션용.
      * Claude 호출이라 첫 생성은 수 초 걸리고 백엔드가 당일 캐시한다.
+     * refresh=true: 캐시 bypass 재생성(수동 재생성 버튼 전용).
      */
     @Throws(Exception::class)
-    suspend fun getSectorBriefing(codes: List<String>): SectorBriefing =
+    suspend fun getSectorBriefing(codes: List<String>, refresh: Boolean = false): SectorBriefing =
         client.get("$baseUrl/sector-briefing") {
             parameter("codes", codes.joinToString(","))
+            if (refresh) parameter("refresh", "true")
         }.body()
 
     /**
@@ -213,6 +221,7 @@ class EdgeApi(
     /**
      * 포지션 기반 개인화 코멘트. 평단·수량·목표가·손절가를 Claude에 전달해 내 포지션 기준 해석 제공.
      * targetPrice·stopPrice 미입력 시 0.0 전달(백엔드가 0.0 = 미입력으로 처리).
+     * refresh=true: 캐시를 건너뛰고 즉시 재생성(수동 재생성 버튼 전용).
      */
     @Throws(Exception::class)
     suspend fun getAnalysisPersonalized(
@@ -222,12 +231,14 @@ class EdgeApi(
         targetPrice: Double,
         stopPrice: Double,
         mode: String = "defensive",
+        refresh: Boolean = false,
     ): Analysis = client.get("$baseUrl/analysis/$code") {
         parameter("avgPrice", avgPrice)
         parameter("qty", qty)
         if (targetPrice > 0.0) parameter("targetPrice", targetPrice)
         if (stopPrice > 0.0) parameter("stopPrice", stopPrice)
         if (mode != "defensive") parameter("mode", mode)
+        if (refresh) parameter("refresh", "true")
     }.body()
 
     /** 종목 공매도 거래량·잔고 요약. KRX 데이터, 당일 캐시. 데이터 없으면 null. */

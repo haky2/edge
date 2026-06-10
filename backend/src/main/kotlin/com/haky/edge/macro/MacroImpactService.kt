@@ -74,6 +74,7 @@ class MacroImpactService(
         watchlist: List<String>,
         mode: AnalysisMode = AnalysisMode.DEFENSIVE,
         positionMap: Map<String, HoldingPosition> = emptyMap(),
+        force: Boolean = false,
     ): MacroImpact {
         val today = LocalDate.now().toString()
         val kisIndicators = kis.getMacroIndicators()
@@ -82,10 +83,12 @@ class MacroImpactService(
         val indicators = kisIndicators + extras
 
         // 키 = 날짜 + 종목집합 + 모드. 포지션(평단·수량)은 키에 넣지 않음 — 하루 1회 공유 원칙 유지.
-        // (포지션별 개인화 캐시는 종목상세 5b에서 설계)
+        // force=true면 캐시 건너뜀(수동 재생성).
         val cacheKey = "$today|H:${holdings.sorted().joinToString(",")}|W:${watchlist.sorted().joinToString(",")}|${mode.name}"
-        cache[cacheKey]?.let { return it }
-        fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
+        if (!force) {
+            cache[cacheKey]?.let { return it }
+            fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
+        }
 
         val holdingImpacts = holdings.map { buildStockImpact(it, indicators) }
         val watchImpacts = watchlist.map { buildStockImpact(it, indicators) }

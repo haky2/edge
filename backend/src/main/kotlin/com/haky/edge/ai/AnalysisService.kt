@@ -77,14 +77,17 @@ class AnalysisService(
     private val cache = ConcurrentHashMap<String, Cached>()
     private val fileCache = FileCache("analysis", Analysis.serializer())
 
-    suspend fun analyze(code: String, position: Position? = null, mode: AnalysisMode = AnalysisMode.DEFENSIVE): Analysis {
+    suspend fun analyze(code: String, position: Position? = null, mode: AnalysisMode = AnalysisMode.DEFENSIVE, force: Boolean = false): Analysis {
         val today = LocalDate.now().toString()
-        // 캐시 키: 포지션 없으면 (code,date,mode) 전 유저 공유. 포지션 있으면 평단·수량까지 포함해
-        // 사용자별 분리 — 공격 모드의 평단 기반 매매 판단이 다른 사용자에게 새지 않게(평단·수량은 장중 불변→churn 없음).
+        // 캐시 키: 포지션 없으면 (code,date,mode) 전 유저 공유. 포지션 있으면 평단·수량·목표가·손절가까지 포함해
+        // 사용자별 분리 — 공격 모드의 평단 기반 매매 판단이 다른 사용자에게 새지 않게.
+        // 목표가·손절가도 키에 포함: facts에 반영되는데 캐시 적중으로 옛 코멘트가 나오는 불일치 방지.
         val key = if (position == null) "$code:$today:${mode.name}"
-            else "$code:$today:${mode.name}:${position.avgPrice.toLong()}:${position.qty}"
-        cache[key]?.let { return it.analysis }
-        fileCache.get(key)?.let { cache[key] = Cached(it); return it }
+            else "$code:$today:${mode.name}:${position.avgPrice.toLong()}:${position.qty}:${position.targetPrice.toLong()}:${position.stopPrice.toLong()}"
+        if (!force) {
+            cache[key]?.let { return it.analysis }
+            fileCache.get(key)?.let { cache[key] = Cached(it); return it }
+        }
 
         // 사실 수집. 뉴스·일봉은 실패해도 분석은 진행(없으면 그만큼만).
         val quote = kis.getPrice(code)

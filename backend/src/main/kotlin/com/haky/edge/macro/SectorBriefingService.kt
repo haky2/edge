@@ -42,14 +42,17 @@ class SectorBriefingService(
     private val cache = ConcurrentHashMap<String, SectorBriefing>()
     private val fileCache = FileCache("sector_briefing", SectorBriefing.serializer())
 
-    suspend fun analyze(codes: List<String>): SectorBriefing {
+    suspend fun analyze(codes: List<String>, force: Boolean = false): SectorBriefing {
         val today = LocalDate.now().toString()
         val sectorIndices = kis.getSectorIndices()
 
         // 키 = 날짜 + 종목집합. 섹터 등락은 제외 — 하루에 한 번만 Claude 호출하고 당일은 캐시 재사용.
+        // force=true면 캐시 건너뜀(수동 재생성).
         val cacheKey = "$today|${codes.sorted().joinToString(",")}"
-        cache[cacheKey]?.let { return it }
-        fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
+        if (!force) {
+            cache[cacheKey]?.let { return it }
+            fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
+        }
 
         // 각 종목의 이름 + 섹터 분류(MacroImpactService 7일 캐시 재사용).
         val stockSectors: List<Triple<String, String, List<MacroImpactService.Sector>>> = codes.map { code ->

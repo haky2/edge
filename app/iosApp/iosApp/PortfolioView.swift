@@ -8,6 +8,7 @@ struct PortfolioView: View {
     private let api = Db.api
     @State private var rows: [HoldingRow] = []
     @State private var loading = false
+    @State private var lastUpdated: Date?
 
     // 도넛·레전드 공용 팔레트(SwiftUI Charts 기본 색 순서와 유사하게). 인덱스로 색을 고정한다.
     private static let sliceColors: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .mint, .cyan, .yellow]
@@ -48,8 +49,15 @@ struct PortfolioView: View {
                     if loading {
                         ProgressView()
                     } else {
-                        Button { Task { await load() } } label: {
-                            Image(systemName: "arrow.clockwise")
+                        HStack(spacing: 6) {
+                            if let t = lastUpdated {
+                                Text(shortTime(t))
+                                    .font(.caption2).foregroundColor(.secondary)
+                                    .monospacedDigit()
+                            }
+                            Button { Task { await load() } } label: {
+                                Image(systemName: "arrow.clockwise")
+                            }
                         }
                     }
                 }
@@ -79,6 +87,7 @@ struct PortfolioView: View {
                     }
                 }
             }
+
         }
     }
 
@@ -263,6 +272,7 @@ struct PortfolioView: View {
             let price = quote.map { Double($0.price) } ?? avg  // 시세 없으면 평단으로 대체
             return HoldingRow(item: item, quote: quote, avg: avg, qty: qty, price: price)
         }
+        lastUpdated = Date()
         loading = false
     }
 }

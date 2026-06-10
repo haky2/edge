@@ -88,17 +88,20 @@ struct StockDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showLogSheet = true } label: { Image(systemName: "pencil.and.list.clipboard") }
+                    .help("매매 기록")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showEdit = true } label: { Image(systemName: "square.and.pencil") }
+                    .help("평단·목표가 수정")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if loading {
                     ProgressView()
                 } else {
-                    Button { Task { await load(); await loadAnalysis() } } label: {
+                    Button { Task { await load() } } label: {
                         Image(systemName: "arrow.clockwise")
                     }
+                    .help("시세·수급 새로고침")
                 }
             }
         }
@@ -757,15 +760,37 @@ struct StockDetailView: View {
                         .padding(.top, 4)
                 }
 
-                Text(aiCommentFreshLabel(a) + " · 투자 판단과 책임은 본인에게 있습니다")
-                    .font(.caption2).foregroundColor(.secondary)
-                    .padding(.top, 2)
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    Text(aiCommentFreshLabel(a) + " · 투자 판단과 책임은 본인에게 있습니다")
+                        .font(.caption2).foregroundColor(.secondary)
+                    Spacer()
+                    if analyzing {
+                        ProgressView().scaleEffect(0.7)
+                    } else {
+                        Button {
+                            Task { await loadAnalysis(force: true) }
+                        } label: {
+                            Label("재생성", systemImage: "arrow.clockwise")
+                                .font(.caption2)
+                                .foregroundColor(.purple)
+                        }
+                        .help("지금 시점 데이터로 AI 코멘트를 다시 생성합니다")
+                    }
+                }
+                .padding(.top, 2)
             } else if analyzing {
                 Text("시세·수급·뉴스를 종합해 코멘트를 생성하고 있어요…")
                     .font(.footnote).foregroundColor(.secondary)
             } else {
-                Text("코멘트를 불러오지 못했어요. 새로고침해 주세요.")
+                Text("코멘트를 불러오지 못했어요.")
                     .font(.footnote).foregroundColor(.secondary)
+                Button {
+                    Task { await loadAnalysis(force: false) }
+                } label: {
+                    Label("다시 시도", systemImage: "arrow.clockwise")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.purple)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1807,9 +1832,9 @@ struct StockDetailView: View {
         flowSensitivity = try? await flowSensitivityTask
     }
 
-    private func loadAnalysis() async {
+    private func loadAnalysis(force: Bool = false) async {
         analyzing = true
-        commentExpanded = false
+        if force { commentExpanded = false }
         if let avgNum = item.avgPrice, let qtyNum = item.qty {
             analysis = try? await api.getAnalysisPersonalized(
                 code: item.code,
@@ -1817,10 +1842,11 @@ struct StockDetailView: View {
                 qty: qtyNum.int64Value,
                 targetPrice: item.targetPrice?.doubleValue ?? 0.0,
                 stopPrice: item.stopPrice?.doubleValue ?? 0.0,
-                mode: analysisMode.rawValue
+                mode: analysisMode.rawValue,
+                refresh: force
             )
         } else {
-            analysis = try? await api.getAnalysis(code: item.code, mode: analysisMode.rawValue)
+            analysis = try? await api.getAnalysis(code: item.code, mode: analysisMode.rawValue, refresh: force)
         }
         analyzing = false
     }

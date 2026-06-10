@@ -6,6 +6,27 @@
 
 ---
 
+## 2026-06-09 — AI 코멘트 수동 재생성 (슬라이스 A)
+
+**한 일**
+- 백엔드 `AnalysisRoutes`: `?refresh=true` 파라미터 수신 → `analyze(..., force=true)` 전달.
+- 백엔드 `AnalysisService.analyze()`: `force=true`면 인메모리+파일 캐시 읽기 건너뜀, 재생성 후 캐시 덮어씀.
+- 캐시 키 보정: 포지션 키에 `targetPrice·stopPrice`(Long 정수 단위) 추가 — 목표가·손절가만 바꿔도 캐시가 다른 키로 잡혀 새 코멘트 생성됨(기존엔 캐시 적중으로 옛 코멘트 나오는 불일치 있었음).
+- SharedLogic `getAnalysis()` / `getAnalysisPersonalized()`: `refresh: Boolean = false` 파라미터 추가.
+- iOS `loadAnalysis(force: Bool = false)`: force 분기로 API에 `refresh=true` 전달. 기존 `.task`/`.onChange` 호출은 `force=false` 유지.
+- iOS 툴바 버튼 역할 명시: `pencil.and.list.clipboard` → `.help("매매 기록")`, `square.and.pencil` → `.help("평단·목표가 수정")`, `arrow.clockwise` → `.help("시세·수급 새로고침")` — 툴바 ↺은 시세만, AI는 카드 버튼으로 분리.
+- iOS AI 코멘트 카드 하단: 생성 시각 라벨 오른쪽에 `↺ 재생성` 버튼(보라, caption2) 추가 — 재생성 중엔 ProgressView로 교체. 불러오기 실패 시 "다시 시도" 버튼도 추가.
+
+**배운 것**
+- 툴바 ↺에서 `loadAnalysis()` 분리: 시장 데이터(빠름)와 AI 재생성(13초)은 다른 버튼이어야 UX가 자연스러움.
+- `force=true`도 캐시에 결과를 덮어씀 → 같은 유저가 다시 열면 새 캐시 적중(재생성 남발 방지).
+
+**검증**: 백엔드 `compileKotlin` BUILD SUCCESSFUL. iOS BUILD SUCCEEDED.
+
+**다음**: 슬라이스 B — 조회 시 자동 stale 감지(생성가 저장 → 가격 ±N% 벌어지면 재생성, 쿨다운).
+
+---
+
 ## 2026-06-05 — Phase 3: Claude 섹터 분석 + 주목 종목 추천
 
 **한 일**
