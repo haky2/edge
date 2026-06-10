@@ -88,19 +88,29 @@ struct BriefingView: View {
             .navigationTitle("브리핑")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 6) {
-                        if let t = lastUpdated {
-                            Text(shortTime(t))
-                                .font(.caption2).foregroundColor(.secondary)
-                                .monospacedDigit()
-                        }
-                        let isLoading = loading || supplyLoading || dartLoading || macroLoading || moodLoading || impactLoading || earningsLoading || sectorLoading || sectorBriefingLoading
-                        if isLoading {
-                            ProgressView().scaleEffect(0.8)
-                        } else {
-                            Button { Task { await load() } } label: {
-                                Image(systemName: "arrow.clockwise")
+                    let isLoading = loading || supplyLoading || dartLoading || macroLoading || moodLoading || impactLoading || earningsLoading || sectorLoading || sectorBriefingLoading
+                    if isLoading {
+                        ProgressView().scaleEffect(0.8)
+                    } else {
+                        Menu {
+                            if let t = lastUpdated {
+                                Section("\(shortTime(t)) 기준") {
+                                    Button { Task { await load() } } label: {
+                                        Label("전체 새로고침", systemImage: "arrow.clockwise")
+                                    }
+                                    Button { Task { await regenAllAI() } } label: {
+                                        Label("AI 코멘트 재생성", systemImage: "sparkles")
+                                    }
+                                }
+                            } else {
+                                Button { Task { await load() } } label: {
+                                    Label("전체 새로고침", systemImage: "arrow.clockwise")
+                                }
                             }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        } primaryAction: {
+                            Task { await load() }
                         }
                     }
                 }
@@ -938,6 +948,14 @@ struct BriefingView: View {
         guard let result = try? await api.getMarketMood(mode: analysisMode.rawValue, refresh: force) else { return }
         moodComment = result.comment
         moodGeneratedAt = result.generatedAt
+    }
+
+    private func regenAllAI() async {
+        let codes = allItemsLoaded.map { $0.code }
+        async let moodTask: Void = buildMarketMood(force: true)
+        async let impactTask: Void = buildImpact(allItems: allItemsLoaded, force: true)
+        async let briefingTask: Void = buildSectorBriefing(codes: codes, force: true)
+        _ = await (moodTask, impactTask, briefingTask)
     }
 
     private func buildSectors() async {

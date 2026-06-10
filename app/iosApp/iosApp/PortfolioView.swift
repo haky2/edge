@@ -47,17 +47,24 @@ struct PortfolioView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     if loading {
-                        ProgressView()
+                        ProgressView().scaleEffect(0.8)
                     } else {
-                        HStack(spacing: 6) {
+                        Menu {
                             if let t = lastUpdated {
-                                Text(shortTime(t))
-                                    .font(.caption2).foregroundColor(.secondary)
-                                    .monospacedDigit()
+                                Section("\(shortTime(t)) 기준 · 시세") {
+                                    Button { Task { await load() } } label: {
+                                        Label("전체 새로고침", systemImage: "arrow.clockwise")
+                                    }
+                                }
+                            } else {
+                                Button { Task { await load() } } label: {
+                                    Label("전체 새로고침", systemImage: "arrow.clockwise")
+                                }
                             }
-                            Button { Task { await load() } } label: {
-                                Image(systemName: "arrow.clockwise")
-                            }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        } primaryAction: {
+                            Task { await load() }
                         }
                     }
                 }

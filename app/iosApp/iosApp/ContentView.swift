@@ -49,18 +49,25 @@ struct WatchlistView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 6) {
-                        if let t = lastUpdated {
-                            Text(shortTime(t))
-                                .font(.caption2).foregroundColor(.secondary)
-                                .monospacedDigit()
-                        }
-                        if loading {
-                            ProgressView().scaleEffect(0.8)
-                        } else {
-                            Button { Task { await load() } } label: {
-                                Image(systemName: "arrow.clockwise")
+                    if loading {
+                        ProgressView().scaleEffect(0.8)
+                    } else {
+                        Menu {
+                            if let t = lastUpdated {
+                                Section("\(shortTime(t)) 기준 · 시세") {
+                                    Button { Task { await load() } } label: {
+                                        Label("전체 새로고침", systemImage: "arrow.clockwise")
+                                    }
+                                }
+                            } else {
+                                Button { Task { await load() } } label: {
+                                    Label("전체 새로고침", systemImage: "arrow.clockwise")
+                                }
                             }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        } primaryAction: {
+                            Task { await load() }
                         }
                     }
                 }
@@ -208,7 +215,7 @@ struct WatchlistView: View {
     }
 }
 
-// 툴바 ↻ 옆에 표시할 갱신 시각 — "9:32" 형태(오전/오후 생략, 짧게).
+// 갱신 시각 포맷 — "9:32" 형태(오전/오후 생략, 짧게).
 func shortTime(_ date: Date) -> String {
     let f = DateFormatter()
     f.locale = Locale(identifier: "ko_KR")
