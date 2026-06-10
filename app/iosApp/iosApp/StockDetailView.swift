@@ -1108,16 +1108,16 @@ struct StockDetailView: View {
         ]
         VStack(alignment: .leading, spacing: 4) {
             Text("근거 데이터").font(.caption2).foregroundColor(.secondary)
-            HStack(spacing: 4) {
+            ChipFlowLayout(spacing: 4) {
                 ForEach(Array(chips.enumerated()), id: \.offset) { _, chip in
                     Text(chip.0)
                         .font(.caption2)
+                        .fixedSize()
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(chip.1 ? Color.purple.opacity(0.12) : Color(.systemFill))
                         .foregroundColor(chip.1 ? .purple : .secondary)
                         .cornerRadius(4)
                 }
-                Spacer(minLength: 0)
             }
         }
     }
@@ -2142,5 +2142,56 @@ private struct VolumeBars: View {
         .chartXAxis(.hidden)
         .chartYAxis(.hidden)
         .chartLegend(.hidden)
+    }
+}
+
+// 칩·뱃지를 자연스럽게 줄바꿈하는 흐름 레이아웃.
+// 각 자식 뷰는 .fixedSize()로 크기를 고정해야 제대로 동작한다.
+@available(iOS 16.0, *)
+private struct ChipFlowLayout: Layout {
+    var spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = makeRows(maxWidth: proposal.width ?? .infinity, subviews: subviews)
+        let height = rows.reduce(0.0) { $0 + $1.height + spacing } - spacing
+        return CGSize(width: proposal.width ?? 0, height: max(0, height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let rows = makeRows(maxWidth: bounds.width, subviews: subviews)
+        var y = bounds.minY
+        for row in rows {
+            var x = bounds.minX
+            for item in row.items {
+                item.view.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: .unspecified)
+                x += item.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct RowItem { let view: LayoutSubview; let width: CGFloat; let height: CGFloat }
+    private struct Row { let items: [RowItem]; let height: CGFloat }
+
+    private func makeRows(maxWidth: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = []
+        var rowItems: [RowItem] = []
+        var rowWidth: CGFloat = 0
+
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            let item = RowItem(view: view, width: size.width, height: size.height)
+            if rowWidth + size.width > maxWidth, !rowItems.isEmpty {
+                rows.append(Row(items: rowItems, height: rowItems.map(\.height).max() ?? 0))
+                rowItems = []
+                rowWidth = 0
+            }
+            rowItems.append(item)
+            rowWidth += size.width + spacing
+        }
+        if !rowItems.isEmpty {
+            rows.append(Row(items: rowItems, height: rowItems.map(\.height).max() ?? 0))
+        }
+        return rows
     }
 }
