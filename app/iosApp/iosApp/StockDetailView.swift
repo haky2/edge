@@ -1805,10 +1805,11 @@ struct StockDetailView: View {
     }
 
     private func markdown(_ s: String) -> AttributedString {
-        (try? AttributedString(
-            markdown: s,
+        let cleaned = s.replacingOccurrences(of: "~~", with: "")
+        return (try? AttributedString(
+            markdown: cleaned,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(s)
+        )) ?? AttributedString(cleaned)
     }
 
     // AI 코멘트를 (소제목, 본문 단락들) 섹션으로 파싱. **소제목**만 있는 블록을 헤더로 인식,
@@ -1883,7 +1884,10 @@ struct StockDetailView: View {
 
     private func loadAnalysis(force: Bool = false) async {
         analyzing = true
-        if force { commentExpanded = false }
+        if force {
+            analysis = nil
+            commentExpanded = false
+        }
         if let avgNum = item.avgPrice, let qtyNum = item.qty {
             analysis = try? await api.getAnalysisPersonalized(
                 code: item.code,
