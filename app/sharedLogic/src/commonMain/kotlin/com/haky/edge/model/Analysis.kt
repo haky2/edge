@@ -28,4 +28,5 @@ data class Analysis(
     val generatedAt: String = "",       // 캐시 최초 생성 시각 HH:mm (KST)
     val generatedPrice: Double? = null, // 코멘트 생성 시점 현재가 — stale 감지용
     val factsRichness: FactsRichness? = null,
+    val numberWarning: Boolean = false, // facts에 없는 수치가 응답에서 발견됨
 )

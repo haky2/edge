@@ -47,6 +47,7 @@ data class Analysis(
     val generatedAt: String = "",       // 캐시 최초 생성 시각 HH:mm (KST)
     val generatedPrice: Double? = null, // 코멘트 생성 시점 현재가 — stale 감지용
     val factsRichness: FactsRichness? = null,
+    val numberWarning: Boolean = false, // facts에 없는 수치가 응답에서 발견됨
 )
 
 /** 개인 포지션 정보. avgPrice·qty 가 있을 때만 생성. targetPrice·stopPrice 는 0.0 = 미입력. */
@@ -141,7 +142,7 @@ class AnalysisService(
             val t1 = System.currentTimeMillis()
             val comment = claude.complete(prompt, facts, maxTokens = 3500)
             println("[Timing] $code: claude=${System.currentTimeMillis() - t1}ms  total=${System.currentTimeMillis() - t0}ms")
-            warnHallucinatedNumbers(code, facts, comment)
+            val hasNumberWarning = warnHallucinatedNumbers(code, facts, comment)
 
             val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
                 .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
@@ -155,7 +156,7 @@ class AnalysisService(
                 hasBacktest = backtest?.signals?.any { it.confident } == true,
                 hasFlowSensitivity = flowSensitivity?.items?.any { it.confident } == true,
             )
-            val analysis = Analysis(code = code, name = name, date = today, comment = comment, generatedAt = now, generatedPrice = quote.price.toDouble(), factsRichness = richness)
+            val analysis = Analysis(code = code, name = name, date = today, comment = comment, generatedAt = now, generatedPrice = quote.price.toDouble(), factsRichness = richness, numberWarning = hasNumberWarning)
             cache[key] = Cached(analysis)
             fileCache.put(key, analysis)
             analysis
@@ -497,17 +498,16 @@ class AnalysisService(
     }
 
     /**
-     * Claude 응답에서 facts에 없는 수치를 탐지해 백엔드 로그에 경고.
-     * 수치 지어내기(환각)를 관찰하기 위한 탐지 단계 — 응답은 수정하지 않는다.
+     * Claude 응답에서 facts에 없는 수치를 탐지. 의심 수치 발견 시 true 반환.
+     * 응답은 수정하지 않고 플래그만 올린다(개인앱 수준, 차단은 과함).
      *
-     * 매칭: 한국어 복합 단위(N조 M억, N만 M) 먼저 파싱해 단일 수치로 변환 후,
-     * facts 수치와 ±5% 근접 비교. Claude가 단위를 바꿔 표현해도 오탐 최소화.
-     * 절댓값 < 10 은 서수·카운트 등 자연 출현이 많아 건너뜀.
+     * 매칭: 한국어 복합 단위(N조 M억, N만 M) 먼저 파싱해 단일 수치로 변환 후
+     * facts 수치와 ±5% 근접 비교. 절댓값 < 10 제외 조건 없음 — 등락률·RSI·승률 같은
+     * 한 자릿수 수치도 투자 판단에 쓰이므로 검증 대상에 포함.
      */
-    private fun warnHallucinatedNumbers(code: String, facts: String, comment: String) {
+    private fun warnHallucinatedNumbers(code: String, facts: String, comment: String): Boolean {
         val factsNums = extractNumbers(facts)
         val suspicious = extractNumbers(comment).filter { v ->
-            if (kotlin.math.abs(v) < 10.0) return@filter false
             factsNums.none { f ->
                 val larger = maxOf(kotlin.math.abs(v), kotlin.math.abs(f))
                 if (larger == 0.0) v == f
@@ -517,6 +517,7 @@ class AnalysisService(
         if (suspicious.isNotEmpty()) {
             println("[NumberGuard] $code: facts에 없는 수치 발견(${suspicious.size}건): ${suspicious.joinToString()}")
         }
+        return suspicious.isNotEmpty()
     }
 
     /**

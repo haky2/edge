@@ -135,19 +135,26 @@ struct StatsView: View {
                 Text("신호별 승률 (\(winRateRows.count)개 신호 · \(totalPairs)쌍)")
             }
         } footer: {
-            Text("매수할 때 입력한 사유 태그가 '신호'예요. 예: '외인 순매수', '52주 저점'. 어떤 신호로 산 종목이 수익으로 이어졌는지 볼 수 있어요.")
+            Text("매수할 때 입력한 사유 태그가 '신호'예요. 예: '외인 순매수', '52주 저점'. 어떤 신호로 산 종목이 수익으로 이어졌는지 볼 수 있어요. 쌍이 5개 미만(n=N 표시)인 신호는 표본이 부족해 숫자를 신뢰하기 어려워요.")
                 .font(.caption2)
         }
     }
 
     private func winRateRowView(_ row: WinRateRow) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let rateColor: Color = row.isReliable
+            ? (row.rate >= 60 ? .red : row.rate >= 40 ? .primary : .blue)
+            : .secondary
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(row.reason).font(.body)
+                    .foregroundColor(row.isReliable ? .primary : .secondary)
                 Spacer()
+                if !row.isReliable {
+                    Text("n=\(row.total)").font(.caption2).foregroundColor(.secondary)
+                }
                 Text(String(format: "%.0f%%", row.rate))
                     .font(.body.weight(.semibold))
-                    .foregroundColor(row.rate >= 60 ? .red : row.rate >= 40 ? .primary : .blue)
+                    .foregroundColor(rateColor)
                 Text("\(row.wins)승 \(row.losses)패")
                     .font(.caption).foregroundColor(.secondary)
             }
@@ -155,12 +162,12 @@ struct StatsView: View {
                 HStack(spacing: 1) {
                     if row.wins > 0 {
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(Color.red.opacity(0.65))
+                            .fill(Color.red.opacity(row.isReliable ? 0.65 : 0.25))
                             .frame(width: geo.size.width * CGFloat(row.wins) / CGFloat(row.total) - 1)
                     }
                     if row.losses > 0 {
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(Color.blue.opacity(0.4))
+                            .fill(Color.blue.opacity(row.isReliable ? 0.4 : 0.15))
                             .frame(width: geo.size.width * CGFloat(row.losses) / CGFloat(row.total) - 1)
                     }
                 }
@@ -489,6 +496,7 @@ struct StatsView: View {
         let losses: Int
         var total: Int { wins + losses }
         var rate: Double { total > 0 ? Double(wins) / Double(total) * 100 : 0 }
+        var isReliable: Bool { total >= 5 }
     }
 
     private struct DisciplineRow: Identifiable {

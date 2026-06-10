@@ -773,6 +773,21 @@ struct StockDetailView: View {
                         .padding(.top, 4)
                 }
 
+                if a.numberWarning {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                        Text("제공 데이터에 없는 수치가 포함됐을 수 있어요. 수치는 직접 확인하세요.")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(Color.orange.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .padding(.top, 2)
+                }
+
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .center, spacing: 0) {
                         Text(aiCommentFreshLabel(a))
