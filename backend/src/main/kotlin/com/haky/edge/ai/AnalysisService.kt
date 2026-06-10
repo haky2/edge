@@ -18,6 +18,9 @@ import com.haky.edge.news.NewsItem
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
+import java.time.DayOfWeek
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.LocalDate
 import java.util.concurrent.ConcurrentHashMap
 
@@ -179,6 +182,16 @@ class AnalysisService(
     ): String {
         val sb = StringBuilder()
         sb.appendLine("종목: $name ($code)")
+        val kst = ZonedDateTime.now(ZoneId.of("Asia/Seoul"))
+        val totalMin = kst.hour * 60 + kst.minute
+        val isWeekend = kst.dayOfWeek == DayOfWeek.SATURDAY || kst.dayOfWeek == DayOfWeek.SUNDAY
+        val marketStatus = when {
+            isWeekend       -> "주말(휴장) — 전일 종가 기준"
+            totalMin < 540  -> "장 전 (09:00 개장 전) — 전일 종가 기준"
+            totalMin < 930  -> "장 중 (09:00~15:30)"
+            else            -> "장 마감 후 (15:30 이후) — 당일 종가 확정"
+        }
+        sb.appendLine("현재 시장 상태: $marketStatus")
         sb.appendLine("현재가: ${q.price}원 (전일대비 ${q.change}, ${q.changeRate}%)")
         if (sectorChangeRate != null) {
             val rs = q.changeRate - sectorChangeRate
@@ -596,6 +609,10 @@ class AnalysisService(
             9. 뉴스는 종목과 무관한 것이 섞일 수 있다. 관련 있어 보이는 것만 쓰고 억지로 연결하지 마라.
             10. "내 포지션" 섹션이 있으면 평단가 기준 현재 손익과 목표가까지 남은 거리를 마지막 단락에 자연스럽게 녹여준다.
             11. "검증된 신호" 섹션이 있으면 수급 단락에서 활용하되, "이 종목 과거 통계상" 같은 한정을 붙이고 표본이 작을 수 있음을 신중하게 다뤄라. 승률과 평균이 다르면 그 의미(소수 급등일 영향)도 짚어준다. 절대 미래 수익을 단정하지 마라.
+            12. "현재 시장 상태"에 따라 가격 표현을 다르게 써라:
+                - "장 중": "현재 XXX원에 거래 중", "XXX원 수준" 등 실시간 표현
+                - "장 마감 후": "XXX원에 마감", "당일 XXX원으로 마감" 등 종가 표현
+                - "장 전" 또는 "주말(휴장)": "전일 XXX원에 마감" 등 전일 종가 표현
         """.trimIndent()
 
         // 공격 모드 시스템 프롬프트. 방어 모드와 같은 사실·환각가드 위에서, 개별 종목 매매 판단까지
@@ -627,6 +644,10 @@ class AnalysisService(
             7. 형식: 불릿·번호 목록 금지(흐르는 문장으로). 각 단락 첫 줄에 **소제목**(예: **최근 흐름**, **실적 확인**, **수급·신호**, **밸류·목표가**, **종합·액션**)만 굵게 넣고, 그 다음 줄부터 본문. 소제목과 본문 사이, 단락과 단락 사이는 빈 줄 하나(\n\n).
             8. 핵심 수치는 **굵게** 표시하라 — 등락률·주가·승률·목표주가·PER/PBR·평단 대비 손익 등. 문장 전체를 굵게 하지 말고 숫자/짧은 구절만.
             9. 뉴스는 종목과 무관한 것이 섞일 수 있다. 관련 있어 보이는 것만 쓰고 억지로 연결하지 마라.
+            10. "현재 시장 상태"에 따라 가격 표현을 다르게 써라:
+                - "장 중": "현재 XXX원에 거래 중", "XXX원 수준" 등 실시간 표현
+                - "장 마감 후": "XXX원에 마감", "당일 XXX원으로 마감" 등 종가 표현
+                - "장 전" 또는 "주말(휴장)": "전일 XXX원에 마감" 등 전일 종가 표현
         """.trimIndent()
     }
 }
