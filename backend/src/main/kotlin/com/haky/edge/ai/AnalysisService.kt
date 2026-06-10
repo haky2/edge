@@ -39,7 +39,8 @@ data class Analysis(
     val name: String,
     val date: String,       // 생성 기준일 (YYYY-MM-DD)
     val comment: String,
-    val generatedAt: String = "",  // 캐시 최초 생성 시각 HH:mm (KST)
+    val generatedAt: String = "",       // 캐시 최초 생성 시각 HH:mm (KST)
+    val generatedPrice: Double? = null, // 코멘트 생성 시점 현재가 — stale 감지용
     val factsRichness: FactsRichness? = null,
 )
 
@@ -85,8 +86,13 @@ class AnalysisService(
         val key = if (position == null) "$code:$today:${mode.name}"
             else "$code:$today:${mode.name}:${position.avgPrice.toLong()}:${position.qty}:${position.targetPrice.toLong()}:${position.stopPrice.toLong()}"
         if (!force) {
-            cache[key]?.let { return it.analysis }
-            fileCache.get(key)?.let { cache[key] = Cached(it); return it }
+            val cached = cache[key]?.analysis ?: fileCache.get(key)?.also { cache[key] = Cached(it) }
+            if (cached != null) {
+                if (!shouldAutoRefresh(code, cached)) return cached
+                // 가격 3% 이상 괴리 + 쿨다운 경과 → stale. 메모리 캐시 제거하고 재생성으로 진행.
+                cache.remove(key)
+                println("[StaleDetect] $code: generatedPrice=${cached.generatedPrice} → stale, 재생성")
+            }
         }
 
         // 사실 수집. 뉴스·일봉은 실패해도 분석은 진행(없으면 그만큼만).
@@ -126,7 +132,7 @@ class AnalysisService(
             hasBacktest = backtest?.signals?.any { it.confident } == true,
             hasFlowSensitivity = flowSensitivity?.items?.any { it.confident } == true,
         )
-        val analysis = Analysis(code = code, name = name, date = today, comment = comment, generatedAt = now, factsRichness = richness)
+        val analysis = Analysis(code = code, name = name, date = today, comment = comment, generatedAt = now, generatedPrice = quote.price.toDouble(), factsRichness = richness)
         cache[key] = Cached(analysis)
         fileCache.put(key, analysis)
         return analysis
@@ -519,7 +525,33 @@ class AnalysisService(
         return result
     }
 
+    /**
+     * 캐시된 분석이 stale인지 확인. 두 조건 모두 충족해야 재생성:
+     * ① 생성 시점 가격 대비 현재가 괴리 ≥ 3% (코멘트가 다른 가격 기준)
+     * ② 마지막 생성으로부터 30분 이상 경과 (잦은 재생성 폭주 방지)
+     */
+    private suspend fun shouldAutoRefresh(code: String, cached: Analysis): Boolean {
+        val genPrice = cached.generatedPrice?.takeIf { it > 0 } ?: return false
+        val currentPrice = runCatching { kis.getPrice(code).price.toDouble() }.getOrElse { return false }
+        val gap = kotlin.math.abs(currentPrice - genPrice) / genPrice
+        if (gap < STALE_PRICE_THRESHOLD) return false
+        return isPastCooldown(cached.generatedAt)
+    }
+
+    private fun isPastCooldown(generatedAt: String): Boolean {
+        if (generatedAt.isBlank()) return true
+        return try {
+            val fmt = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+            val genTime = java.time.LocalTime.parse(generatedAt, fmt)
+            val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
+            java.time.Duration.between(genTime, now).toMinutes() >= COOLDOWN_MINUTES
+        } catch (e: Exception) { true }
+    }
+
     companion object {
+        private const val STALE_PRICE_THRESHOLD = 0.03  // 3% 가격 괴리 시 stale
+        private const val COOLDOWN_MINUTES = 30L         // 재생성 최소 간격(분)
+
         // 방어 모드 시스템 프롬프트(캐시 대상). 사실/해석 분리·환각 가드·매매 지시 금지.
         private val DEFENSIVE_PROMPT = """
             너는 한국 주식 투자 보조 앱의 분석 어시스턴트다.

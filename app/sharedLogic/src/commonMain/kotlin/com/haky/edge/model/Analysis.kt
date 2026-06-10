@@ -25,6 +25,7 @@ data class Analysis(
     val name: String,
     val date: String,       // 생성 기준일 YYYY-MM-DD
     val comment: String,
-    val generatedAt: String = "",  // 캐시 최초 생성 시각 HH:mm (KST)
+    val generatedAt: String = "",       // 캐시 최초 생성 시각 HH:mm (KST)
+    val generatedPrice: Double? = null, // 코멘트 생성 시점 현재가 — stale 감지용
     val factsRichness: FactsRichness? = null,
 )
