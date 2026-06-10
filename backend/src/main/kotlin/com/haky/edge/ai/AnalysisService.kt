@@ -89,8 +89,7 @@ class AnalysisService(
         // 캐시 키: 포지션 없으면 (code,date,mode) 전 유저 공유. 포지션 있으면 평단·수량·목표가·손절가까지 포함해
         // 사용자별 분리 — 공격 모드의 평단 기반 매매 판단이 다른 사용자에게 새지 않게.
         // 목표가·손절가도 키에 포함: facts에 반영되는데 캐시 적중으로 옛 코멘트가 나오는 불일치 방지.
-        val key = if (position == null) "$code:$today:${mode.name}"
-            else "$code:$today:${mode.name}:${position.avgPrice.toLong()}:${position.qty}:${position.targetPrice.toLong()}:${position.stopPrice.toLong()}"
+        val key = buildKey(code, today, mode, position)
         if (!force) {
             val cached = cache[key]?.analysis ?: fileCache.get(key)?.also { cache[key] = Cached(it) }
             if (cached != null) {
@@ -586,6 +585,11 @@ class AnalysisService(
     companion object {
         private const val STALE_PRICE_THRESHOLD = 0.03  // 3% 가격 괴리 시 stale
         private const val COOLDOWN_MINUTES = 30L         // 재생성 최소 간격(분)
+
+        /** 캐시 키 빌더. 포지션 없으면 전 유저 공유, 있으면 사용자별 분리. */
+        internal fun buildKey(code: String, today: String, mode: AnalysisMode, position: Position?): String =
+            if (position == null) "$code:$today:${mode.name}"
+            else "$code:$today:${mode.name}:${position.avgPrice.toLong()}:${position.qty}:${position.targetPrice.toLong()}:${position.stopPrice.toLong()}"
 
         // 방어 모드 시스템 프롬프트(캐시 대상). 사실/해석 분리·환각 가드·매매 지시 금지.
         private val DEFENSIVE_PROMPT = """

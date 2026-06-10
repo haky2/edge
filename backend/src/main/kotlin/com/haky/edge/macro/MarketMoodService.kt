@@ -67,7 +67,7 @@ class MarketMoodService(
 
         // 키 = 날짜 + 모드. 두 모드가 서로 안 덮어쓰게(각각 당일 1회 호출·전 유저 공유).
         // 지표가 바뀌어도 당일은 캐시 재사용. force=true면 캐시 건너뜀.
-        val cacheKey = "$today|${mode.name}"
+        val cacheKey = buildKey(today, mode)
         if (!force) {
             cache[cacheKey]?.let { return it }
             fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
@@ -144,5 +144,8 @@ class MarketMoodService(
                결과를 확정하는 표현은 쓰지 마라(스탠스는 단호하게, 결과 단정은 금지).
             5. 핵심 방향·스탠스 키워드(비중 축소/분할 매수/현금 확보/강세 등)는 **굵게** 강조하라.
         """.trimIndent()
+
+        /** 캐시 키 빌더. 날짜 + 모드로 두 모드가 서로 덮어쓰지 않게 분리. */
+        internal fun buildKey(today: String, mode: AnalysisMode): String = "$today|${mode.name}"
     }
 }

@@ -84,7 +84,7 @@ class MacroImpactService(
 
         // 키 = 날짜 + 종목집합 + 모드. 포지션(평단·수량)은 키에 넣지 않음 — 하루 1회 공유 원칙 유지.
         // force=true면 캐시 건너뜀(수동 재생성).
-        val cacheKey = "$today|H:${holdings.sorted().joinToString(",")}|W:${watchlist.sorted().joinToString(",")}|${mode.name}"
+        val cacheKey = buildKey(today, holdings, watchlist, mode)
         if (!force) {
             cache[cacheKey]?.let { return it }
             fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
@@ -126,44 +126,8 @@ class MacroImpactService(
             return StockImpact(code, name, "기타", net = "-", signals = emptyList())
         }
 
-        // 세부 섹터를 매크로 대분류(group)로 환원·중복 제거 후 민감도를 지표별로 집계한다.
-        // 같은 지표가 여러 대분류에 나오면 방향을 합산 후 부호만 취한다(+1/-1/0).
-        // note: 방향이 모두 같으면 첫 번째 설명, 방향이 갈리면 각 설명을 병기.
-        val allSens = sectors.map { it.group }.distinct().flatMap { SENSITIVITY[it].orEmpty() }
-        val signals = allSens.groupBy { it.indicatorKey }.mapNotNull { (key, group) ->
-            val ind = indicators.firstOrNull { it.key == key } ?: return@mapNotNull null
-            val rate = ind.changeRate
-            val paired = group.map { s ->
-                val effDir = when {
-                    s.direction == 0 -> 0
-                    rate > 0.0 -> s.direction
-                    rate < 0.0 -> -s.direction
-                    else -> 0
-                }
-                Pair(s, effDir)
-            }
-            val directionSum = paired.sumOf { it.second }
-            val direction = when {
-                directionSum > 0 -> 1
-                directionSum < 0 -> -1
-                else -> 0
-            }
-            // note: 방향이 상충하면 모든 이유 병기. 상충 없으면 실제로 non-zero를 기여한 섹터의 note.
-            val nonZeroSet = paired.map { it.second }.filter { it != 0 }.toSet()
-            val note = when {
-                nonZeroSet.size > 1 -> paired.joinToString(" / ") { it.first.note }
-                nonZeroSet.isEmpty() -> paired.first().first.note
-                else -> paired.firstOrNull { it.second != 0 }?.first?.note ?: paired.first().first.note
-            }
-            MacroSignal(indicator = ind.label, changeRate = rate, direction = direction, note = note)
-        }
-        val sum = signals.sumOf { it.direction }
-        val net = when {
-            signals.isEmpty() -> "-"
-            sum > 0 -> "우호적"
-            sum < 0 -> "부담"
-            else -> "중립"
-        }
+        val signals = computeSignals(sectors, indicators)
+        val net = computeNet(signals)
         return StockImpact(code, name, sectorLabel, net = net, signals = signals)
     }
 
@@ -360,7 +324,7 @@ $enumList
     }
 
     /** 대분류 × 지표 민감도 1건. direction: +1 = 지표 상승이 해당 그룹에 우호, -1 = 부담, 0 = 무관. */
-    private data class Sensitivity(val indicatorKey: String, val direction: Int, val note: String)
+    internal data class Sensitivity(val indicatorKey: String, val direction: Int, val note: String)
 
     companion object {
         // 대분류 → KOSPI 업종지수 key. SectorBriefingService의 SECTOR_INDEX_TO_OUR 역매핑.
@@ -382,7 +346,7 @@ $enumList
 
         // 섹터별 매크로 민감도. note 는 근거 한 줄(앱·Claude facts에 그대로 노출).
         // 매크로 민감도는 대분류(MacroGroup) 기준. 세부 Sector는 group으로 여기에 연결된다.
-        private val SENSITIVITY = mapOf(
+        internal val SENSITIVITY = mapOf(
             MacroGroup.SEMICONDUCTOR to listOf(
                 Sensitivity("usdkrw", +1, "원화 약세 → 수출 채산성 개선"),
                 Sensitivity("nasdaq", +1, "미국 빅테크·AI 반도체와 주가 동조"),
@@ -466,5 +430,54 @@ $enumList
             5. 형식: 불릿·번호 목록, # 제목(헤더), --- 구분선 금지. 빈 줄(줄바꿈 2번)로만 문단을 나눠라.
                핵심 종목명·섹터·스탠스 키워드(비중 축소/차익 실현/분할 진입 등)는 **굵게** 강조하라.
         """.trimIndent()
+
+        /** 섹터 목록 + 지표 목록 → 지표별 방향 신호. buildStockImpact 에서 추출한 순수 함수(외부 I/O 없음). */
+        internal fun computeSignals(
+            sectors: List<Sector>,
+            indicators: List<MacroIndicator>,
+        ): List<MacroSignal> {
+            val allSens = sectors.map { it.group }.distinct().flatMap { SENSITIVITY[it].orEmpty() }
+            return allSens.groupBy { it.indicatorKey }.mapNotNull { (key, group) ->
+                val ind = indicators.firstOrNull { it.key == key } ?: return@mapNotNull null
+                val rate = ind.changeRate
+                val paired = group.map { s ->
+                    val effDir = when {
+                        s.direction == 0 -> 0
+                        rate > 0.0 -> s.direction
+                        rate < 0.0 -> -s.direction
+                        else -> 0
+                    }
+                    Pair(s, effDir)
+                }
+                val directionSum = paired.sumOf { it.second }
+                val direction = when {
+                    directionSum > 0 -> 1
+                    directionSum < 0 -> -1
+                    else -> 0
+                }
+                val nonZeroSet = paired.map { it.second }.filter { it != 0 }.toSet()
+                val note = when {
+                    nonZeroSet.size > 1 -> paired.joinToString(" / ") { it.first.note }
+                    nonZeroSet.isEmpty() -> paired.first().first.note
+                    else -> paired.firstOrNull { it.second != 0 }?.first?.note ?: paired.first().first.note
+                }
+                MacroSignal(indicator = ind.label, changeRate = rate, direction = direction, note = note)
+            }
+        }
+
+        /** 신호 목록 → 종합 방향 문자열. */
+        internal fun computeNet(signals: List<MacroSignal>): String {
+            val sum = signals.sumOf { it.direction }
+            return when {
+                signals.isEmpty() -> "-"
+                sum > 0 -> "우호적"
+                sum < 0 -> "부담"
+                else -> "중립"
+            }
+        }
+
+        /** 캐시 키 빌더. holdings/watchlist 는 정렬 후 합치므로 순서 독립적. */
+        internal fun buildKey(today: String, holdings: List<String>, watchlist: List<String>, mode: AnalysisMode): String =
+            "$today|H:${holdings.sorted().joinToString(",")}|W:${watchlist.sorted().joinToString(",")}|${mode.name}"
     }
 }

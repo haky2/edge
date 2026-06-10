@@ -48,7 +48,7 @@ class SectorBriefingService(
 
         // 키 = 날짜 + 종목집합. 섹터 등락은 제외 — 하루에 한 번만 Claude 호출하고 당일은 캐시 재사용.
         // force=true면 캐시 건너뜀(수동 재생성).
-        val cacheKey = "$today|${codes.sorted().joinToString(",")}"
+        val cacheKey = buildKey(today, codes)
         if (!force) {
             cache[cacheKey]?.let { return it }
             fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
@@ -138,5 +138,9 @@ class SectorBriefingService(
             4. 형식: 불릿·번호 목록과 볼드 '제목 줄'은 금지(이야기처럼 흐르는 연속 문단). 단, 핵심 섹터명·종목명과 강세/약세 같은 키워드는 문장 안에서 **굵게** 강조해 한눈에 들어오게 하라.
             5. 모든 업종이 보합(0%대)이면 "오늘은 섹터 차별화가 크지 않은 날"이라고 담백하게 말해도 됨.
         """.trimIndent()
+
+        /** 캐시 키 빌더. codes 는 정렬 후 합치므로 순서 독립적. */
+        internal fun buildKey(today: String, codes: List<String>): String =
+            "$today|${codes.sorted().joinToString(",")}"
     }
 }

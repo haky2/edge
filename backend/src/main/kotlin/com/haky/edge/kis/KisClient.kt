@@ -496,7 +496,7 @@ class KisClient(
 
 // 한투 원본(문자열) → 우리 Quote 로 변환.
 // 주의: prdy_vrss(전일대비)·prdy_ctrt(등락률)는 이미 부호 포함("-192000","-9.58") → 부호 재적용 금지.
-private fun KisPriceOutput.toQuote(code: String) = Quote(
+internal fun KisPriceOutput.toQuote(code: String) = Quote(
     code = code,
     price = price.toLongSafe(),
     change = change.toLongSafe(),
@@ -513,7 +513,7 @@ private fun KisPriceOutput.toQuote(code: String) = Quote(
 )
 
 // 한투 원본 수급 행 → 우리 InvestorFlow. 순매수 수량은 이미 부호 포함이라 그대로 파싱.
-private fun KisInvestorRow.toInvestorFlow() = InvestorFlow(
+internal fun KisInvestorRow.toInvestorFlow() = InvestorFlow(
     date = date,
     foreign = foreign.toLongSafe(),
     institution = institution.toLongSafe(),
@@ -521,8 +521,8 @@ private fun KisInvestorRow.toInvestorFlow() = InvestorFlow(
 )
 
 // 한투 값은 문자열이고 가끔 빈 문자열이 오기도 해서, 파싱 실패 시 0으로 안전 처리한다.
-private fun String.toLongSafe(): Long = trim().toLongOrNull() ?: 0L
-private fun String.toDoubleSafe(): Double = trim().toDoubleOrNull() ?: 0.0
+internal fun String.toLongSafe(): Long = trim().toLongOrNull() ?: 0L
+internal fun String.toDoubleSafe(): Double = trim().toDoubleOrNull() ?: 0.0
 
 // ── 매크로 지표 정의/헬퍼 ─────────────────────────────────────────────
 
@@ -549,7 +549,7 @@ private data class MacroRaw(
 )
 
 /** prdy_vrss_sign: 1상한 2상승 3보합 4하한 5하락 → 하락(4,5)이면 −1, 그 외 +1. */
-private fun signMultiplier(sign: String): Int = when (sign.trim()) {
+internal fun signMultiplier(sign: String): Int = when (sign.trim()) {
     "4", "5" -> -1
     else -> 1
 }
