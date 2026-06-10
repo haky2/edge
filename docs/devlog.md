@@ -6,6 +6,42 @@
 
 ---
 
+## 2026-06-10 — AI 코멘트 사실 수집 병렬화 + 타이밍 로그
+
+**한 일**
+- `AnalysisService.analyze()` 사실 수집 13개 순차 → `coroutineScope { async }` 병렬.
+  - 1단계: quote·name·flows·bars·financials·consensusTarget·shortSelling·valuationBand·backtest·flowSensitivity·quarterly 동시 발사
+  - 2단계: quote·name 확보 후 뉴스(naver.search)·sectorChangeRate(quote.sectorName) 병렬 합류
+- `[Timing]` 로그 2줄 삽입: `facts=Xms`, `claude=Xms  total=Xms` → 사실 수집 vs Claude 생성 분리 측정 가능
+- 품질 변화 0 — buildFacts 입력/프롬프트/maxTokens 전부 동일
+
+**배운 것**
+- `coroutineScope { async {} }` 패턴으로 return 값까지 한 블록 안에 자연스럽게 처리 가능
+- KIS Semaphore(3) + 백오프가 이미 있어 병렬화해도 한투 rate limit 안전
+
+**다음**: 백엔드 재시작 → `curl /analysis/{code}` 로 facts=Xms 측정. 스트리밍·분석 재투자는 별도 논의 후 결정.
+
+---
+
+## 2026-06-10 — AI 코멘트 수동 재생성 + 새로고침 UX (커밋 71abc4d)
+
+**한 일**
+- 브리핑 3개 AI 섹션(시장 분위기·내 종목 영향·섹터 분석)에도 ?refresh=true 적용 + ↻ 재생성 버튼 추가
+- 툴바 새로고침 버튼 역할 표시 개선: "9:32 ↻" 형태로 갱신 시각을 버튼 바로 왼쪽에 표시
+  - .labelStyle(.titleAndIcon)은 iOS 툴바에서 무시됨 → HStack(Image+Text)도 동작 확인 후 → 최종 시각+아이콘으로
+  - 로딩 중에도 시각 유지, 스피너로 교체. 관심종목·내 자산·브리핑 동일 패턴
+- buildMarketMood/Impact/SectorBriefing에 force 파라미터 + 내부에서 loading=true 세팅으로 onChange 핸들러 중복 정리
+
+**배운 것**
+- iOS 툴바 아이템에서 Label의 labelStyle은 시스템이 강제 override → Icon-only가 기본. 텍스트 보이려면 HStack으로 직접 구성 필요
+- 갱신 시각을 버튼 옆에 두면 "무엇을·언제 갱신했는지" 스크롤 없이 바로 확인 가능 (Apple 날씨·주식 앱 패턴)
+
+**검증**: iOS BUILD SUCCEEDED. 시뮬 스크린샷으로 "9:32 ↻" 노출 확인.
+
+**다음**: 슬라이스 B — 조회 시 자동 stale 감지(생성가 저장 → 가격 ±N% 갭 시 재생성, 30분 쿨다운)
+
+---
+
 ## 2026-06-09 — AI 코멘트 수동 재생성 (슬라이스 A)
 
 **한 일**

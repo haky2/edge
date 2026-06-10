@@ -15,6 +15,8 @@ import com.haky.edge.master.StockMaster
 import com.haky.edge.news.NaverNewsClient
 import com.haky.edge.news.NaverTargetPriceClient
 import com.haky.edge.news.NewsItem
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.util.concurrent.ConcurrentHashMap
@@ -95,47 +97,66 @@ class AnalysisService(
             }
         }
 
-        // 사실 수집. 뉴스·일봉은 실패해도 분석은 진행(없으면 그만큼만).
-        val quote = kis.getPrice(code)
-        val flows = kis.getInvestorFlow(code, days = 5)
-        val name = master.search(code).firstOrNull { it.code == code }?.name ?: code
-        val bars = runCatching { kis.getDailyChart(code, bars = 20) }.getOrElse { emptyList() }
-        val financials = runCatching { dart.getFinancials(code) }.getOrNull()
-        val consensusTarget = runCatching { naverTargetPrice.getTargetPrice(code) }.getOrNull()
-        val sectorChangeRate = runCatching {
-            macroImpact.sectorIndexChangeRate(code, name, quote.sectorName)
-        }.getOrNull()
-        val shortSelling = runCatching { krxShortSelling.getShortSelling(code) }.getOrNull()
-        val valuationBand = runCatching { valuationBandSvc.getValuationBand(code) }.getOrNull()
-        val backtest = runCatching { backtestSvc.getBacktest(code) }.getOrNull()
-        val flowSensitivity = runCatching { backtestSvc.getFlowSensitivity(code) }.getOrNull()
-        val quarterlyIncome = runCatching { dart.getQuarterlyIncome(code) }.getOrNull()
-        // 비슷한 뉴스가 도배되는 날(예: 특정 이슈)이 많아, 넉넉히 받아 유사 건을 묶고 대표 N건만 쓴다.
-        val rawNews = runCatching { naver.search(name, display = 30) }.getOrElse { emptyList() }
-        val news = dedupeNews(rawNews, limit = 8)
+        // 사실 수집 — 독립 호출은 전부 병렬, name·quote 확보 후 의존 2건(뉴스·sectorRS) 합류.
+        val t0 = System.currentTimeMillis()
+        return coroutineScope {
+            val quoteD          = async { kis.getPrice(code) }
+            val nameD           = async { master.search(code).firstOrNull { it.code == code }?.name ?: code }
+            val flowsD          = async { kis.getInvestorFlow(code, days = 5) }
+            val barsD           = async { runCatching { kis.getDailyChart(code, bars = 20) }.getOrElse { emptyList() } }
+            val financialsD     = async { runCatching { dart.getFinancials(code) }.getOrNull() }
+            val consensusD      = async { runCatching { naverTargetPrice.getTargetPrice(code) }.getOrNull() }
+            val shortSellingD   = async { runCatching { krxShortSelling.getShortSelling(code) }.getOrNull() }
+            val valuationBandD  = async { runCatching { valuationBandSvc.getValuationBand(code) }.getOrNull() }
+            val backtestD       = async { runCatching { backtestSvc.getBacktest(code) }.getOrNull() }
+            val flowSensD       = async { runCatching { backtestSvc.getFlowSensitivity(code) }.getOrNull() }
+            val quarterlyD      = async { runCatching { dart.getQuarterlyIncome(code) }.getOrNull() }
 
-        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, valuationBand, backtest, flowSensitivity, quarterlyIncome, position)
-        // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
-        val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
-        val comment = claude.complete(prompt, facts, maxTokens = 3500)
-        warnHallucinatedNumbers(code, facts, comment)
+            // sectorChangeRate=quote.sectorName 필요, 뉴스=name 필요 → 두 await 후 병렬 합류
+            val quote = quoteD.await()
+            val name  = nameD.await()
+            // 비슷한 뉴스가 도배되는 날이 많아, 넉넉히 받아 유사 건을 묶고 대표 N건만 쓴다.
+            val rawNewsD        = async { runCatching { naver.search(name, display = 30) }.getOrElse { emptyList() } }
+            val sectorRsD       = async { runCatching { macroImpact.sectorIndexChangeRate(code, name, quote.sectorName) }.getOrNull() }
 
-        val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
-            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
-        val richness = FactsRichness(
-            newsCount = news.size,
-            hasInvestorFlow = flows.isNotEmpty(),
-            hasFinancials = financials != null,
-            hasQuarterlyIncome = quarterlyIncome?.netIncome != null,
-            hasShortSelling = shortSelling != null,
-            hasValuationBand = valuationBand != null && valuationBand.yearsUsed > 0,
-            hasBacktest = backtest?.signals?.any { it.confident } == true,
-            hasFlowSensitivity = flowSensitivity?.items?.any { it.confident } == true,
-        )
-        val analysis = Analysis(code = code, name = name, date = today, comment = comment, generatedAt = now, generatedPrice = quote.price.toDouble(), factsRichness = richness)
-        cache[key] = Cached(analysis)
-        fileCache.put(key, analysis)
-        return analysis
+            val flows           = flowsD.await()
+            val bars            = barsD.await()
+            val financials      = financialsD.await()
+            val consensusTarget = consensusD.await()
+            val shortSelling    = shortSellingD.await()
+            val valuationBand   = valuationBandD.await()
+            val backtest        = backtestD.await()
+            val flowSensitivity = flowSensD.await()
+            val quarterlyIncome = quarterlyD.await()
+            val sectorChangeRate = sectorRsD.await()
+            val news            = dedupeNews(rawNewsD.await(), limit = 8)
+            println("[Timing] $code: facts=${System.currentTimeMillis() - t0}ms")
+
+            val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, valuationBand, backtest, flowSensitivity, quarterlyIncome, position)
+            // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
+            val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
+            val t1 = System.currentTimeMillis()
+            val comment = claude.complete(prompt, facts, maxTokens = 3500)
+            println("[Timing] $code: claude=${System.currentTimeMillis() - t1}ms  total=${System.currentTimeMillis() - t0}ms")
+            warnHallucinatedNumbers(code, facts, comment)
+
+            val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
+                .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+            val richness = FactsRichness(
+                newsCount = news.size,
+                hasInvestorFlow = flows.isNotEmpty(),
+                hasFinancials = financials != null,
+                hasQuarterlyIncome = quarterlyIncome?.netIncome != null,
+                hasShortSelling = shortSelling != null,
+                hasValuationBand = valuationBand != null && valuationBand.yearsUsed > 0,
+                hasBacktest = backtest?.signals?.any { it.confident } == true,
+                hasFlowSensitivity = flowSensitivity?.items?.any { it.confident } == true,
+            )
+            val analysis = Analysis(code = code, name = name, date = today, comment = comment, generatedAt = now, generatedPrice = quote.price.toDouble(), factsRichness = richness)
+            cache[key] = Cached(analysis)
+            fileCache.put(key, analysis)
+            analysis
+        }
     }
 
     /** 사실 데이터를 Claude 입력용 한국어 텍스트로 정리. 여기 있는 값만 근거로 쓰라고 시스템 프롬프트가 지시. */
