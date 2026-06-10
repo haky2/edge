@@ -167,10 +167,17 @@ struct WatchlistView: View {
         await withTaskGroup(of: (String, [Double]).self) { group in
             for item in items {
                 group.addTask {
-                    guard let bars = try? await self.api.getDaily(code: item.code, bars: 7),
+                    guard let bars = try? await self.api.getDaily(code: item.code, bars: 8),
                           bars.count >= 2 else { return (item.code, []) }
-                    // bars: 최신일이 앞 → reverse해서 오래된→최신 순으로
-                    let closes = bars.reversed().map { Double($0.close) }
+                    // 오늘 장중 바 제외: KIS는 오늘 날짜 바를 포함해서 내려줌.
+                    // 오늘 방향은 실시간 changeRate(todayUp)에서 별도로 쓰므로 여기선 과거 종가만 사용.
+                    let todayStr = {
+                        let f = DateFormatter(); f.dateFormat = "yyyyMMdd"; return f.string(from: Date())
+                    }()
+                    let pastBars = bars.filter { $0.date != todayStr }
+                    guard pastBars.count >= 2 else { return (item.code, []) }
+                    // 최신일이 앞 → reverse해서 오래된→최신(어제) 순으로
+                    let closes = Array(pastBars.reversed().suffix(7).map { Double($0.close) })
                     return (item.code, closes)
                 }
             }
