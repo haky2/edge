@@ -17,10 +17,10 @@ struct PositionEditView: View {
         self.code = item.code
         self.onSave = onSave
         // KotlinDouble?/KotlinLong? → 표시 문자열. nil이면 빈칸.
-        _avg = State(initialValue: item.avgPrice.map { String($0.doubleValue) } ?? "")
+        _avg = State(initialValue: item.avgPrice.map { String(Int($0.doubleValue)) } ?? "")
         _qty = State(initialValue: item.qty.map { String($0.int64Value) } ?? "")
-        _target = State(initialValue: item.targetPrice.map { String($0.doubleValue) } ?? "")
-        _stop = State(initialValue: item.stopPrice.map { String($0.doubleValue) } ?? "")
+        _target = State(initialValue: item.targetPrice.map { String(Int($0.doubleValue)) } ?? "")
+        _stop = State(initialValue: item.stopPrice.map { String(Int($0.doubleValue)) } ?? "")
     }
 
     var body: some View {

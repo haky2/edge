@@ -760,22 +760,26 @@ struct StockDetailView: View {
                         .padding(.top, 4)
                 }
 
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text(aiCommentFreshLabel(a) + " · 투자 판단과 책임은 본인에게 있습니다")
-                        .font(.caption2).foregroundColor(.secondary)
-                    Spacer()
-                    if analyzing {
-                        ProgressView().scaleEffect(0.7)
-                    } else {
-                        Button {
-                            Task { await loadAnalysis(force: true) }
-                        } label: {
-                            Label("재생성", systemImage: "arrow.clockwise")
-                                .font(.caption2)
-                                .foregroundColor(.purple)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .center, spacing: 0) {
+                        Text(aiCommentFreshLabel(a))
+                            .font(.caption2).foregroundColor(.secondary)
+                        Spacer()
+                        if analyzing {
+                            ProgressView().scaleEffect(0.7)
+                        } else {
+                            Button {
+                                Task { await loadAnalysis(force: true) }
+                            } label: {
+                                Label("재생성", systemImage: "arrow.clockwise")
+                                    .font(.caption2)
+                                    .foregroundColor(.purple)
+                            }
+                            .help("지금 시점 데이터로 AI 코멘트를 다시 생성합니다")
                         }
-                        .help("지금 시점 데이터로 AI 코멘트를 다시 생성합니다")
                     }
+                    Text("투자 판단과 책임은 본인에게 있습니다")
+                        .font(.caption2).foregroundColor(.secondary)
                 }
                 .padding(.top, 2)
             } else if analyzing {
