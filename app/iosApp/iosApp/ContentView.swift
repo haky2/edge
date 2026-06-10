@@ -9,7 +9,15 @@ enum Db {
         return repo
     }()
     static let actionLog = ActionLogRepository(driverFactory: DriverFactory())
-    static let api = EdgeApi(baseUrl: "http://localhost:8080")
+    // 백엔드 주소·토큰은 빌드 설정(Config.xcconfig → Info.plist)에서 읽는다.
+    // 로컬 개발: 값이 비어 localhost·토큰없음 → 기존 동작 그대로. 배포 빌드(1.0c-b): Secrets.xcconfig로 실제 값 주입.
+    static let api: EdgeApi = {
+        let info = Bundle.main.infoDictionary
+        let url = (info?["EDGE_BASE_URL"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+        let token = (info?["EDGE_API_TOKEN"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+        let base = url.isEmpty ? "http://localhost:8080" : url
+        return EdgeApi(baseUrl: base, apiToken: token)
+    }()
 }
 
 // 관심종목 탭. DB에서 종목 목록을 읽고 백엔드 /quotes로 라이브 시세를 합쳐 표시.

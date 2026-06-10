@@ -4,6 +4,12 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!-- 백엔드 주소·공유 토큰(1.0c-a). 빌드 설정에서 치환된다(Config.xcconfig / 배포 시 Secrets.xcconfig).
+	     비어 있으면 앱이 localhost·토큰없음으로 폴백 → 로컬 개발 기존 동작 유지. -->
+	<key>EDGE_BASE_URL</key>
+	<string>$(EDGE_BASE_URL)</string>
+	<key>EDGE_API_TOKEN</key>
+	<string>$(EDGE_API_TOKEN)</string>
 	<!-- 개발용: localhost 등 로컬 네트워크로의 평문(HTTP) 연결 허용 (ATS 예외).
 	     배포 때 Cloud Run(HTTPS)로 가면 이 예외는 없어도 된다. -->
 	<key>NSAppTransportSecurity</key>

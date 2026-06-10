@@ -6,6 +6,30 @@
 
 ---
 
+## 2026-06-10 — 1.0c-a: 배포 보안 게이트 (토큰 인증 + IP 레이트리밋)
+
+**한 일**
+- 백엔드 `Security.kt`/`configureSecurity()`:
+  - 공유 토큰 인증 — `intercept(Plugins)`에서 `X-Edge-Token` 헤더를 `EDGE_API_TOKEN` 환경변수와 비교. 불일치 401. `EDGE_API_TOKEN` 비면 검사 생략(로컬 개발 무변). `/health`는 예외.
+  - IP별 레이트리밋 — `install(RateLimit)` `RateLimitName("api")`, `X-Forwarded-For` 맨 앞(없으면 remoteHost) 기준 120/분. 라우팅에서 `/health`만 밖에 두고 나머지는 `rateLimit(ApiRateLimit){}`로 감쌈.
+  - `build.gradle.kts`에 `ktor-server-rate-limit` 추가.
+- `.gitignore`에 `.data/`(MarketMoodLog 영속, 삭제되면 안 되지만 커밋 대상 아님) + iOS `Secrets.xcconfig` 추가. `.env.example`에 `EDGE_API_TOKEN`.
+- `backend/Dockerfile`(멀티스테이지 JDK빌드→JRE실행, installDist, PORT 주입) + `.dockerignore` + `deploy.sh` + `docs/backend/deploy.md`(Secret Manager 등록·`max-instances=1`·`--allow-unauthenticated`+토큰층·검증 curl).
+- iOS: `EdgeApi(apiToken="")` → 비어있지 않으면 `defaultRequest`로 `X-Edge-Token` 자동 첨부. `Db.api`가 Info.plist `EDGE_BASE_URL`/`EDGE_API_TOKEN`에서 읽고 비면 localhost·토큰없음 폴백. `Config.xcconfig`에 빈 기본값 + `#include? Secrets.xcconfig`(배포값, gitignore) + `Secrets.xcconfig.example`. Info.plist에 `$(EDGE_*)` 치환 키.
+
+**검증**
+- 백엔드 `compileKotlin` 통과. 별도 포트(8099)에 `EDGE_API_TOKEN=testtoken123`로 띄워: `/health` 토큰없이 200 · `/quote` 토큰없음/오답 401 · 정답 토큰 200(삼성전자 시세) · `/search` 130연타 → 120 통과 후 11×429. 사용자 8080 dev 서버는 건드리지 않음.
+- iOS BUILD SUCCEEDED(arm64 시뮬). 빌드된 Info.plist에 `EDGE_BASE_URL`/`EDGE_API_TOKEN` 빈 값 확인 → 로컬 동작 그대로.
+
+**배운 것**
+- `xcodebuild -destination generic/platform=iOS Simulator`는 x86_64로 잡혀 Kotlin arm64 프레임워크와 링크 실패 → 구체적 시뮬 id(arm64) 지정 필요.
+- xcconfig는 `//`를 주석 처리 → URL의 `//`는 빈 변수 `$()`로 끊어 적어야(`http:/$()/...`).
+- Ktor `rateLimit{}` 블록 밖에 `/health`를 두면 프로브가 인증·제한 없이 통과.
+
+**다음**: 1.0c-b — 실제 Cloud Run 배포(gcloud 로그인·시크릿 등록·deploy.sh) + 친구 디바이스 관통 검증. Apple Developer 계정 시점에 푸시(백로그 7)와 묶음.
+
+---
+
 ## 2026-06-10 — 근거 데이터 칩 흐름 레이아웃 (커밋 0e94e7e)
 
 **한 일**

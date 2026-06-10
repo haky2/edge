@@ -51,6 +51,7 @@ import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.plugins.ratelimit.rateLimit
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
@@ -80,6 +81,8 @@ fun Application.module() {
         //                          역직렬화가 깨지지 않는다. prettyPrint 는 개발 중 가독성용.
         json(Json { ignoreUnknownKeys = true; prettyPrint = true })
     }
+    // 배포 보안 게이트(1.0c-a): 공유 토큰 인증 + IP별 레이트리밋. 로컬은 토큰 비면 인증 생략.
+    configureSecurity()
     install(StatusPages) {
         // 예외를 한 곳에서 잡아 일관된 에러 JSON으로 변환한다(각 라우트에서 try/catch 반복 안 함).
         exception<Throwable> { call, cause ->
@@ -130,25 +133,29 @@ fun Application.module() {
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
 
     routing {
-        get("/health") { call.respondText("OK") } // 배포/모니터링용 헬스체크
-        quoteRoutes(kis)
-        chartRoutes(kis)
-        investorRoutes(kis)
-        macroRoutes(kis, fearGreed, copper, ecos, yahoo)
-        macroImpactRoutes(macroImpact)
-        marketMoodRoutes(marketMood)
-        marketMoodLogRoutes(moodLog)
-        newsRoutes(naver)
-        searchRoutes(master)
-        analysisRoutes(analysis)
-        dartRoutes(dart)
-        earningsRoutes(dart)
-        sectorRoutes(kis)
-        sectorBriefingRoutes(sectorBriefing)
-        shortSellingRoutes(krxShortSelling)
-        targetPriceRoutes(naverTargetPrice)
-        valuationBandRoutes(valuationBand)
-        backtestRoutes(backtest)
-        comparisonRoutes(comparison)
+        // 헬스체크는 인증·레이트리밋 밖에 둔다(Cloud Run 프로브가 토큰 없이·무제한으로 칠 수 있게).
+        get("/health") { call.respondText("OK") }
+        // 나머지 데이터 라우트는 전부 IP별 레이트리밋 적용(토큰 인증은 configureSecurity 인터셉트에서 전역 처리).
+        rateLimit(ApiRateLimit) {
+            quoteRoutes(kis)
+            chartRoutes(kis)
+            investorRoutes(kis)
+            macroRoutes(kis, fearGreed, copper, ecos, yahoo)
+            macroImpactRoutes(macroImpact)
+            marketMoodRoutes(marketMood)
+            marketMoodLogRoutes(moodLog)
+            newsRoutes(naver)
+            searchRoutes(master)
+            analysisRoutes(analysis)
+            dartRoutes(dart)
+            earningsRoutes(dart)
+            sectorRoutes(kis)
+            sectorBriefingRoutes(sectorBriefing)
+            shortSellingRoutes(krxShortSelling)
+            targetPriceRoutes(naverTargetPrice)
+            valuationBandRoutes(valuationBand)
+            backtestRoutes(backtest)
+            comparisonRoutes(comparison)
+        }
     }
 }

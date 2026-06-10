@@ -156,7 +156,8 @@
 **1.0 스켈레톤 (뼈대만, 데이터 없음)**
 - [x] 1.0a KMP 프로젝트 생성 → `app/`(androidApp·iosApp·sharedLogic·sharedUI), 패키지 com.haky.edge ✅ *(빌드·실행 검증은 1.1c)*
 - [x] 1.0b Ktor 백엔드 프로젝트 생성 → `GET /health` 200 반환, 로컬 실행 확인 ✅ `backend/`
-- [ ] 1.0c (선택) Cloud Run 1회 배포 → 공개 URL에서 `/health` 확인
+- [x] 1.0c-a 배포 보안 게이트 ✅ 공유 토큰 헤더(`X-Edge-Token` vs `EDGE_API_TOKEN`, 비면 로컬은 인증 생략) + IP별 RateLimit(`X-Forwarded-For` 기준 120/분, `/health` 제외) — `Security.kt`/`configureSecurity()`. `backend/.data/` gitignore. `Dockerfile`+`.dockerignore`+`deploy.sh`+`docs/backend/deploy.md`(Secret Manager·`max-instances=1`). iOS `EdgeApi(apiToken)` → `X-Edge-Token` 자동 헤더, `Db.api`가 Info.plist(`EDGE_BASE_URL`/`EDGE_API_TOKEN`, 비면 localhost 폴백)에서 읽음, `Secrets.xcconfig`(gitignore)로 배포값 주입. **백엔드 compileKotlin + iOS BUILD SUCCEEDED. 런타임 검증: 토큰없음→401·정상토큰→200·130req→120후 429.**
+- [ ] 1.0c-b 실제 Cloud Run 배포·검증 → 공개 URL에서 `/health`·토큰 호출 확인
 
 **1.1 첫 수직 슬라이스 — 시세 1종목 end-to-end** ⭐ 첫 "보이는 성공"
 - [x] 1.1a 백엔드: 한투 OAuth 접근토큰 발급 + 만료 관리(메모리 캐시) ✅ `KisClient`

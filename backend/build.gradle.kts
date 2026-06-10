@@ -25,6 +25,7 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json:$ktorVersion")
     implementation("io.ktor:ktor-server-status-pages:$ktorVersion")
     implementation("io.ktor:ktor-server-call-logging:$ktorVersion")
+    implementation("io.ktor:ktor-server-rate-limit:$ktorVersion") // 배포 보안 게이트: IP별 레이트리밋(1.0c-a)
 
     // Ktor client (한투 API 호출용)
     implementation("io.ktor:ktor-client-core:$ktorVersion")

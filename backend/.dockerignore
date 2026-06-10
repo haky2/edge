@@ -1,0 +1,13 @@
+# 빌드 컨텍스트에서 제외 — 이미지 비대화·비밀 유출 방지.
+.gradle/
+build/
+.idea/
+*.iml
+
+# 비밀·런타임 상태는 절대 이미지에 넣지 않는다(키는 Secret Manager로 런타임 주입).
+.env
+*.env
+!.env.example
+.kis-token.json
+.cache/
+.data/

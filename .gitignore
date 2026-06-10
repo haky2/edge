@@ -28,7 +28,13 @@ secrets.properties
 **/src/main/resources/application-local.*
 .kis-token.json
 **/.kis-token.json
+# iOS 배포용 실제 백엔드 URL·토큰(1.0c). Config.xcconfig가 optional include.
+**/Configuration/Secrets.xcconfig
 
 # 런타임 파일 캐시 (FileCache: 당일 Claude/계산 결과 재사용)
 .cache/
 **/.cache/
+
+# 런타임 영속 데이터 (MarketMoodLog 등 — 삭제되면 안 되지만 커밋 대상도 아님)
+.data/
+**/.data/

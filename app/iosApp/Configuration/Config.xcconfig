@@ -9,3 +9,12 @@ MARKETING_VERSION=1.0
 // SQLDelight 네이티브 드라이버(SQLiter)가 시스템 libsqlite3 심볼을 쓴다.
 // 정적 프레임워크라 자동 링크가 안 돼, 앱 타깃에서 명시적으로 링크해야 한다(1.3b).
 OTHER_LDFLAGS=$(inherited) -lsqlite3
+
+// 백엔드 주소·공유 토큰(1.0c-a). 기본은 비움 → 앱이 localhost·토큰없음으로 폴백(로컬 개발).
+// xcconfig는 `//`를 주석으로 보므로 URL의 `//`는 빈 변수 $()로 끊어 적는다.
+// 배포 빌드(1.0c-b)에서는 아래 두 값을 Secrets.xcconfig(커밋 안 함)로 덮어쓴다.
+EDGE_BASE_URL=
+EDGE_API_TOKEN=
+
+// 배포용 실제 값(URL·토큰)은 gitignore된 Secrets.xcconfig에 둔다. 없으면 무시(optional include).
+#include? "Secrets.xcconfig"

@@ -24,7 +24,9 @@ import com.haky.edge.model.ValuationBand
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
@@ -45,12 +47,20 @@ import kotlinx.serialization.json.Json
  */
 class EdgeApi(
     private val baseUrl: String = "http://localhost:8080",
+    // 배포 보안 게이트(1.0c-a): 백엔드 EDGE_API_TOKEN 과 같은 값. 비어 있으면 헤더를 안 붙인다(로컬 개발).
+    private val apiToken: String = "",
 ) {
     private val client = HttpClient {
         // 엔진은 지정하지 않는다 — 플랫폼 classpath에 있는 엔진(iOS=Darwin, Android=OkHttp)을 자동 사용.
         install(ContentNegotiation) {
             // 백엔드가 우리가 안 보는 필드를 추가해도 깨지지 않게.
             json(Json { ignoreUnknownKeys = true })
+        }
+        // 토큰이 있으면 모든 요청에 공유 토큰 헤더를 자동 첨부(배포 백엔드 인증 통과용).
+        if (apiToken.isNotEmpty()) {
+            defaultRequest {
+                header("X-Edge-Token", apiToken)
+            }
         }
     }
 
