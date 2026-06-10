@@ -32,4 +32,8 @@ class ActionLogRepository(driverFactory: DriverFactory) {
         queries.selectAll { id, c, action, reason, price, createdAt ->
             ActionLogEntry(id, c, action, reason, price, createdAt)
         }.executeAsList()
+
+    fun delete(id: Long) {
+        queries.deleteById(id)
+    }
 }

@@ -17,6 +17,7 @@ struct StockDetailView: View {
     @State private var targetPriceInfo: TargetPriceInfo?   // 컨센서스 목표주가
     @State private var dailyBars: [DailyBar] = []           // 일봉 (차트용)
     @State private var logEntries: [ActionLogEntry] = []  // 이 종목 행동 로그
+    @State private var swipedLogId: Int64? = nil
     @State private var dartDisclosures: [DartDisclosure] = []
     @State private var earningsEntry: EarningsEntry?
     @State private var stockSignal: StockImpact?
@@ -28,8 +29,13 @@ struct StockDetailView: View {
     @State private var dartExpanded = false
     @State private var earningsExpanded = false
     @State private var signalExpanded = false
-    @State private var indicatorHelpExpanded = false   // 기술적 지표 설명 접기
-    @State private var valuationHelpExpanded = false    // PER/PBR 설명 접기
+    @State private var indicatorHelpExpanded = false
+    @State private var valuationHelpExpanded = false
+    @State private var analysisExpanded = false      // 지표 해석 (기본 접힘)
+    @State private var valuationExpanded = false     // 밸류에이션 히스토리 (기본 접힘)
+    @State private var backtestExpanded = false      // 검증된 신호 (기본 접힘)
+    @State private var flowSensExpanded = false      // 수급-가격 민감도 (기본 접힘)
+    @State private var shortSellingExpanded = false  // 공매도 동향 (기본 접힘)
     @State private var chartPeriod: ChartPeriod = .m3   // 가격 차트 기간 토글
     @State private var trendLineHelpExpanded = false     // 20일 추세선 설명 토글
     @State private var commentExpanded = false   // AI 코멘트 더보기/접기
@@ -53,33 +59,31 @@ struct StockDetailView: View {
                 Text(item.code).font(.caption).foregroundColor(.secondary)
 
                 if let q = quote {
-                    priceHeader(q)      // 현재가 + 등락
-                    priceChartCard(q)   // 가격 차트 + 기본 지표
-                    positionCard(q)  // 내 포지션 + 수익률
-                    aiCommentCard()  // AI 종합 코멘트 (포지션 다음 → 맥락 연결)
-                    analysisCard(q)  // 지표 해석 ① 계산 기반(52주 위치·수급 흐름 요약)
-                    if let band = valuationBand { valuationBandCard(band) }  // 밸류에이션 히스토리 밴드
-                    if let tr = technicalResult { technicalCard(tr, price: Double(q.price)) }  // 이평·RSI·거래량
+                    // ── 현재 상황 ──
+                    priceHeader(q)
+                    priceChartCard(q)
+                    positionCard(q)
+                    // ── 종합 판단 ──
+                    aiCommentCard()
+                    // ── AI 근거 ──
+                    if let tr = technicalResult { technicalCard(tr, price: Double(q.price)) }
+                    if !flows.isEmpty { flowCard() }
+                    if !news.isEmpty { newsCard() }
+                    // ── 심화 분석 (기본 접힘) ──
+                    analysisCard(q)
+                    if let band = valuationBand { valuationBandCard(band) }
+                    if let bt = backtest { backtestCard(bt) }
+                    if let fs = flowSensitivity { flowSensitivityCard(fs) }
+                    if let ss = shortSelling { shortSellingCard(ss) }
                 } else if loading {
                     ProgressView().padding(.top, 40)
                 }
-                if !flows.isEmpty {
-                    flowCard()       // 수급: 외인/기관/개인 일별 순매수
-                }
-                if let bt = backtest { backtestCard(bt) }  // 검증된 신호(익일 적중률)
-                if let fs = flowSensitivity { flowSensitivityCard(fs) }  // 수급-가격 민감도
-                if let ss = shortSelling {
-                    shortSellingCard(ss)
-                }
-                if !news.isEmpty {
-                    newsCard()
-                }
+                // ── 외부 환경 (기본 접힘) ──
                 dartDisclosureSection()
                 earningsDueDateSection()
                 macroSignalSection()
-                if !logEntries.isEmpty {
-                    logCard()
-                }
+                // ── 내 기록 ──
+                if !logEntries.isEmpty { logCard() }
             }
             .padding()
         }
@@ -469,86 +473,95 @@ struct StockDetailView: View {
     private func analysisCard(_ q: Quote) -> some View {
         let ctx = StockAnalysis.shared.priceContext(q: q)
         let streaks = StockAnalysis.shared.flowStreaks(flows: flows)
-        VStack(alignment: .leading, spacing: 8) {
-            Text("지표 해석").font(.subheadline.weight(.semibold)).padding(.top, 8)
-
-            if let c = ctx {
-                rangeGauge(c.pctInRange52w)
-                insight("52주 고점 대비", String(format: "%.1f%%", c.pctFromHigh52w))
-                insight("52주 저점 대비", String(format: "+%.1f%%", c.pctFromLow52w))
+        let hasValuation = q.per > 0 || q.pbr > 0
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("지표 해석").font(.subheadline.weight(.semibold))
+                Spacer()
+                Image(systemName: analysisExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption).foregroundColor(.secondary)
             }
-            // 밸류에이션(PER/PBR) — 업종명 + 값 + 의미 설명(① 계층: 사실만, 판단 X).
-            let hasValuation = q.per > 0 || q.pbr > 0
-            if hasValuation {
-                if ctx != nil { Divider() }
-                // 업종명 — PER/PBR의 상대적 해석 맥락 제공 (섹터 평균 PER은 추후 KRX 데이터로 추가 예정)
-                if !q.sectorName.isEmpty {
-                    HStack {
-                        Text("업종").foregroundColor(.secondary)
-                        Spacer()
-                        Text(q.sectorName).fontWeight(.medium)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { analysisExpanded.toggle() } }
+            if analysisExpanded {
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    if let c = ctx {
+                        rangeGauge(c.pctInRange52w)
+                        insight("52주 고점 대비", String(format: "%.1f%%", c.pctFromHigh52w))
+                        insight("52주 저점 대비", String(format: "+%.1f%%", c.pctFromLow52w))
                     }
-                    .font(.caption)
-                }
-                if q.per > 0 {
-                    valuationRow("PER", String(format: "%.2f배", q.per),
-                        "내 돈을 몇 년 모으면 이 회사를 통째로 살 수 있나 — 낮을수록 이익 대비 싼 편이에요. 성장 기대가 크면 높게 매겨져요.",
-                        expandable: true)
-                }
-                if q.pbr > 0 {
-                    valuationRow("PBR", String(format: "%.2f배", q.pbr),
-                        "회사가 가진 재산(장부가치) 대비 주가예요. 1배면 딱 장부가치 수준, 낮을수록 자산 대비 싼 편.",
-                        expandable: true)
-                }
-                if q.per > 0 || q.pbr > 0 {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { valuationHelpExpanded.toggle() }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "info.circle")
-                            Text(valuationHelpExpanded ? "설명 접기" : "PER·PBR이 뭐죠?")
-                            Image(systemName: valuationHelpExpanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 9))
+                    if hasValuation {
+                        if ctx != nil { Divider() }
+                        if !q.sectorName.isEmpty {
+                            HStack {
+                                Text("업종").foregroundColor(.secondary)
+                                Spacer()
+                                Text(q.sectorName).fontWeight(.medium)
+                            }
+                            .font(.caption)
                         }
-                        .font(.caption2).foregroundColor(.secondary)
+                        if q.per > 0 {
+                            valuationRow("PER", String(format: "%.2f배", q.per),
+                                "내 돈을 몇 년 모으면 이 회사를 통째로 살 수 있나 — 낮을수록 이익 대비 싼 편이에요. 성장 기대가 크면 높게 매겨져요.",
+                                expandable: true)
+                        }
+                        if q.pbr > 0 {
+                            valuationRow("PBR", String(format: "%.2f배", q.pbr),
+                                "회사가 가진 재산(장부가치) 대비 주가예요. 1배면 딱 장부가치 수준, 낮을수록 자산 대비 싼 편.",
+                                expandable: true)
+                        }
+                        if q.per > 0 || q.pbr > 0 {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) { valuationHelpExpanded.toggle() }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "info.circle")
+                                    Text(valuationHelpExpanded ? "설명 접기" : "PER·PBR이 뭐죠?")
+                                    Image(systemName: valuationHelpExpanded ? "chevron.up" : "chevron.down")
+                                        .font(.system(size: 9))
+                                }
+                                .font(.caption2).foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .buttonStyle(.plain)
-                }
-            }
-            if let tp = targetPriceInfo {
-                if q.per > 0 || q.pbr > 0 || !q.sectorName.isEmpty { Divider() }
-                let upside = Double(tp.price - q.price) / Double(q.price) * 100
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text("컨센서스 목표주가").foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(tp.price.formatted())원")
-                            .fontWeight(.medium)
-                        Text("\(upside >= 0 ? "▲" : "▼")\(String(format: "%.1f%%", abs(upside)))")
-                            .fontWeight(.semibold)
-                            .foregroundColor(upside >= 5 ? .red : upside < -5 ? .blue : .secondary)
+                    if let tp = targetPriceInfo {
+                        if q.per > 0 || q.pbr > 0 || !q.sectorName.isEmpty { Divider() }
+                        let upside = Double(tp.price - q.price) / Double(q.price) * 100
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text("컨센서스 목표주가").foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(tp.price.formatted())원").fontWeight(.medium)
+                                Text("\(upside >= 0 ? "▲" : "▼")\(String(format: "%.1f%%", abs(upside)))")
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(upside >= 5 ? .red : upside < -5 ? .blue : .secondary)
+                            }
+                            Text(tp.basis).font(.caption2).foregroundColor(.secondary)
+                        }
+                        .font(.caption)
                     }
-                    Text(tp.basis).font(.caption2).foregroundColor(.secondary)
-                }
-                .font(.caption)
-            }
-            if !streaks.isEmpty {
-                if ctx != nil || hasValuation { Divider() }
-                ForEach(streaks, id: \.investor) { s in
-                    HStack(spacing: 6) {
-                        Circle().fill(s.buying ? Color.red : Color.blue).frame(width: 6, height: 6)
-                        Text("\(s.investor) \(s.days)일 연속 \(s.buying ? "순매수" : "순매도")")
-                        Spacer()
-                        Text("누적 \(flowText(s.net))")
-                            .foregroundColor(s.buying ? .red : .blue)
-                            .font(.caption.monospacedDigit())
+                    if !streaks.isEmpty {
+                        if ctx != nil || hasValuation { Divider() }
+                        ForEach(streaks, id: \.investor) { s in
+                            HStack(spacing: 6) {
+                                Circle().fill(s.buying ? Color.red : Color.blue).frame(width: 6, height: 6)
+                                Text("\(s.investor) \(s.days)일 연속 \(s.buying ? "순매수" : "순매도")")
+                                Spacer()
+                                Text("누적 \(flowText(s.net))")
+                                    .foregroundColor(s.buying ? .red : .blue)
+                                    .font(.caption.monospacedDigit())
+                            }
+                            .font(.caption)
+                        }
                     }
-                    .font(.caption)
                 }
+                .padding(.top, 8).padding(.bottom, 4)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 6)
         .cardStyle()
     }
 
@@ -1145,38 +1158,41 @@ struct StockDetailView: View {
         let showPbr = band.pbrCurrent > 0 && band.pbrMax > band.pbrMin
         guard showPer || showPbr else { return AnyView(EmptyView()) }
         return AnyView(
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Text("밸류에이션 히스토리").font(.subheadline.weight(.semibold))
                     Spacer()
                     Text("\(band.yearsUsed)년 밴드").font(.caption2).foregroundColor(.secondary)
+                    Image(systemName: valuationExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
                 }
-                .padding(.top, 4)
-
-                if showPer {
-                    valuationBandRow(
-                        name: "PER",
-                        current: band.perCurrent,
-                        bandMin: band.perMin, bandMax: band.perMax, median: band.perMedian,
-                        percentile: Int(band.perPercentile),
-                        label: band.perLabel
-                    )
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { valuationExpanded.toggle() } }
+                if valuationExpanded {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 12) {
+                        if showPer {
+                            valuationBandRow(
+                                name: "PER", current: band.perCurrent,
+                                bandMin: band.perMin, bandMax: band.perMax, median: band.perMedian,
+                                percentile: Int(band.perPercentile), label: band.perLabel
+                            )
+                        }
+                        if showPbr {
+                            if showPer { Divider() }
+                            valuationBandRow(
+                                name: "PBR", current: band.pbrCurrent,
+                                bandMin: band.pbrMin, bandMax: band.pbrMax, median: band.pbrMedian,
+                                percentile: Int(band.pbrPercentile), label: band.pbrLabel
+                            )
+                        }
+                        Text("연도말 종가 기준, 상장주식수 근사치 — 분할·증자 시 오차 가능")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    .padding(.top, 8).padding(.bottom, 4)
                 }
-                if showPbr {
-                    if showPer { Divider() }
-                    valuationBandRow(
-                        name: "PBR",
-                        current: band.pbrCurrent,
-                        bandMin: band.pbrMin, bandMax: band.pbrMax, median: band.pbrMedian,
-                        percentile: Int(band.pbrPercentile),
-                        label: band.pbrLabel
-                    )
-                }
-
-                Text("연도말 종가 기준, 상장주식수 근사치 — 분할·증자 시 오차 가능")
-                    .font(.caption2).foregroundColor(.secondary)
             }
-            .padding()
             .cardStyle()
         )
     }
@@ -1243,26 +1259,32 @@ struct StockDetailView: View {
         let shown = bt.signals.filter { $0.n > 0 }
         guard !shown.isEmpty else { return AnyView(EmptyView()) }
         return AnyView(
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Text("검증된 신호").font(.subheadline.weight(.semibold))
                     Spacer()
                     Text("최근 \(bt.tradingDays)거래일 실측").font(.caption2).foregroundColor(.secondary)
+                    Image(systemName: backtestExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
                 }
-                .padding(.top, 4)
-
-                Text("평소 익일 상승확률 \(Int(bt.baselineWinRate))% · 평균 \(String(format: "%+.2f", bt.baselineAvgReturn))% (세로선=평소 기준)")
-                    .font(.caption2).foregroundColor(.secondary)
-
-                ForEach(Array(shown.enumerated()), id: \.offset) { idx, s in
-                    if idx > 0 { Divider() }
-                    backtestRow(s, baseline: Int(bt.baselineWinRate))
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { backtestExpanded.toggle() } }
+                if backtestExpanded {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("평소 익일 상승확률 \(Int(bt.baselineWinRate))% · 평균 \(String(format: "%+.2f", bt.baselineAvgReturn))% (세로선=평소 기준)")
+                            .font(.caption2).foregroundColor(.secondary)
+                        ForEach(Array(shown.enumerated()), id: \.offset) { idx, s in
+                            if idx > 0 { Divider() }
+                            backtestRow(s, baseline: Int(bt.baselineWinRate))
+                        }
+                        Text("이 종목 과거 통계일 뿐 미래를 보장하지 않아요. 표본(n)이 작으면 참고만 하세요.")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    .padding(.top, 8).padding(.bottom, 4)
                 }
-
-                Text("이 종목 과거 통계일 뿐 미래를 보장하지 않아요. 표본(n)이 작으면 참고만 하세요.")
-                    .font(.caption2).foregroundColor(.secondary)
             }
-            .padding()
             .cardStyle()
         )
     }
@@ -1321,26 +1343,32 @@ struct StockDetailView: View {
         guard !shown.isEmpty else { return AnyView(EmptyView()) }
         let days = Int(shown.first?.n ?? 0)
         return AnyView(
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Text("수급-가격 민감도").font(.subheadline.weight(.semibold))
                     Spacer()
                     Text("최근 \(days)거래일 기준").font(.caption2).foregroundColor(.secondary)
+                    Image(systemName: flowSensExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
                 }
-                .padding(.top, 4)
-
-                Text("외인·기관이 많이 살수록 이 종목 주가가 그날 같이 올랐나요?")
-                    .font(.caption2).foregroundColor(.secondary)
-
-                ForEach(Array(shown.enumerated()), id: \.offset) { idx, fc in
-                    if idx > 0 { Divider() }
-                    flowCorrRow(fc)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { flowSensExpanded.toggle() } }
+                if flowSensExpanded {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("외인·기관이 많이 살수록 이 종목 주가가 그날 같이 올랐나요?")
+                            .font(.caption2).foregroundColor(.secondary)
+                        ForEach(Array(shown.enumerated()), id: \.offset) { idx, fc in
+                            if idx > 0 { Divider() }
+                            flowCorrRow(fc)
+                        }
+                        Text("수급은 전일까지 장후 확정값 기준이에요. 과거 통계라 미래를 보장하지 않아요.")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    .padding(.top, 8).padding(.bottom, 4)
                 }
-
-                Text("수급은 전일까지 장후 확정값 기준이에요. 과거 통계라 미래를 보장하지 않아요.")
-                    .font(.caption2).foregroundColor(.secondary)
             }
-            .padding()
             .cardStyle()
         )
     }
@@ -1406,97 +1434,75 @@ struct StockDetailView: View {
 
     // 공매도 카드 — 거래량·잔고 수치 + ⓘ 공매도 설명 토글
     private func shortSellingCard(_ ss: ShortSellingSummary) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // 헤더
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("공매도 동향").font(.subheadline.weight(.semibold))
                 Spacer()
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        shortSellingHelpExpanded.toggle()
-                    }
-                } label: {
-                    Label(shortSellingHelpExpanded ? "접기" : "공매도란?",
-                          systemImage: "info.circle")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
+                Image(systemName: shortSellingExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption).foregroundColor(.secondary)
             }
-
-            // 설명 토글 (접기/펼치기)
-            if shortSellingHelpExpanded {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("공매도는 **주식을 빌려서 파는** 것이에요.")
-                        .font(.caption)
-                    Text("지금 비싸게 팔고 → 나중에 싸게 사서 갚아 차익을 얻는 방식이라, 하락에 베팅하는 세력이 많을수록 **공매도 잔고**가 늘어나요.")
-                        .font(.caption)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { shortSellingExpanded.toggle() } }
+            if shortSellingExpanded {
+                Divider()
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("공매도는 **주식을 빌려서 파는** 것이에요.").font(.caption)
+                        Text("지금 비싸게 팔고 → 나중에 싸게 사서 갚아 차익을 얻는 방식이라, 하락에 베팅하는 세력이 많을수록 **공매도 잔고**가 늘어나요.").font(.caption)
+                        HStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("잔고 증가").font(.caption.weight(.semibold)).foregroundColor(.red)
+                                Text("하락 베팅 강화\n단기 하락 압력").font(.caption2).foregroundColor(.secondary)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("잔고 감소").font(.caption.weight(.semibold)).foregroundColor(.blue)
+                                Text("숏커버링(청산 매수)\n단기 상승 압력").font(.caption2).foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        Text("잔고는 T+2일 지연 확정이라, 최신 2거래일은 '집계 중'으로 보여요.")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    .padding(10)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(8)
                     HStack(spacing: 16) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("잔고 증가").font(.caption.weight(.semibold)).foregroundColor(.red)
-                            Text("하락 베팅 강화\n단기 하락 압력").font(.caption2).foregroundColor(.secondary)
+                            Text("공매도 거래량").font(.caption).foregroundColor(.secondary)
+                            Text("\(formatShortVol(ss.recentVolume))주").font(.footnote.weight(.semibold))
+                            Text(ss.recentVolumeDate).font(.caption2).foregroundColor(.secondary)
                         }
+                        Divider().frame(height: 36)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("잔고 감소").font(.caption.weight(.semibold)).foregroundColor(.blue)
-                            Text("숏커버링(청산 매수)\n단기 상승 압력").font(.caption2).foregroundColor(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                    Text("잔고는 T+2일 지연 확정이라, 최신 2거래일은 '집계 중'으로 보여요.")
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                .padding(10)
-                .background(Color(.systemGray6))
-                .cornerRadius(8)
-            }
-
-            // 수치 요약
-            HStack(spacing: 16) {
-                // 최근 거래량
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("공매도 거래량").font(.caption).foregroundColor(.secondary)
-                    Text("\(formatShortVol(ss.recentVolume))주")
-                        .font(.footnote.weight(.semibold))
-                    Text(ss.recentVolumeDate).font(.caption2).foregroundColor(.secondary)
-                }
-
-                Divider().frame(height: 36)
-
-                // 잔고
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("공매도 잔고").font(.caption).foregroundColor(.secondary)
-                    if let bal = ss.balance {
-                        Text("\(formatShortVol(bal.int64Value))주")
-                            .font(.footnote.weight(.semibold))
-                        HStack(spacing: 4) {
-                            if let pctBox = ss.balanceChangePct {
-                                let pct = pctBox.doubleValue
-                                let isUp = pct > 0.5
-                                let isDown = pct < -0.5
-                                Image(systemName: isUp ? "arrow.up" : isDown ? "arrow.down" : "minus")
-                                    .font(.caption2)
-                                    .foregroundColor(isUp ? .red : isDown ? .blue : .secondary)
-                                Text(pct >= 0 ? "+\(String(format: "%.1f", pct))%" : "\(String(format: "%.1f", pct))%")
-                                    .font(.caption2)
-                                    .foregroundColor(isUp ? .red : isDown ? .blue : .secondary)
-                            }
-                            if let d = ss.balanceDate {
-                                Text("(\(d) 확정)").font(.caption2).foregroundColor(.secondary)
+                            Text("공매도 잔고").font(.caption).foregroundColor(.secondary)
+                            if let bal = ss.balance {
+                                Text("\(formatShortVol(bal.int64Value))주").font(.footnote.weight(.semibold))
+                                HStack(spacing: 4) {
+                                    if let pctBox = ss.balanceChangePct {
+                                        let pct = pctBox.doubleValue
+                                        let isUp = pct > 0.5; let isDown = pct < -0.5
+                                        Image(systemName: isUp ? "arrow.up" : isDown ? "arrow.down" : "minus")
+                                            .font(.caption2).foregroundColor(isUp ? .red : isDown ? .blue : .secondary)
+                                        Text(pct >= 0 ? "+\(String(format: "%.1f", pct))%" : "\(String(format: "%.1f", pct))%")
+                                            .font(.caption2).foregroundColor(isUp ? .red : isDown ? .blue : .secondary)
+                                    }
+                                    if let d = ss.balanceDate {
+                                        Text("(\(d) 확정)").font(.caption2).foregroundColor(.secondary)
+                                    }
+                                }
+                            } else {
+                                Text("집계 중").font(.footnote).foregroundColor(.secondary)
+                                Text("T+2일 지연").font(.caption2).foregroundColor(.secondary)
                             }
                         }
-                    } else {
-                        Text("집계 중").font(.footnote).foregroundColor(.secondary)
-                        Text("T+2일 지연").font(.caption2).foregroundColor(.secondary)
+                        Spacer()
                     }
                 }
-                Spacer()
+                .padding(.top, 8).padding(.bottom, 4)
             }
-            .padding(.top, 2)
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.06), radius: 4, x: 0, y: 2)
+        .cardStyle()
     }
 
     private func formatShortVol(_ vol: Int64) -> String {
@@ -1559,26 +1565,26 @@ struct StockDetailView: View {
     private func dartDisclosureSection() -> some View {
         if !dartDisclosures.isEmpty {
             VStack(spacing: 0) {
-                DisclosureGroup(isExpanded: $dartExpanded) {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.text").foregroundColor(.orange)
+                    Text("공시 (\(dartDisclosures.count)건, 30일)").font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Image(systemName: dartExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { dartExpanded.toggle() } }
+                if dartExpanded {
                     ForEach(dartDisclosures, id: \.url) { d in
                         Divider()
                         if let url = URL(string: d.url) {
-                            Link(destination: url) {
-                                dartDisclosureRow(d)
-                            }
-                            .foregroundColor(.primary)
+                            Link(destination: url) { dartDisclosureRow(d) }.foregroundColor(.primary)
                         } else {
                             dartDisclosureRow(d)
                         }
                     }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "doc.text").foregroundColor(.orange)
-                        Text("공시 (\(dartDisclosures.count)건, 30일)")
-                            .font(.subheadline.weight(.semibold))
-                    }
                 }
-                .padding(.vertical, 10)
             }
             .cardStyle()
         }
@@ -1599,13 +1605,23 @@ struct StockDetailView: View {
         if let e = earningsEntry {
             let days = Int(e.daysUntil)
             VStack(spacing: 0) {
-                DisclosureGroup(isExpanded: $earningsExpanded) {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar").foregroundColor(.blue)
+                    Text("실적 일정").font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(ddayBadge(days)).font(.caption2.weight(.semibold)).foregroundColor(ddayBadgeColor(days))
+                    Image(systemName: earningsExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { earningsExpanded.toggle() } }
+                if earningsExpanded {
                     Divider()
                     HStack {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(e.reportName).font(.caption)
-                            Text("제출 기한: \(formattedDate8(e.dueDate))")
-                                .font(.caption2).foregroundColor(.secondary)
+                            Text("제출 기한: \(formattedDate8(e.dueDate))").font(.caption2).foregroundColor(.secondary)
                         }
                         Spacer()
                         Text(ddayBadge(days))
@@ -1616,18 +1632,7 @@ struct StockDetailView: View {
                             .clipShape(Capsule())
                     }
                     .padding(.vertical, 8)
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "calendar").foregroundColor(.blue)
-                        Text("실적 일정")
-                            .font(.subheadline.weight(.semibold))
-                        Spacer()
-                        Text(ddayBadge(days))
-                            .font(.caption2.weight(.semibold))
-                            .foregroundColor(ddayBadgeColor(days))
-                    }
                 }
-                .padding(.vertical, 10)
             }
             .cardStyle()
         }
@@ -1653,7 +1658,18 @@ struct StockDetailView: View {
     private func macroSignalSection() -> some View {
         if let sig = stockSignal {
             VStack(spacing: 0) {
-                DisclosureGroup(isExpanded: $signalExpanded) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chart.line.uptrend.xyaxis").foregroundColor(.teal)
+                    Text("지표 영향").font(.subheadline.weight(.semibold))
+                    Spacer()
+                    if sig.net != "-" { netBadgeDetail(sig.net) }
+                    Image(systemName: signalExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { signalExpanded.toggle() } }
+                if signalExpanded {
                     Divider()
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
@@ -1668,12 +1684,9 @@ struct StockDetailView: View {
                             ForEach(sig.signals, id: \.indicator) { s in
                                 let dir = Int(s.direction)
                                 HStack(alignment: .top, spacing: 6) {
-                                    Text(signalArrow(dir))
-                                        .font(.caption2)
-                                        .foregroundColor(directionColor(dir))
+                                    Text(signalArrow(dir)).font(.caption2).foregroundColor(directionColor(dir))
                                     VStack(alignment: .leading, spacing: 1) {
-                                        Text("\(s.indicator) \(signedPct(s.changeRate))%")
-                                            .font(.caption2.weight(.medium))
+                                        Text("\(s.indicator) \(signedPct(s.changeRate))%").font(.caption2.weight(.medium))
                                         Text(s.note).font(.caption2).foregroundColor(.secondary)
                                     }
                                 }
@@ -1681,16 +1694,7 @@ struct StockDetailView: View {
                         }
                     }
                     .padding(.bottom, 8)
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chart.line.uptrend.xyaxis").foregroundColor(.teal)
-                        Text("지표 영향")
-                            .font(.subheadline.weight(.semibold))
-                        Spacer()
-                        if sig.net != "-" { netBadgeDetail(sig.net) }
-                    }
                 }
-                .padding(.vertical, 10)
             }
             .cardStyle()
         }
@@ -1726,21 +1730,50 @@ struct StockDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("행동 기록").font(.subheadline.weight(.semibold)).padding(.top, 8)
             ForEach(logEntries, id: \.id) { entry in
-                HStack(spacing: 8) {
-                    actionBadge(entry.action)
-                    if let r = entry.reason {
-                        Text(r).font(.caption).lineLimit(1)
+                let isSwiped = swipedLogId == entry.id
+                ZStack(alignment: .trailing) {
+                    Button(role: .destructive) {
+                        logRepo.delete(id: entry.id)
+                        withAnimation { logEntries.removeAll { $0.id == entry.id }; swipedLogId = nil }
+                    } label: {
+                        Image(systemName: "trash.fill")
+                            .foregroundColor(.white)
+                            .frame(width: 68)
+                            .frame(maxHeight: .infinity)
+                            .background(Color.red)
+                            .cornerRadius(8)
                     }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 1) {
-                        Text(shortTs(entry.createdAt))
-                            .font(.caption2).foregroundColor(.secondary)
-                        if let p = entry.price {
-                            Text("\(p.int64Value.formatted())원")
+                    HStack(spacing: 8) {
+                        actionBadge(entry.action)
+                        if let r = entry.reason {
+                            Text(r).font(.caption).lineLimit(1)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 1) {
+                            Text(shortTs(entry.createdAt))
                                 .font(.caption2).foregroundColor(.secondary)
+                            if let p = entry.price {
+                                Text("\(p.int64Value.formatted())원")
+                                    .font(.caption2).foregroundColor(.secondary)
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity)
+                    .background(Color(.secondarySystemBackground))
+                    .offset(x: isSwiped ? -80 : 0)
+                    .animation(.easeInOut(duration: 0.2), value: isSwiped)
+                    .gesture(
+                        DragGesture(minimumDistance: 20)
+                            .onEnded { v in
+                                withAnimation {
+                                    if v.translation.width < -40 { swipedLogId = entry.id }
+                                    else if v.translation.width > 20 { swipedLogId = nil }
+                                }
+                            }
+                    )
+                    .onTapGesture { withAnimation { swipedLogId = nil } }
                 }
+                .clipped()
                 if entry.id != logEntries.last?.id { Divider() }
             }
             .padding(.bottom, 4)
