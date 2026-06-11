@@ -794,21 +794,6 @@ struct StockDetailView: View {
                         .padding(.top, 4)
                 }
 
-                if a.numberWarning {
-                    HStack(spacing: 4) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                        Text("제공 데이터에 없는 수치가 포함됐을 수 있어요. 수치는 직접 확인하세요.")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                    }
-                    .padding(.horizontal, 8).padding(.vertical, 5)
-                    .background(Color.orange.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .padding(.top, 2)
-                }
-
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .center, spacing: 0) {
                         Text(aiCommentFreshLabel(a))
@@ -1840,12 +1825,33 @@ struct StockDetailView: View {
         return fmt.string(from: date)
     }
 
+    // 취소선 제거 + **굵게** 직접 파싱. SwiftUI 마크다운 파서는 "**+2.4%**에"처럼
+    // 굵은 구간 뒤에 한글이 바로 붙으면 CommonMark 경계 규칙 탓에 별표를 그대로 남기는
+    // 버그가 있어, 한글 문장에선 쓸 수 없다. 그래서 굵게는 우리가 직접 적용한다.
     private func markdown(_ s: String) -> AttributedString {
-        let cleaned = s.replacingOccurrences(of: "~~", with: "")
-        return (try? AttributedString(
-            markdown: cleaned,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(cleaned)
+        var text = s.replacingOccurrences(of: #"~~(.+?)~~"#, with: "$1", options: .regularExpression)
+        text = text.replacingOccurrences(of: "~~", with: "")
+
+        guard let regex = try? NSRegularExpression(pattern: #"\*\*(.+?)\*\*"#) else {
+            return AttributedString(text.replacingOccurrences(of: "**", with: ""))
+        }
+        let ns = text as NSString
+        var out = AttributedString()
+        var cursor = 0
+        for m in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            if m.range.location > cursor {
+                let plain = ns.substring(with: NSRange(location: cursor, length: m.range.location - cursor))
+                out += AttributedString(plain.replacingOccurrences(of: "**", with: ""))
+            }
+            var bold = AttributedString(ns.substring(with: m.range(at: 1)))
+            bold.inlinePresentationIntent = .stronglyEmphasized
+            out += bold
+            cursor = m.range.location + m.range.length
+        }
+        if cursor < ns.length {
+            out += AttributedString(ns.substring(from: cursor).replacingOccurrences(of: "**", with: ""))
+        }
+        return out
     }
 
     // AI 코멘트를 (소제목, 본문 단락들) 섹션으로 파싱. **소제목**만 있는 블록을 헤더로 인식,

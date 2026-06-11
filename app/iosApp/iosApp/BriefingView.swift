@@ -170,21 +170,13 @@ struct BriefingView: View {
                 Text("불러오지 못했어요").font(.footnote).foregroundColor(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
-                    aiCommentToggle(expanded: moodExpanded) { withAnimation { moodExpanded.toggle() } }
-                    HStack(alignment: .firstTextBaseline) {
-                        if !moodGeneratedAt.isEmpty {
-                            Text("오늘 \(moodGeneratedAt) 생성")
-                                .font(.caption2).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Button {
-                            Task { await buildMarketMood(force: true) }
-                        } label: {
-                            Label("재생성", systemImage: "arrow.clockwise")
-                                .font(.caption2).foregroundColor(.purple)
-                        }
-                        .help("지금 시점 지표로 시장 분위기를 다시 생성합니다")
-                    }
+                    aiCommentToggle(
+                        expanded: moodExpanded,
+                        generatedAt: moodGeneratedAt,
+                        isLoading: moodLoading,
+                        action: { withAnimation { moodExpanded.toggle() } },
+                        regenAction: { Task { await buildMarketMood(force: true) } }
+                    )
                     if moodExpanded { proseBlock(moodComment) }
                 }
             }
@@ -384,26 +376,16 @@ struct BriefingView: View {
                 Text("불러오지 못했어요").font(.footnote).foregroundColor(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
-                    aiCommentToggle(expanded: sectorBriefingExpanded) { withAnimation { sectorBriefingExpanded.toggle() } }
-                    HStack(alignment: .firstTextBaseline) {
-                        if !sectorBriefingGeneratedAt.isEmpty {
-                            Text("오늘 \(sectorBriefingGeneratedAt) 생성")
-                                .font(.caption2).foregroundColor(.secondary)
+                    aiCommentToggle(
+                        expanded: sectorBriefingExpanded,
+                        generatedAt: sectorBriefingGeneratedAt,
+                        isLoading: sectorBriefingLoading,
+                        action: { withAnimation { sectorBriefingExpanded.toggle() } },
+                        regenAction: {
+                            let codes = Db.watchlist.all().map { $0.code }
+                            Task { await buildSectorBriefing(codes: codes, force: true) }
                         }
-                        Spacer()
-                        if sectorBriefingLoading {
-                            ProgressView().scaleEffect(0.7)
-                        } else {
-                            Button {
-                                let codes = Db.watchlist.all().map { $0.code }
-                                Task { await buildSectorBriefing(codes: codes, force: true) }
-                            } label: {
-                                Label("재생성", systemImage: "arrow.clockwise")
-                                    .font(.caption2).foregroundColor(.purple)
-                            }
-                            .help("지금 섹터 흐름으로 분석을 다시 생성합니다")
-                        }
-                    }
+                    )
                     if sectorBriefingExpanded { proseBlock(sectorBriefingComment) }
                 }
             }
@@ -557,25 +539,13 @@ struct BriefingView: View {
                     }
                     if !impactComment.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            aiCommentToggle(expanded: impactExpanded) { withAnimation { impactExpanded.toggle() } }
-                            HStack(alignment: .firstTextBaseline) {
-                                if !impactGeneratedAt.isEmpty {
-                                    Text("오늘 \(impactGeneratedAt) 생성")
-                                        .font(.caption2).foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                if impactLoading {
-                                    ProgressView().scaleEffect(0.7)
-                                } else {
-                                    Button {
-                                        Task { await buildImpact(allItems: allItemsLoaded, force: true) }
-                                    } label: {
-                                        Label("재생성", systemImage: "arrow.clockwise")
-                                            .font(.caption2).foregroundColor(.purple)
-                                    }
-                                    .help("지금 시점 지표로 종목 영향을 다시 생성합니다")
-                                }
-                            }
+                            aiCommentToggle(
+                                expanded: impactExpanded,
+                                generatedAt: impactGeneratedAt,
+                                isLoading: impactLoading,
+                                action: { withAnimation { impactExpanded.toggle() } },
+                                regenAction: { Task { await buildImpact(allItems: allItemsLoaded, force: true) } }
+                            )
                             if impactExpanded { proseBlock(impactComment) }
                         }
                     }
@@ -584,9 +554,17 @@ struct BriefingView: View {
         }
     }
 
-    // "AI 코멘트" 접기 토글 — 섹터 분석·내 종목 영향에서 공용.
-    private func aiCommentToggle(expanded: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+    // "AI 코멘트" 접기 토글 + 메타 행. 제목 행(접기/펼치기)과 재생성 버튼을
+    // 서로 다른 줄에 두어, 제목을 탭할 때 재생성이 잘못 눌리지 않게 분리한다.
+    private func aiCommentToggle(
+        expanded: Bool,
+        generatedAt: String,
+        isLoading: Bool,
+        action: @escaping () -> Void,
+        regenAction: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // 제목 행 — 행 전체 탭 = 접기/펼치기
             HStack(spacing: 5) {
                 Image(systemName: "sparkles").font(.caption2).foregroundColor(.purple)
                 Text("AI 코멘트").font(.subheadline.weight(.medium))
@@ -594,8 +572,27 @@ struct BriefingView: View {
                 Image(systemName: expanded ? "chevron.up" : "chevron.down")
                     .font(.caption2).foregroundColor(.secondary)
             }
+            .foregroundColor(.primary)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: action)
+
+            // 메타 행 — 생성 시각 + 재생성(제목 행과 다른 줄이라 오탭 없음)
+            HStack {
+                if !generatedAt.isEmpty {
+                    Text("오늘 \(generatedAt) 생성")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                Spacer()
+                if isLoading {
+                    ProgressView().scaleEffect(0.6)
+                } else {
+                    Button(action: regenAction) {
+                        Label("재생성", systemImage: "arrow.clockwise")
+                            .font(.caption2).foregroundColor(.purple)
+                    }
+                }
+            }
         }
-        .foregroundColor(.primary)
     }
 
     // 빈 줄(\n\n) 기준 문단 분리 + 마크다운 렌더. 줄간격·문단간격을 넉넉히 주고
@@ -668,11 +665,33 @@ struct BriefingView: View {
     }
 
     // Claude 코멘트의 **굵게**·줄바꿈을 살려서 렌더(실패 시 평문).
+    // 취소선 제거 + **굵게** 직접 파싱. SwiftUI 마크다운 파서는 "**+2.4%**에"처럼
+    // 굵은 구간 뒤에 한글이 바로 붙으면 CommonMark 경계 규칙 탓에 별표를 그대로 남기는
+    // 버그가 있어, 한글 문장에선 쓸 수 없다. 그래서 굵게는 우리가 직접 적용한다.
     private func markdown(_ s: String) -> AttributedString {
-        (try? AttributedString(
-            markdown: s,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(s)
+        var text = s.replacingOccurrences(of: #"~~(.+?)~~"#, with: "$1", options: .regularExpression)
+        text = text.replacingOccurrences(of: "~~", with: "")
+
+        guard let regex = try? NSRegularExpression(pattern: #"\*\*(.+?)\*\*"#) else {
+            return AttributedString(text.replacingOccurrences(of: "**", with: ""))
+        }
+        let ns = text as NSString
+        var out = AttributedString()
+        var cursor = 0
+        for m in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            if m.range.location > cursor {
+                let plain = ns.substring(with: NSRange(location: cursor, length: m.range.location - cursor))
+                out += AttributedString(plain.replacingOccurrences(of: "**", with: ""))
+            }
+            var bold = AttributedString(ns.substring(with: m.range(at: 1)))
+            bold.inlinePresentationIntent = .stronglyEmphasized
+            out += bold
+            cursor = m.range.location + m.range.length
+        }
+        if cursor < ns.length {
+            out += AttributedString(ns.substring(from: cursor).replacingOccurrences(of: "**", with: ""))
+        }
+        return out
     }
 
     // MARK: - 섹션: 하이라이트

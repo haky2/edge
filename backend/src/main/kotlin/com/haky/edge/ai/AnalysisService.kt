@@ -141,7 +141,10 @@ class AnalysisService(
             val t1 = System.currentTimeMillis()
             val comment = claude.complete(prompt, facts, maxTokens = 3500)
             println("[Timing] $code: claude=${System.currentTimeMillis() - t1}ms  total=${System.currentTimeMillis() - t0}ms")
-            val hasNumberWarning = warnHallucinatedNumbers(code, facts, comment)
+            // 환각 의심 수치를 로그로만 남긴다(모니터링용). UI 경고는 더 이상 띄우지 않는다 —
+            // 단순 숫자 매칭이 "26만 주(2일 합산)"·"170만원대(손절 기준)" 같은 정당한
+            // 가공·라운드 표현을 환각으로 오탐해 신뢰를 깎았기 때문. 일반 면책으로 충분.
+            warnHallucinatedNumbers(code, facts, comment)
 
             val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
                 .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
@@ -155,7 +158,7 @@ class AnalysisService(
                 hasBacktest = backtest?.signals?.any { it.confident } == true,
                 hasFlowSensitivity = flowSensitivity?.items?.any { it.confident } == true,
             )
-            val analysis = Analysis(code = code, name = name, date = today, comment = comment, generatedAt = now, generatedPrice = quote.price.toDouble(), factsRichness = richness, numberWarning = hasNumberWarning)
+            val analysis = Analysis(code = code, name = name, date = today, comment = comment, generatedAt = now, generatedPrice = quote.price.toDouble(), factsRichness = richness, numberWarning = false)
             cache[key] = Cached(analysis)
             fileCache.put(key, analysis)
             analysis
@@ -497,14 +500,14 @@ class AnalysisService(
     }
 
     /**
-     * Claude 응답에서 facts에 없는 수치를 탐지. 의심 수치 발견 시 true 반환.
-     * 응답은 수정하지 않고 플래그만 올린다(개인앱 수준, 차단은 과함).
+     * Claude 응답에서 facts에 없는 수치를 백엔드 로그로만 남긴다(개발 모니터링용).
+     * 사용자 UI 경고는 띄우지 않는다 — 단순 숫자 매칭은 "26만 주(2일 합산)"·
+     * "170만원대(손절 기준)"·퍼센트(계산값) 같은 정당한 가공/라운드 표현을 환각으로
+     * 오탐해 신뢰를 깎기 때문. 진짜 환각은 이 로그를 보고 개발 중 사람이 판단한다.
      *
-     * 매칭: 한국어 복합 단위(N조 M억, N만 M) 먼저 파싱해 단일 수치로 변환 후
-     * facts 수치와 ±5% 근접 비교. 절댓값 < 10 제외 조건 없음 — 등락률·RSI·승률 같은
-     * 한 자릿수 수치도 투자 판단에 쓰이므로 검증 대상에 포함.
+     * 매칭: 한국어 복합 단위(N조 M억, N만 M) 먼저 파싱해 단일 수치로 변환 후 facts와 ±5% 비교.
      */
-    private fun warnHallucinatedNumbers(code: String, facts: String, comment: String): Boolean {
+    private fun warnHallucinatedNumbers(code: String, facts: String, comment: String) {
         val factsNums = extractNumbers(facts)
         val suspicious = extractNumbers(comment).filter { v ->
             factsNums.none { f ->
@@ -514,9 +517,8 @@ class AnalysisService(
             }
         }
         if (suspicious.isNotEmpty()) {
-            println("[NumberGuard] $code: facts에 없는 수치 발견(${suspicious.size}건): ${suspicious.joinToString()}")
+            println("[NumberGuard] $code: facts 외 수치 ${suspicious.size}건(${suspicious.joinToString()})")
         }
-        return suspicious.isNotEmpty()
     }
 
     /**
