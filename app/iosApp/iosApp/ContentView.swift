@@ -112,23 +112,24 @@ struct WatchlistView: View {
             Spacer()
             if let pts = sparklines[item.code], pts.count >= 2,
                let q = quotes[item.code] {
-                let up = q.changeRate >= 0
-                let streak = consecutiveStreak(closes: pts, todayUp: up)
+                let isUp = q.changeRate > 0; let isDown = q.changeRate < 0
+                let streak = (isUp || isDown) ? consecutiveStreak(closes: pts, todayUp: isUp) : 0
                 VStack(alignment: .trailing, spacing: 1) {
-                    Text(up ? "📈" : "📉").font(.system(size: 15))
-                    Text("\(streak)일째 \(up ? "상승" : "하락")")
+                    Text(isUp ? "📈" : (isDown ? "📉" : "➡️")).font(.system(size: 15))
+                    Text(isUp || isDown ? "\(streak)일째 \(isUp ? "상승" : "하락")" : "보합")
                         .font(.system(size: 10))
-                        .foregroundColor(up ? .red : .blue)
+                        .foregroundColor(isUp ? .red : (isDown ? .blue : .secondary))
                 }
                 .padding(.trailing, 8)
             }
             if let q = quotes[item.code] {
-                let up = q.change >= 0
+                let chgColor: Color = q.changeRate > 0 ? .red : q.changeRate < 0 ? .blue : .secondary
+                let symbol = q.changeRate > 0 ? "▲" : q.changeRate < 0 ? "▼" : "—"
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(q.price.formatted()).font(.body.weight(.semibold))
-                    Text("\(up ? "▲" : "▼") \(String(format: "%.2f", abs(q.changeRate)))%")
+                    Text("\(symbol) \(String(format: "%.2f", abs(q.changeRate)))%")
                         .font(.caption)
-                        .foregroundColor(up ? .red : .blue)
+                        .foregroundColor(chgColor)
                 }
             } else {
                 Text("—").foregroundColor(.secondary)

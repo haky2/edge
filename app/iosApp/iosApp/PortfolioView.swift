@@ -104,7 +104,7 @@ struct PortfolioView: View {
         let evaluated  = rows.reduce(0.0) { $0 + $1.evaluated }
         let totalPnl   = evaluated - invested
         let totalRate  = invested == 0 ? 0.0 : totalPnl / invested * 100
-        let up         = totalPnl >= 0
+        let pnlColor: Color = totalPnl > 0 ? .red : totalPnl < 0 ? .blue : .secondary
 
         return VStack(spacing: 12) {
             // 숫자 요약
@@ -117,12 +117,12 @@ struct PortfolioView: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 4) {
                     Text("총 손익").font(.caption).foregroundColor(.secondary)
-                    Text("\(up ? "+" : "")\(Int(totalPnl).formatted())원")
+                    Text("\(totalPnl > 0 ? "+" : "")\(Int(totalPnl).formatted())원")
                         .font(.headline.weight(.semibold))
-                        .foregroundColor(up ? .red : .blue)
-                    Text("\(up ? "+" : "")\(String(format: "%.2f", totalRate))%")
+                        .foregroundColor(pnlColor)
+                    Text("\(totalPnl > 0 ? "+" : "")\(String(format: "%.2f", totalRate))%")
                         .font(.subheadline)
-                        .foregroundColor(up ? .red : .blue)
+                        .foregroundColor(pnlColor)
                 }
             }
             Divider()
@@ -213,7 +213,7 @@ struct PortfolioView: View {
 
     // 보유 종목 한 행: 이름 + 현재가/등락 | 평가손익/수익률
     private func holdingRow(_ row: HoldingRow) -> some View {
-        let up = row.pnl >= 0
+        let pnlColor: Color = row.pnl > 0 ? .red : row.pnl < 0 ? .blue : .secondary
         return HStack {
             VStack(alignment: .leading, spacing: 3) {
                 Text(row.item.name).font(.body)
@@ -222,14 +222,15 @@ struct PortfolioView: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 3) {
                 if let q = row.quote {
-                    let qUp = q.change >= 0
+                    let qColor: Color = q.changeRate > 0 ? .red : q.changeRate < 0 ? .blue : .secondary
+                    let qSymbol = q.changeRate > 0 ? "▲" : q.changeRate < 0 ? "▼" : "—"
                     Text("\(q.price.formatted())원").font(.body.weight(.semibold))
-                    Text("\(qUp ? "▲" : "▼") \(String(format: "%.2f", abs(q.changeRate)))%")
-                        .font(.caption).foregroundColor(qUp ? .red : .blue)
+                    Text("\(qSymbol) \(String(format: "%.2f", abs(q.changeRate)))%")
+                        .font(.caption).foregroundColor(qColor)
                 }
-                Text("\(up ? "+" : "")\(Int(row.pnl).formatted())원 (\(up ? "+" : "")\(String(format: "%.1f", row.pnlRate))%)")
+                Text("\(row.pnl > 0 ? "+" : "")\(Int(row.pnl).formatted())원 (\(row.pnl > 0 ? "+" : "")\(String(format: "%.1f", row.pnlRate))%)")
                     .font(.caption.monospacedDigit())
-                    .foregroundColor(up ? .red : .blue)
+                    .foregroundColor(pnlColor)
             }
         }
         .padding(.vertical, 4)

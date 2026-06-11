@@ -418,11 +418,12 @@ struct BriefingView: View {
             }
             Spacer()
             if let q = quote {
-                let up = q.changeRate >= 0
+                let chgColor: Color = q.changeRate > 0 ? .red : q.changeRate < 0 ? .blue : .secondary
+                let symbol = q.changeRate > 0 ? "▲" : q.changeRate < 0 ? "▼" : "—"
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(q.price.formatted())원").font(.body.weight(.semibold))
-                    Text("\(up ? "▲" : "▼") \(String(format: "%.2f", abs(q.changeRate)))%")
-                        .font(.caption).foregroundColor(up ? .red : .blue)
+                    Text("\(symbol) \(String(format: "%.2f", abs(q.changeRate)))%")
+                        .font(.caption).foregroundColor(chgColor)
                 }
             }
         }
@@ -718,7 +719,8 @@ struct BriefingView: View {
         NavigationLink {
             StockDetailView(item: row.item, quote: row.quote, api: api)
         } label: {
-            let up = row.quote.changeRate >= 0
+            let chgColor: Color = row.quote.changeRate > 0 ? .red : row.quote.changeRate < 0 ? .blue : .secondary
+            let symbol = row.quote.changeRate > 0 ? "▲" : row.quote.changeRate < 0 ? "▼" : "—"
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.item.name).font(.body)
@@ -727,8 +729,8 @@ struct BriefingView: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(row.quote.price.formatted())원").font(.body.weight(.semibold))
-                    Text("\(up ? "▲" : "▼") \(String(format: "%.2f", abs(row.quote.changeRate)))%")
-                        .font(.caption).foregroundColor(up ? .red : .blue)
+                    Text("\(symbol) \(String(format: "%.2f", abs(row.quote.changeRate)))%")
+                        .font(.caption).foregroundColor(chgColor)
                 }
             }
             .padding(.vertical, 2)
