@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-06-11 — 앱 아이콘 적용 (summit peak)
+
+**한 일**
+- 아이콘 디자인(어두운 배경 `#15110A` + 금색 정상 peak + 점)은 `docs/assets/`에 SVG/PNG 소스로 준비돼 있었음. 실제 앱엔 미적용(설치 시 아이콘 빈칸)이던 걸 적용.
+- iOS: `docs/assets/AppIcon.appiconset`(edge-icon-1024.png + Contents.json, 1024 1장 universal)을 `app/iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/`로 복사. 다크/틴티드는 iOS 자동 생성.
+- Android(미리 준비, 이 환경 SDK 없어 빌드 검증은 다음에): SVG 좌표 그대로 어댑티브 아이콘 재작성 — `ic_launcher_background.xml` 단색 `#15110A`, `ic_launcher_foreground.xml` peak 벡터를 세이프존 맞춰 `scale 0.62`. 레거시 `mipmap-*/ic_launcher(_round).png` 5밀도 `sips` 리사이즈.
+
+**검증**
+- iOS Debug 빌드 → `simctl install booted` → 홈 화면에서 Edge 아이콘 표시 확인. Assets.car에 `edge-icon-1024.png` 렌디션 + 번들에 `AppIcon60x60@2x.png` 생성 확인.
+
+---
+
 ## 2026-06-10 — 1.0c-a: 배포 보안 게이트 (토큰 인증 + IP 레이트리밋)
 
 **한 일**
