@@ -277,32 +277,39 @@ struct StockDetailView: View {
                 }
             }
             Divider()
-            // 거래량 + 해석
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .lastTextBaseline, spacing: 4) {
-                    Text("오늘 거래량").font(.caption).foregroundColor(.secondary)
-                    Text("\(q.volume.formatted())주").font(.caption.weight(.semibold))
-                    if avg20Vol > 0 {
-                        Text("(평소의 \(String(format: "%.1f", volRatio))배)")
-                            .font(.system(size: 10)).foregroundColor(.secondary)
+            // 거래량 + 해석. 시가=0이면 장 전이므로 신호 표시 안 함.
+            if q.open == 0 {
+                Text("장 시작 전 거래 데이터가 없어요")
+                    .font(.caption).foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 4)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .lastTextBaseline, spacing: 4) {
+                        Text("오늘 거래량").font(.caption).foregroundColor(.secondary)
+                        Text("\(q.volume.formatted())주").font(.caption.weight(.semibold))
+                        if avg20Vol > 0 {
+                            Text("(평소의 \(String(format: "%.1f", volRatio))배)")
+                                .font(.system(size: 10)).foregroundColor(.secondary)
+                        }
                     }
-                }
-                let intradayPos: Double? = q.high > q.low
-                    ? Double(q.price - q.low) / Double(q.high - q.low) : nil
-                let (emoji, title, desc) = volPriceSignal(priceUp: priceUp, ratio: volRatio,
-                                                          intradayPos: intradayPos)
-                HStack(alignment: .top, spacing: 8) {
-                    Text(emoji).font(.title3)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title).font(.caption.weight(.semibold))
-                        Text(desc).font(.caption2).foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                    let intradayPos: Double? = q.high > q.low
+                        ? Double(q.price - q.low) / Double(q.high - q.low) : nil
+                    let (emoji, title, desc) = volPriceSignal(priceUp: priceUp, ratio: volRatio,
+                                                              intradayPos: intradayPos)
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(emoji).font(.title3)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(title).font(.caption.weight(.semibold))
+                            Text(desc).font(.caption2).foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.secondary.opacity(0.07))
+                    .cornerRadius(10)
                 }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.secondary.opacity(0.07))
-                .cornerRadius(10)
             }
         }
     }
@@ -971,7 +978,7 @@ struct StockDetailView: View {
                     }
                     if let v = r.volumeRatio?.doubleValue {
                         helpItem("거래량 \(String(format: "%.1f", v))배",
-                            "오늘 거래량을 최근 20일 평균과 비교한 거예요. 2배 넘으면 평소보다 사람이 확 몰린 것 — 큰 뉴스나 수급 변화 신호일 수 있어요.")
+                            "최근 거래일 거래량을 최근 20일 평균과 비교한 거예요. 2배 넘으면 평소보다 사람이 확 몰린 것 — 큰 뉴스나 수급 변화 신호일 수 있어요.")
                     }
                     // 정확한 이평선 값(참고용)
                     if r.ma5 != nil || r.ma20 != nil || r.ma60 != nil {

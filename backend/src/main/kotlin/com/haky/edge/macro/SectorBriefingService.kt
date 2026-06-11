@@ -46,6 +46,11 @@ class SectorBriefingService(
         val today = LocalDate.now().toString()
         val sectorIndices = kis.getSectorIndices()
 
+        // 모든 섹터가 0% = 장 전 또는 데이터 미수신. Claude 호출 불필요, 캐시도 하지 않는다.
+        // (캐시에 저장하면 장 중 재호출 시에도 빈 결과를 반환하게 됨)
+        val allZero = sectorIndices.all { kotlin.math.abs(it.changeRate) < 0.01 }
+        if (allZero) return SectorBriefing(today, comment = "", spotlight = emptyList())
+
         // 키 = 날짜 + 종목집합. 섹터 등락은 제외 — 하루에 한 번만 Claude 호출하고 당일은 캐시 재사용.
         // force=true면 캐시 건너뜀(수동 재생성).
         val cacheKey = buildKey(today, codes)

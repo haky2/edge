@@ -373,7 +373,7 @@ struct BriefingView: View {
                     Text("AI가 분석 중…").font(.footnote).foregroundColor(.secondary)
                 }
             } else if sectorBriefingComment.isEmpty {
-                Text("불러오지 못했어요").font(.footnote).foregroundColor(.secondary)
+                Text("장 시작 전이거나 섹터 데이터가 없어요").font(.footnote).foregroundColor(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     aiCommentToggle(

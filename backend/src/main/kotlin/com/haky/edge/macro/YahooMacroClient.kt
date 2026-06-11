@@ -50,10 +50,17 @@ class YahooMacroClient {
             header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
         }.body()
 
-        val meta = resp.chart.results.firstOrNull()?.meta
-            ?: error("$label 데이터 없음")
+        val result = resp.chart.results.firstOrNull() ?: error("$label 데이터 없음")
+        val meta = result.meta
         val price = meta.regularMarketPrice
-        val prev = meta.chartPreviousClose.takeIf { it > 0.0 } ?: price
+
+        // chartPreviousClose = range 시작 전날 종가(5d면 5거래일 전). 전일 대비 계산에 쓰면 틀린다.
+        // 일봉 closes 배열의 끝에서 2번째 값이 직전 거래일 종가 → 이걸 prev로 쓴다.
+        // 배열이 1개 이하면 chartPreviousClose로 폴백.
+        val closes = result.indicators.quote.firstOrNull()?.close?.filterNotNull() ?: emptyList()
+        val prev = if (closes.size >= 2) closes[closes.size - 2]
+                   else meta.chartPreviousClose.takeIf { it > 0.0 } ?: price
+
         val change = price - prev
         val changeRate = if (prev > 0.0) change / prev * 100.0 else 0.0
 
@@ -68,10 +75,16 @@ private data class YahooResponse(val chart: YChart)
 private data class YChart(@SerialName("result") val results: List<YResult> = emptyList())
 
 @Serializable
-private data class YResult(val meta: YMeta)
+private data class YResult(val meta: YMeta, val indicators: YIndicators = YIndicators())
 
 @Serializable
 private data class YMeta(
     val regularMarketPrice: Double = 0.0,
     val chartPreviousClose: Double = 0.0,
 )
+
+@Serializable
+private data class YIndicators(val quote: List<YQuote> = emptyList())
+
+@Serializable
+private data class YQuote(val close: List<Double?> = emptyList())
