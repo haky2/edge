@@ -282,11 +282,29 @@ struct ComparisonView: View {
     }
 
     private func markdown(_ s: String) -> AttributedString {
-        let cleaned = s.replacingOccurrences(of: "~~", with: "")
-        return (try? AttributedString(
-            markdown: cleaned,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(cleaned)
+        var text = s.replacingOccurrences(of: #"~~(.+?)~~"#, with: "$1", options: .regularExpression)
+        text = text.replacingOccurrences(of: "~~", with: "")
+
+        guard let regex = try? NSRegularExpression(pattern: #"\*\*(.+?)\*\*"#) else {
+            return AttributedString(text.replacingOccurrences(of: "**", with: ""))
+        }
+        let ns = text as NSString
+        var out = AttributedString()
+        var cursor = 0
+        for m in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            if m.range.location > cursor {
+                let plain = ns.substring(with: NSRange(location: cursor, length: m.range.location - cursor))
+                out += AttributedString(plain.replacingOccurrences(of: "**", with: ""))
+            }
+            var bold = AttributedString(ns.substring(with: m.range(at: 1)))
+            bold.inlinePresentationIntent = .stronglyEmphasized
+            out += bold
+            cursor = m.range.location + m.range.length
+        }
+        if cursor < ns.length {
+            out += AttributedString(ns.substring(from: cursor).replacingOccurrences(of: "**", with: ""))
+        }
+        return out
     }
 }
 
