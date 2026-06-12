@@ -89,38 +89,50 @@ struct StatsView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - 섹션: AI 해석 적중률
+    // MARK: - 섹션: 코스피 방향 선행 신호
 
     private var moodAccuracySection: some View {
         Section {
             if let acc = moodAccuracy {
-                HStack(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        if acc.total > 0 {
+                // 오늘 예측 카드 — PENDING(장 전·장 중)일 때만 상단에 띄움
+                let todayEntry = acc.recentEntries.first
+                let todayPending = todayEntry?.isCorrect == nil
+                if todayPending, let entry = todayEntry {
+                    todayPredictionCard(entry.direction)
+                }
+
+                // 적중률 요약
+                if acc.total > 0 {
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 2) {
                             Text("\(acc.correct)/\(acc.total)회 적중")
                                 .font(.headline)
                             let rate = Int(Double(acc.correct) / Double(acc.total) * 100)
                             Text("\(rate)% 정확도")
                                 .font(.subheadline)
                                 .foregroundColor(rate >= 60 ? .red : rate >= 40 ? .orange : .blue)
-                        } else {
-                            Text("아직 채점된 기록 없어요")
-                                .font(.subheadline).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        if acc.pending > 0 {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("대기 \(acc.pending)회")
+                                    .font(.caption).foregroundColor(.secondary)
+                                Text("장 마감 후 자동 채점")
+                                    .font(.caption2).foregroundColor(.secondary)
+                            }
                         }
                     }
-                    Spacer()
-                    if acc.pending > 0 {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("대기 \(acc.pending)회")
-                                .font(.caption).foregroundColor(.secondary)
-                            Text("장 마감 후 자동 채점")
-                                .font(.caption2).foregroundColor(.secondary)
-                        }
-                    }
+                    .padding(.vertical, 2)
+                } else if !todayPending {
+                    Text("아직 채점된 기록 없어요")
+                        .font(.subheadline).foregroundColor(.secondary)
                 }
-                .padding(.vertical, 2)
 
-                ForEach(acc.recentEntries.prefix(7), id: \.date) { entry in
+                // 히스토리 — 오늘 PENDING 카드로 이미 표시한 경우 첫 항목 제외
+                let historyEntries = todayPending
+                    ? Array(acc.recentEntries.dropFirst().prefix(7))
+                    : Array(acc.recentEntries.prefix(7))
+                ForEach(historyEntries, id: \.date) { entry in
                     moodLogRow(entry)
                 }
             } else {
@@ -130,11 +142,34 @@ struct StatsView: View {
                 }
             }
         } header: {
-            Text("AI 시장 방향 적중률")
+            Text("코스피 방향 선행 신호")
         } footer: {
-            Text("미국 지수·달러 지표로 코스피 방향을 예측하고 실제 결과와 비교해요. 장 전 조회 시 \"대기\"로 표시되고 당일 장 마감 후 재조회하면 자동으로 채점돼요.")
+            Text("나스닥·S&P500·EWY 등 미국 지수와 달러 지표 가중합으로 당일 코스피 방향을 예측해요. 아침에 확인하면 오늘 장 방향을 미리 가늠할 수 있고, 장 마감 후 재조회하면 자동으로 채점돼요.")
                 .font(.caption2)
         }
+    }
+
+    private func todayPredictionCard(_ direction: String) -> some View {
+        let (label, color, icon): (String, Color, String) = switch direction {
+            case "BULLISH": ("강세 예상 ↑", Color.red,       "arrow.up.circle.fill")
+            case "BEARISH": ("약세 예상 ↓", Color.blue,      "arrow.down.circle.fill")
+            default:        ("보합 예상",   Color.secondary,  "minus.circle.fill")
+        }
+        return HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("오늘 코스피")
+                    .font(.caption).foregroundColor(.secondary)
+                Text(label)
+                    .font(.headline).foregroundColor(color)
+            }
+            Spacer()
+            Text("미국 지수·달러 기반")
+                .font(.caption2).foregroundColor(.secondary)
+        }
+        .padding(.vertical, 4)
     }
 
     private func moodLogRow(_ entry: MoodLogEntry) -> some View {
