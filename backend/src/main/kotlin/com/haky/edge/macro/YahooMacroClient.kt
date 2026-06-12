@@ -36,11 +36,14 @@ class YahooMacroClient {
     }
 
     private suspend fun fetchAll(): List<MacroIndicator> = listOfNotNull(
-        runCatching { fetchOne("^TNX",       "tnx", "미10년물") }.getOrNull(),
-        runCatching { fetchOne("DX-Y.NYB",   "dxy", "달러인덱스") }.getOrNull(),
-        runCatching { fetchOne("EWY",        "ewy", "EWY 한국ETF") }.getOrNull(),
-        runCatching { fetchOne("^SOX",       "sox", "필라델피아반도체") }.getOrNull(),
-        runCatching { fetchOne("^RUT",       "rut", "러셀2000") }.getOrNull(),
+        runCatching { fetchOne("^TNX",       "tnx",    "미10년물") }.getOrNull(),
+        runCatching { fetchOne("DX-Y.NYB",   "dxy",    "달러인덱스") }.getOrNull(),
+        runCatching { fetchOne("USDJPY=X",   "usdjpy", "엔/달러") }.getOrNull(),
+        runCatching { fetchOne("EWY",        "ewy",    "EWY 한국ETF") }.getOrNull(),
+        runCatching { fetchOne("^SOX",       "sox",    "필라델피아반도체") }.getOrNull(),
+        runCatching { fetchOne("^RUT",       "rut",    "러셀2000") }.getOrNull(),
+        runCatching { fetchOne("^N225",      "nikkei", "닛케이225") }.getOrNull(),
+        runCatching { fetchOne("^VIX",       "vix",    "VIX 공포지수") }.getOrNull(),
     )
 
     private suspend fun fetchOne(symbol: String, key: String, label: String): MacroIndicator {

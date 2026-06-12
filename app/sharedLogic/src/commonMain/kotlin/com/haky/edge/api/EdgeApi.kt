@@ -96,6 +96,14 @@ class EdgeApi(
             parameter("days", days)
         }.body()
 
+    /** 여러 종목 수급 일괄 조회(HTTP 1회). 반환: code → flows 맵. 실패 종목은 키 없음. */
+    @Throws(Exception::class)
+    suspend fun getInvestorBatch(codes: List<String>, days: Int = 3): Map<String, List<InvestorFlow>> =
+        client.get("$baseUrl/investor/batch") {
+            parameter("codes", codes.joinToString(","))
+            parameter("days", days)
+        }.body()
+
     /**
      * 종목 관련 최신 뉴스 헤드라인. stockName 은 WatchItem.name 을 그대로 넘긴다.
      * 백엔드가 네이버 검색 API 로 최신순 N건을 가져온다(HTML 태그 제거 후).
@@ -227,6 +235,14 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getDartDisclosures(code: String, days: Int = 7): List<DartDisclosure> =
         client.get("$baseUrl/dart/$code") {
+            parameter("days", days)
+        }.body()
+
+    /** 여러 종목 공시 일괄 조회(HTTP 1회). 반환: 전 종목 공시 통합 목록(최신순). */
+    @Throws(Exception::class)
+    suspend fun getDartBatch(codes: List<String>, days: Int = 7): List<DartDisclosure> =
+        client.get("$baseUrl/dart/batch") {
+            parameter("codes", codes.joinToString(","))
             parameter("days", days)
         }.body()
 

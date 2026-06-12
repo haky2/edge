@@ -319,6 +319,9 @@ class DartClient(private val apiKey: String) {
     // ConcurrentHashMap은 null value를 넣을 수 없어 Optional로 감싼다.
     private data class Optional<T>(val value: T?)
 
+    /** 서버 시작 시 미리 호출해 첫 번째 /dart 요청의 ZIP 다운로드 지연을 없앤다. */
+    suspend fun warmup() { ensureCorpCodeMap() }
+
     // corpCode 맵을 최초 1회만 다운로드·파싱한다(Mutex로 중복 다운로드 방지).
     private suspend fun ensureCorpCodeMap() {
         if (corpCodeMap != null) return

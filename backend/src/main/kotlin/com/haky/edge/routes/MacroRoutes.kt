@@ -22,12 +22,11 @@ fun Route.macroRoutes(
     yahoo: YahooMacroClient,
 ) {
     // GET /macro — 브리핑 "시장 지표" 섹션용.
-    // KIS: 코스피·코스닥·원/달러·다우·나스닥·S&P500·WTI유가·KODEX200시간외. Yahoo: 구리·미10년물·달러인덱스·EWY. CNN: 공포탐욕지수. ECOS: 국고채3년.
+    // KIS: 코스피·코스닥·원/달러·다우·나스닥·S&P500·WTI유가. Yahoo: 구리·미10년물·달러인덱스·EWY. CNN: 공포탐욕지수. ECOS: 국고채3년.
     // 개별 지표 실패는 무시되고 성공분만 반환(섹션 통째로 죽지 않게).
     get("/macro") {
         val kisItems = kis.getMacroIndicators()
-        val kodexOt = runCatching { kis.getKodexOvertimeSignal() }.getOrNull()
-        val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get(), kodexOt) + yahoo.get()
+        val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get()) + yahoo.get()
         call.respond((kisItems + extras).sortedBy { MACRO_DISPLAY_ORDER.indexOf(it.key).takeIf { i -> i >= 0 } ?: Int.MAX_VALUE })
     }
 }
@@ -63,14 +62,14 @@ private fun String?.toCodeList(): List<String> =
         ?.distinct()
         ?: emptyList()
 
-// 시장 지표 표시 순서: 한국 → 미국 지수 → 금리/환율 → 원자재 → 심리.
+// 시장 지표 표시 순서: 한국 → 미국 지수 → 아시아 → 금리/환율 → 원자재 → 심리.
 private val MACRO_DISPLAY_ORDER = listOf(
-    "kodex200_ot",  // 한국
-    "kospi", "kosdaq", "usdkrw", "ewy",
-    "nasdaq", "sox", "sp500", "dow", "rut",  // 미국 지수
-    "tnx", "dxy", "rate3y",                  // 금리/환율
-    "crude", "copper",                       // 원자재
-    "fear_greed",                            // 심리
+    "kospi", "kosdaq", "usdkrw", "ewy",          // 한국
+    "nasdaq", "sox", "sp500", "dow", "rut",       // 미국 지수
+    "nikkei",                                      // 아시아
+    "tnx", "dxy", "usdjpy", "rate3y",             // 금리/환율
+    "crude", "copper",                             // 원자재
+    "vix", "fear_greed",                           // 심리
 )
 
 // "code1:avg1:qty1,code2:avg2:qty2" → Map<code, HoldingPosition>

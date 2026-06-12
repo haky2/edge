@@ -50,6 +50,7 @@ import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
+import kotlinx.coroutines.launch
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.ratelimit.rateLimit
 import io.ktor.server.plugins.statuspages.StatusPages
@@ -131,6 +132,13 @@ fun Application.module() {
     val moodLog = MarketMoodLogService()
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, moodLog)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
+
+    // 서버 시작 직후 백그라운드로 KIS 토큰 + DART corpCode 맵을 미리 로드한다.
+    // 첫 번째 실제 요청이 올 때 이 두 초기화 작업(각 수 초)을 기다리지 않아도 되게 함.
+    launch {
+        runCatching { kis.warmup() }   // KIS 접근토큰 선발급
+        runCatching { dart.warmup() }  // DART corpCode.xml 다운로드·파싱
+    }
 
     routing {
         // 헬스체크는 인증·레이트리밋 밖에 둔다(Cloud Run 프로브가 토큰 없이·무제한으로 칠 수 있게).

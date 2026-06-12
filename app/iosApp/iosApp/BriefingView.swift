@@ -1040,44 +1040,27 @@ struct BriefingView: View {
     }
 
     private func buildDart(codes: [String], allItems: [WatchItem]) async {
-        // 관심종목 전체 /dart 병렬 호출 → 최신순 정렬, 최대 10건
-        var result: [DartItem] = []
-        await withTaskGroup(of: [DartItem].self) { group in
-            for code in codes {
-                group.addTask {
-                    guard let disclosures = try? await self.api.getDartDisclosures(code: code, days: 7) else {
-                        return []
-                    }
-                    return disclosures.map { d in
-                        DartItem(corpName: d.corpName, reportName: d.reportName, date: d.date, url: d.url)
-                    }
-                }
-            }
-            for await items in group { result.append(contentsOf: items) }
-        }
-        dartItems = Array(result.sorted { $0.date > $1.date }.prefix(10))
+        guard let disclosures = try? await api.getDartBatch(codes: codes, days: 7) else { return }
+        dartItems = Array(disclosures.prefix(10).map { d in
+            DartItem(corpName: d.corpName, reportName: d.reportName, date: d.date, url: d.url)
+        })
     }
 
     private func buildSupply(allItems: [WatchItem], quoteMap: [String: Quote]) async {
+        let codes = allItems.map { $0.code }
+        guard let flowMap = try? await api.getInvestorBatch(codes: codes, days: 3) else { return }
         var result: [SupplyRow] = []
-        await withTaskGroup(of: SupplyRow?.self) { group in
-            for item in allItems {
-                group.addTask {
-                    guard let flows = try? await self.api.getInvestorFlow(code: item.code, days: 3),
-                          flows.count >= 3 else { return nil }
-                    var labels: [String] = []
-                    if flows[0].foreign > 0 && flows[1].foreign > 0 && flows[2].foreign > 0 {
-                        labels.append("외인 3일↑")
-                    }
-                    if flows[0].institution > 0 && flows[1].institution > 0 && flows[2].institution > 0 {
-                        labels.append("기관 3일↑")
-                    }
-                    guard !labels.isEmpty else { return nil }
-                    return SupplyRow(item: item, quote: quoteMap[item.code], labels: labels)
-                }
+        for item in allItems {
+            guard let flows = flowMap[item.code], flows.count >= 3 else { continue }
+            var labels: [String] = []
+            if flows[0].foreign > 0 && flows[1].foreign > 0 && flows[2].foreign > 0 {
+                labels.append("외인 3일↑")
             }
-            for await row in group {
-                if let row { result.append(row) }
+            if flows[0].institution > 0 && flows[1].institution > 0 && flows[2].institution > 0 {
+                labels.append("기관 3일↑")
+            }
+            if !labels.isEmpty {
+                result.append(SupplyRow(item: item, quote: quoteMap[item.code], labels: labels))
             }
         }
         supplyRows = result.sorted { $0.item.name < $1.item.name }

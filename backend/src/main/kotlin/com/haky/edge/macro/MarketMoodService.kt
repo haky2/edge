@@ -57,8 +57,7 @@ class MarketMoodService(
     suspend fun get(mode: AnalysisMode = AnalysisMode.DEFENSIVE, force: Boolean = false): MarketMood {
         val today = LocalDate.now().toString()
         val kisIndicators = kis.getMacroIndicators()
-        val kodexOt = runCatching { kis.getKodexOvertimeSignal() }.getOrNull()
-        val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get(), kodexOt) + yahoo.get()
+        val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get()) + yahoo.get()
         val indicators = kisIndicators + extras
 
         // 예측 방향 계산 + 로그 기록 (장 마감 후 재조회 시 KOSPI 실제값으로 자동 채점됨)

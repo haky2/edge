@@ -78,7 +78,7 @@ class MacroImpactService(
     ): MacroImpact {
         val today = LocalDate.now().toString()
         val kisIndicators = kis.getMacroIndicators()
-        // copper·rate3y는 방향 계산 대상(buildStockImpact). fear_greed·tnx·dxy는 맥락용(방향 계산 제외).
+        // usdjpy·copper·rate3y는 방향 계산 대상(buildStockImpact). fear_greed·tnx·dxy·vix·nikkei는 맥락용(방향 계산 제외).
         val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get()) + yahoo.get()
         val indicators = kisIndicators + extras
 
@@ -350,6 +350,7 @@ $enumList
             MacroGroup.SEMICONDUCTOR to listOf(
                 Sensitivity("usdkrw", +1, "원화 약세 → 수출 채산성 개선"),
                 Sensitivity("nasdaq", +1, "미국 빅테크·AI 반도체와 주가 동조"),
+                Sensitivity("usdjpy", -1, "엔화 약세 → 키옥시아·도시바 등 일본 경쟁사 가격 경쟁력 강화 → 부담"),
                 Sensitivity("crude",  -1, "유가 상승 → 인플레·금리 우려 → 성장주 부담"),
                 Sensitivity("rate3y", -1, "금리 상승 → 성장주 밸류에이션 할인율 확대"),
             ),
@@ -364,6 +365,7 @@ $enumList
             MacroGroup.POWER_EQUIP to listOf(
                 Sensitivity("usdkrw", +1, "변압기 등 수출 비중 → 원화 약세 우호"),
                 Sensitivity("nasdaq", +1, "미국 데이터센터·전력 인프라 투자 테마 연동"),
+                Sensitivity("usdjpy", -1, "엔화 약세 → 히타치 에너지·미쓰비시 전기 등 일본 전력기기 경쟁사 가격 경쟁력 강화"),
                 Sensitivity("crude",  +1, "유가 상승 → 에너지 전환·신재생 투자 가속화"),
                 Sensitivity("copper", -1, "구리 상승 → 변압기·전선 주요 원재료 원가 부담"),
                 Sensitivity("rate3y", -1, "금리 상승 → 인프라 투자 할인율 상승, 밸류에이션 부담"),
@@ -375,11 +377,13 @@ $enumList
             ),
             MacroGroup.ELECTRONICS to listOf(
                 Sensitivity("usdkrw", +1, "수출 비중 높아 원화 약세 우호(수입 부품이 일부 상쇄)"),
+                Sensitivity("usdjpy", -1, "엔화 약세 → 소니·파나소닉 등 일본 가전·전자 경쟁사 가격 경쟁력 강화"),
                 Sensitivity("crude",  -1, "유가 상승 → 물류·부품 운반비 원가 부담"),
                 Sensitivity("copper", -1, "구리 상승 → PCB·배선 부품 원가 부담"),
             ),
             MacroGroup.AUTOMOBILE to listOf(
                 Sensitivity("usdkrw", +1, "수출 비중 → 원화 약세 시 해외 매출 환산 이익 증가"),
+                Sensitivity("usdjpy", -1, "엔화 약세 → 토요타·혼다 등 일본차 가격 경쟁력 강화 → 현대·기아 점유율 압박"),
                 Sensitivity("crude",  -1, "유가 상승 → 소비자 유지비 부담 → 자동차 수요 심리 위축"),
                 Sensitivity("copper", -1, "구리 상승 → 차량 배선·전장부품 원재료 원가 부담"),
                 Sensitivity("rate3y", -1, "금리 상승 → 자동차 할부 이자 증가 → 구매 수요 감소"),
