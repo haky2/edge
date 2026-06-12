@@ -46,6 +46,10 @@ struct BriefingView: View {
     @State private var earningsLoading = false
     @State private var earningsItems: [EarningsEntry] = []
 
+    // 거시 이벤트 캘린더
+    @State private var eventsLoading = false
+    @State private var eventItems: [MarketEvent] = []
+
     // 오늘 시장 분위기 (Claude 코멘트)
     @State private var moodLoading = false
     @State private var moodComment = ""
@@ -68,12 +72,14 @@ struct BriefingView: View {
     // 접기/펼치기 상태 (기본 접힘)
     @State private var dartExpanded = false
     @State private var earningsExpanded = false
+    @State private var eventsExpanded = false
     @State private var impactSectionExpanded = false  // 내 종목 영향: 섹션 전체 접기
     @State private var impactExpanded = false        // 내 종목 영향: AI 코멘트(프로즈) 접기
     @State private var impactWatchExpanded = false   // 내 종목 영향: 관심 종목 목록 접기
     @State private var marketExpanded = false
+    @State private var moodSignalExpanded = false
     @State private var sectorExpanded = false
-    @State private var sectorBriefingExpanded = false // 섹터 분석: AI 코멘트(프로즈) 접기
+    @State private var sectorBriefingExpanded = false // 섹터 분석 AI 코멘트 + 주목 종목 접기
 
     // 하이라이트·보유현황용: 쿼츠 로드 후 저장 (spotlight NavigationLink에서도 재사용)
     @State private var allItemsLoaded: [WatchItem] = []
@@ -91,7 +97,7 @@ struct BriefingView: View {
             .navigationTitle("브리핑")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    let isLoading = loading || supplyLoading || dartLoading || macroLoading || moodLoading || impactLoading || earningsLoading || sectorLoading || sectorBriefingLoading
+                    let isLoading = loading || supplyLoading || dartLoading || macroLoading || moodLoading || impactLoading || earningsLoading || eventsLoading || sectorLoading || sectorBriefingLoading
                     if isLoading {
                         ProgressView().scaleEffect(0.8)
                     } else {
@@ -155,6 +161,7 @@ struct BriefingView: View {
                 marketSection
                 sectorSection
                 sectorBriefingSection
+                eventCalendarSection
                 earningsSection
             }
         }
@@ -204,7 +211,16 @@ struct BriefingView: View {
     @ViewBuilder
     private var moodSignalSection: some View {
         Section {
-            if let acc = moodAccuracy {
+            Button { withAnimation { moodSignalExpanded.toggle() } } label: {
+                HStack {
+                    Text("코스피 방향 선행 신호").font(.headline)
+                    Spacer()
+                    Image(systemName: moodSignalExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+            .foregroundColor(.primary)
+            if let acc = moodAccuracy, moodSignalExpanded {
                 let todayEntry = acc.recentEntries.first
                 let todayPending = todayEntry != nil && todayEntry?.isCorrect == nil
 
@@ -215,12 +231,9 @@ struct BriefingView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                 } else {
-                    // 오늘 예측 카드 — PENDING(장 전·장 중)일 때만 표시
                     if todayPending, let entry = todayEntry {
                         moodTodayCard(entry.direction)
                     }
-
-                    // 적중률 한 줄 요약
                     if acc.total > 0 {
                         let rate = Int(Double(acc.correct) / Double(acc.total) * 100)
                         HStack {
@@ -233,8 +246,6 @@ struct BriefingView: View {
                             }
                         }
                     }
-
-                    // 최근 5일 히스토리
                     let historyEntries = todayPending
                         ? Array(acc.recentEntries.dropFirst().prefix(5))
                         : Array(acc.recentEntries.prefix(5))
@@ -242,17 +253,17 @@ struct BriefingView: View {
                         moodHistoryRow(entry)
                     }
                 }
-            } else {
+            } else if moodAccuracy == nil {
                 HStack {
                     ProgressView().scaleEffect(0.8)
                     Text("불러오는 중…").font(.footnote).foregroundColor(.secondary)
                 }
             }
-        } header: {
-            Text("코스피 방향 선행 신호")
         } footer: {
-            Text("미장 마감(오전 5시) 이후 확인 적기. 장 마감(오후 3:30) 후 자동 채점돼요.")
-                .font(.caption2)
+            if moodSignalExpanded {
+                Text("미장 마감(오전 5시) 이후 확인 적기. 장 마감(오후 3:30) 후 자동 채점돼요.")
+                    .font(.caption2)
+            }
         }
     }
 
@@ -331,7 +342,7 @@ struct BriefingView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("시장 지표").font(.headline)
-                        Text("전일 대비 · 수초 폴링").font(.caption2).foregroundColor(.secondary)
+                        Text("전일 대비").font(.caption2).foregroundColor(.secondary)
                     }
                     Spacer()
                     Image(systemName: marketExpanded ? "chevron.up" : "chevron.down")
@@ -496,7 +507,7 @@ struct BriefingView: View {
 
     @ViewBuilder
     private var sectorBriefingSection: some View {
-        Section("섹터 분석") {
+        Section {
             if sectorBriefingLoading {
                 HStack {
                     ProgressView().scaleEffect(0.8)
@@ -518,25 +529,28 @@ struct BriefingView: View {
                     )
                     if sectorBriefingExpanded { proseBlock(sectorBriefingComment) }
                 }
-            }
-        }
-        // 주목 종목 — 코멘트 준비됐을 때만 표시
-        if !sectorBriefingLoading && !sectorSpotlight.isEmpty {
-            Section("오늘 주목 종목") {
-                ForEach(sectorSpotlight, id: \.code) { stock in
-                    let item = allItemsLoaded.first { $0.code == stock.code }
-                    let quote = quoteMapLoaded[stock.code]
-                    if let item {
-                        NavigationLink {
-                            StockDetailView(item: item, quote: quote, api: api)
-                        } label: {
-                            spotlightRow(stock, quote: quote)
+                // 주목 종목 — 같은 섹션(카드) 안의 별도 List 행. VStack 밖이라야 NavigationLink 단일 발화.
+                if sectorBriefingExpanded && !sectorSpotlight.isEmpty {
+                    Text("오늘 주목 종목")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.secondary)
+                    ForEach(sectorSpotlight, id: \.code) { stock in
+                        let item = allItemsLoaded.first { $0.code == stock.code }
+                        let quote = quoteMapLoaded[stock.code]
+                        if let item {
+                            NavigationLink {
+                                StockDetailView(item: item, quote: quote, api: api)
+                            } label: {
+                                spotlightRow(stock, quote: quote)
+                            }
+                        } else {
+                            spotlightRow(stock, quote: nil)
                         }
-                    } else {
-                        spotlightRow(stock, quote: nil)
                     }
                 }
             }
+        } header: {
+            Text("섹터 분석")
         }
     }
 
@@ -619,6 +633,91 @@ struct BriefingView: View {
         case 14..<30:   return .orange
         default:        return .secondary
         }
+    }
+
+    // MARK: - 섹션: 거시 이벤트 캘린더
+
+    @ViewBuilder
+    private var eventCalendarSection: some View {
+        Section {
+            Button { withAnimation { eventsExpanded.toggle() } } label: {
+                HStack {
+                    Text("이벤트 캘린더 (30일)").font(.headline)
+                    Spacer()
+                    Image(systemName: eventsExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+            .foregroundColor(.primary)
+            if eventsLoading {
+                HStack { ProgressView().scaleEffect(0.8); Text("이벤트 일정 수집 중…").font(.footnote).foregroundColor(.secondary) }
+            } else if eventsExpanded {
+                if eventItems.isEmpty {
+                    Text("이번 달 주요 이벤트 일정이 없어요.")
+                        .font(.footnote).foregroundColor(.secondary)
+                } else {
+                    ForEach(Array(eventItems.enumerated()), id: \.offset) { _, event in eventRow(event) }
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    eventLegendRow("호재", color: .teal,      desc: "결과에 따라 주가 상승 기대")
+                    eventLegendRow("주의", color: .orange,    desc: "결과에 따라 주가 크게 흔들릴 수 있음")
+                    eventLegendRow("중립", color: .secondary, desc: "시장 방향과 무관")
+                }
+                .font(.caption2)
+                .padding(.top, 4)
+            }
+        }
+    }
+
+    private func eventRow(_ e: MarketEvent) -> some View {
+        let (accentColor, badgeLabel): (Color, String) = switch e.category {
+            case "호재":  (.teal,      "호재")
+            case "주의":  (.orange,    "주의")
+            default:      (.secondary, "중립")
+        }
+        return HStack(alignment: .top, spacing: 10) {
+            VStack(spacing: 2) {
+                Text(eventDateLabel(e.date))
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 44, alignment: .center)
+                Text(badgeLabel)
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(accentColor.opacity(0.15))
+                    .foregroundColor(accentColor)
+                    .clipShape(Capsule())
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Text(e.title).font(.body)
+                    if e.confirmed {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption2).foregroundColor(.teal)
+                    }
+                }
+                Text(e.impact).font(.caption2).foregroundColor(.secondary)
+            }
+        }
+        .padding(.vertical, 3)
+    }
+
+    private func eventLegendRow(_ label: String, color: Color, desc: String) -> some View {
+        HStack(spacing: 5) {
+            Text(label)
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 5).padding(.vertical, 1)
+                .background(color.opacity(0.15))
+                .foregroundColor(color)
+                .clipShape(Capsule())
+            Text(desc).foregroundColor(.secondary)
+        }
+    }
+
+    private func eventDateLabel(_ dateStr: String) -> String {
+        let parts = dateStr.split(separator: "-")
+        guard parts.count == 3 else { return dateStr }
+        return "\(parts[1])/\(parts[2])"
     }
 
     // MARK: - 섹션: 매크로 영향 (내 종목)
@@ -1019,6 +1118,7 @@ struct BriefingView: View {
         moodLoading = true
         impactLoading = true
         earningsLoading = true
+        eventsLoading = true
         sectorLoading = true
         sectorBriefingLoading = true
         errorText = nil
@@ -1032,6 +1132,7 @@ struct BriefingView: View {
         impactWatch = []
         impactGeneratedAt = ""
         earningsItems = []
+        eventItems = []
         sectorItems = []
         sectorBriefingComment = ""
         sectorSpotlight = []
@@ -1046,6 +1147,7 @@ struct BriefingView: View {
         async let moodAccuracyTask: Void    = loadMoodAccuracy()
         async let sectorTask: Void          = buildSectors()
         async let earningsTask: Void        = buildEarnings(codes: codes)
+        async let eventsTask: Void          = buildEvents()
         async let impactTask: Void          = buildImpact(allItems: allItems)
         async let sectorBriefingTask: Void  = buildSectorBriefing(codes: codes)
 
@@ -1057,7 +1159,7 @@ struct BriefingView: View {
             loading = false
             supplyLoading = false
             dartLoading = false
-            _ = await (macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, impactTask, sectorBriefingTask)
+            _ = await (macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, eventsTask, impactTask, sectorBriefingTask)
             return
         }
         let quoteMap = Dictionary(uniqueKeysWithValues: quotes.map { ($0.code, $0) })
@@ -1073,7 +1175,7 @@ struct BriefingView: View {
         // supply·dart·macro·impact·sectorBriefing은 섹션 내부 스피너 유지하며 병렬 진행
         async let supplyTask: Void = buildSupply(allItems: allItems, quoteMap: quoteMap)
         async let dartTask: Void   = buildDart(codes: codes, allItems: allItems)
-        _ = await (supplyTask, dartTask, macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, impactTask, sectorBriefingTask)
+        _ = await (supplyTask, dartTask, macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, eventsTask, impactTask, sectorBriefingTask)
 
         supplyLoading = false
         dartLoading = false
@@ -1124,6 +1226,19 @@ struct BriefingView: View {
         defer { earningsLoading = false }
         guard let items = try? await api.getEarnings(codes: codes) else { return }
         earningsItems = items
+    }
+
+    private func buildEvents() async {
+        defer { eventsLoading = false }
+        guard let items = try? await api.getEvents(days: 30) else { return }
+        if items.isEmpty {
+            // 캐시가 없으면 백그라운드 동기화 후 재조회
+            _ = try? await api.syncEvents()
+            guard let synced = try? await api.getEvents(days: 30) else { return }
+            eventItems = synced
+        } else {
+            eventItems = items
+        }
     }
 
     private func buildImpact(allItems: [WatchItem], force: Bool = false) async {

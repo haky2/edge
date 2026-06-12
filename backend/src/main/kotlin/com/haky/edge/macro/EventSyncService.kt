@@ -79,8 +79,8 @@ class EventSyncService(private val claude: ClaudeClient) {
                     events.add(MarketEvent(
                         date = d.toString(),
                         title = "선물옵션 동시만기일",
-                        category = "고비",
-                        impact = "선물·옵션 포지션 청산 집중, 장 후반 변동성 확대 가능",
+                        category = "주의",
+                        impact = "선물·옵션 만기일이라 기관들이 포지션을 청산하면서 장 후반에 주가가 크게 흔들릴 수 있어요.",
                         confirmed = true,
                     ))
                 }
@@ -101,8 +101,8 @@ class EventSyncService(private val claude: ClaudeClient) {
         // max_uses=1, maxTokens=400 으로 최소 토큰 사용 (30k/min rate limit 대응)
         // 출력을 "날짜: 이벤트" 형식 짧은 목록으로만 요청해 Stage 2 입력 토큰 절감
         val gathered = claude.completeWithWebSearch(
-            systemPrompt = "웹 검색으로 이벤트 일정을 찾아 '날짜: 이벤트명(고비 또는 온기)' 형식 목록만 반환하세요. 불필요한 설명 없이 목록만.",
-            userFacts = "$from ~ $until 한국·미국 증시 주요 이벤트(CPI·PPI·FOMC·한은·일은·MSCI·주요실적) 날짜 목록:",
+            systemPrompt = "웹 검색으로 이벤트 일정을 찾아 '날짜: 이벤트명(호재 또는 주의 또는 중립)' 형식 목록만 반환하세요. 불필요한 설명 없이 목록만.",
+            userFacts = "$from ~ $until 한국·미국 증시 주요 이벤트(CPI·PPI·FOMC·한은·일은·MSCI·주요실적·휴장일) 날짜 목록:",
             maxTokens = 400,
             maxSearchUses = 1,
         )
@@ -110,11 +110,17 @@ class EventSyncService(private val claude: ClaudeClient) {
 
         // 2단계: 짧은 목록(~400자)에서 JSON 구조 추출 (토큰 최소)
         val jsonText = claude.complete(
-            systemPrompt = "아래 목록에서 날짜가 명확한 이벤트만 JSON 배열만 반환하세요. " +
-                """형식: [{"date":"YYYY-MM-DD","title":"이벤트명","category":"고비 또는 온기","impact":"한 줄 영향","source":null}] """ +
-                "JSON만, 다른 텍스트 없음.",
+            systemPrompt = """아래 목록에서 날짜가 명확한 이벤트만 JSON 배열로 반환하세요.
+category 규칙:
+- "호재": 결과가 좋으면 주가에 긍정적인 이벤트 (물가 둔화, 고용 개선 등)
+- "주의": 결과에 따라 주가가 크게 흔들릴 수 있는 이벤트 (금리 결정, 무역협상 등)
+- "중립": 방향과 무관한 이벤트 (휴장일, 지수 정기변경 등)
+impact 규칙: 주식 투자에 익숙하지 않은 일반인도 이해할 수 있도록 구어체로 작성.
+'~하면 주가가 오를 수 있어요 / 내릴 수 있어요' 형식으로 조건부 시나리오를 포함해 2문장 이내.
+형식: [{"date":"YYYY-MM-DD","title":"이벤트명","category":"호재 또는 주의 또는 중립","impact":"설명","source":null}]
+JSON만, 다른 텍스트 없음.""",
             userFacts = gathered.text.take(1500),
-            maxTokens = 1200,
+            maxTokens = 1500,
         )
         return parseEventsJson(jsonText)
     }

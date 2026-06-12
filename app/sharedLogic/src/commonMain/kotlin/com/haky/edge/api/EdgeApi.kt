@@ -20,6 +20,7 @@ import com.haky.edge.model.SectorIndex
 import com.haky.edge.model.ShortSellingSummary
 import com.haky.edge.model.StockInfo
 import com.haky.edge.model.TargetPriceInfo
+import com.haky.edge.model.MarketEvent
 import com.haky.edge.model.MoodAccuracyReport
 import com.haky.edge.model.ValuationBand
 import io.ktor.client.HttpClient
@@ -29,6 +30,7 @@ import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
+import io.ktor.client.request.post
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
@@ -314,6 +316,19 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getMoodAccuracy(): MoodAccuracyReport =
         client.get("$baseUrl/market-mood-log").body()
+
+    /** 향후 N일 거시 이벤트 목록(CPI·FOMC·한은·MSCI·동시만기일 등). 기본 30일. */
+    @Throws(Exception::class)
+    suspend fun getEvents(days: Int = 30): List<MarketEvent> =
+        client.get("$baseUrl/events") {
+            parameter("days", days)
+        }.body()
+
+    /** 이벤트 캘린더 동기화(Claude 웹검색). 캐시 없을 때 자동 호출. */
+    @Throws(Exception::class)
+    suspend fun syncEvents() {
+        client.post("$baseUrl/events/sync")
+    }
 
     /**
      * 두 종목 비교 코멘트. 핵심 지표(현재가·52주위치·PER·수급·밸류에이션)를 나란히 수집하고
