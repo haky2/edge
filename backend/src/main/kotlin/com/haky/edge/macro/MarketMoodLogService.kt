@@ -29,7 +29,7 @@ data class MoodAccuracyReport(
  * 저장: .data/market_mood_log.json (`.cache/` 와 달리 삭제 대상 아님)
  */
 class MarketMoodLogService {
-    private val dataDir = File(".data").also { it.mkdirs() }
+    private val dataDir = File(System.getenv("DATA_DIR") ?: ".data").also { it.mkdirs() }
     private val logFile = File(dataDir, "market_mood_log.json")
     private val json = Json { ignoreUnknownKeys = true }
     private val listSerializer = ListSerializer(MoodLogEntry.serializer())
