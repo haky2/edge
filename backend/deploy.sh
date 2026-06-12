@@ -39,3 +39,40 @@ URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$RE
 echo "→ 배포 완료: $URL"
 echo "→ 헬스체크:"
 curl -s "$URL/health" && echo
+
+# Cloud Scheduler 잡 동기화 (없으면 create, 있으면 update)
+echo "→ Cloud Scheduler 잡 동기화..."
+EDGE_TOKEN=$(gcloud secrets versions access latest --secret=EDGE_API_TOKEN --project="$PROJECT")
+
+scheduler_upsert() {
+  local JOB=$1; shift
+  gcloud scheduler jobs create http "$JOB" "$@" --project="$PROJECT" --location="$REGION" 2>/dev/null \
+    || gcloud scheduler jobs update http "$JOB" "$@" --project="$PROJECT" --location="$REGION"
+}
+
+# mood-log-morning: 매주 월~금 오전 5:00 KST — 코스피 방향 예측 기록
+scheduler_upsert mood-log-morning \
+  --schedule="0 5 * * 1-5" --time-zone="Asia/Seoul" \
+  --uri="$URL/market-mood?mode=defensive" --http-method=GET \
+  --headers="X-Edge-Token=${EDGE_TOKEN}" \
+  --attempt-deadline=120s \
+  --description="매주 월~금 오전 5시 KST 코스피 방향 예측 기록 (미장 마감 직후)"
+
+# mood-log-afternoon: 매주 월~금 오후 3:35 KST — 코스피 마감 후 자동 채점
+scheduler_upsert mood-log-afternoon \
+  --schedule="35 15 * * 1-5" --time-zone="Asia/Seoul" \
+  --uri="$URL/market-mood?mode=defensive" --http-method=GET \
+  --headers="X-Edge-Token=${EDGE_TOKEN}" \
+  --attempt-deadline=120s \
+  --description="매주 월~금 오후 3:35 KST 코스피 마감 후 자동 채점"
+
+# events-sync: 매주 월요일 오전 6:00 KST — 거시 이벤트 캘린더 자동 동기화
+scheduler_upsert events-sync \
+  --schedule="0 6 * * 1" --time-zone="Asia/Seoul" \
+  --uri="$URL/events/sync" --http-method=POST \
+  --headers="X-Edge-Token=${EDGE_TOKEN},Content-Type=application/json" \
+  --message-body="{}" \
+  --attempt-deadline=300s \
+  --description="매주 월요일 오전 6시 KST 거시 이벤트 캘린더 자동 동기화 (Claude 웹검색, 6주치)"
+
+echo "→ Scheduler 잡 동기화 완료"
