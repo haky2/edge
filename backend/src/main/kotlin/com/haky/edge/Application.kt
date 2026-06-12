@@ -17,6 +17,7 @@ import com.haky.edge.macro.KrxShortSellingClient
 import com.haky.edge.macro.MacroImpactService
 import com.haky.edge.macro.MarketMoodLogService
 import com.haky.edge.macro.MarketMoodService
+import com.haky.edge.macro.EventSyncService
 import com.haky.edge.macro.SectorBriefingService
 import com.haky.edge.macro.YahooMacroClient
 import com.haky.edge.master.StockMaster
@@ -26,6 +27,7 @@ import com.haky.edge.news.NewsException
 import com.haky.edge.routes.analysisRoutes
 import com.haky.edge.routes.backtestRoutes
 import com.haky.edge.routes.comparisonRoutes
+import com.haky.edge.routes.eventRoutes
 import com.haky.edge.routes.chartRoutes
 import com.haky.edge.routes.dartRoutes
 import com.haky.edge.routes.earningsRoutes
@@ -134,6 +136,7 @@ fun Application.module() {
     val moodLog = MarketMoodLogService()
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, moodLog)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
+    val eventSync = EventSyncService(claude)
 
     // 서버 시작 직후 백그라운드로 KIS 토큰 + DART corpCode 맵을 미리 로드한다.
     // 첫 번째 실제 요청이 올 때 이 두 초기화 작업(각 수 초)을 기다리지 않아도 되게 함.
@@ -167,6 +170,7 @@ fun Application.module() {
             valuationBandRoutes(valuationBand)
             backtestRoutes(backtest)
             comparisonRoutes(comparison)
+            eventRoutes(eventSync)
             webSearchTestRoutes(claude)
         }
     }

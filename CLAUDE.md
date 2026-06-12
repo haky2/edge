@@ -132,6 +132,8 @@
 - [x] **UI/UX 전반 개선 v1** ✅ 슬라이스 1A~4 완료 (커밋 7e3d0bb·cf70c10·6d96e31). 상세화면 재정렬·Swift Charts·공시·브리핑 다이어트·수급배지·도넛·섹터 2층·가독성 개선·데이터 신선도 표시.
 - [ ] **UI/UX 개선 v2** — 1차 이후 누적된 개선 요구사항 정리 후 진행. 별도 슬라이스 계획 필요.
 - (검토 중) 분석 C: Claude 웹검색 도구로 실시간 촉매(예: 인물 방한 일정) 보강 — 검색 건당 별도 과금·지연 증가라 비용 검토 후 결정
+- [x] **거시 이벤트 캘린더 슬라이스 1 — ClaudeClient 웹검색 지원** ✅ `completeWithWebSearch()`: `tools:[web_search_20250305]` + JsonElement 기반 multi-turn 루프(MAX_SEARCH_TURNS=5) + 출처 URL 추출. `WebSearchResult`/`WebSearchSource` 모델. `GET /websearch-test` 검증 라우트. **curl 실호출 검증**: CPI·FOMC·MSCI 일정 텍스트 + 소스 15개↑ 정상 반환. 커밋 add8777.
+- [ ] **거시 이벤트 캘린더 슬라이스 2 — 이벤트 동기화+저장** — `EventSyncService` + `POST /events/sync`(웹검색→구조화 JSON upsert) + `GET /events?days=30`. 계산 가능 이벤트(동시만기일 등) 룰로 고정. Sonnet.
 
 ### Phase 4 — 학습 / 통계
 - [x] **행동 로그 통계 v1** — 관심종목 행동 로그(매수·매도·관심 등록) 집계 → 신호별 승률·내 패턴 통계 화면. Phase 1부터 `action_log`에 데이터 쌓임. ✅ StatsView(신호별 승률·손절익절규율·관심후미매수·사유태그·보유기간·AI적중률)

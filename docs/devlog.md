@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-06-12 — 거시 이벤트 캘린더 슬라이스 1: ClaudeClient 웹검색 지원
+
+**한 일**
+- `ClaudeClient.completeWithWebSearch()`: Anthropic web_search_20250305 서버 도구 지원 추가
+  - 기존 `complete()`는 String 기반 content라 tools 필드 자체가 없었음 → JsonElement 기반 별도 경로로 구현
+  - multi-turn 루프: stop_reason=tool_use 시 assistant 턴 + server_tool_use 별 빈 tool_result 추가 후 재호출
+  - text 블록 수집 + web_search_tool_result 에서 출처 URL 자동 추출
+- `WebSearchResult(text, sources)` / `WebSearchSource(title, url)` 모델 추가
+- `GET /websearch-test` 검증 라우트 → curl 실호출 검증 완료 (CPI·FOMC·MSCI 일정 + 소스 15개)
+
+**배운 점**
+- Anthropic web_search_20250305는 서버 도구(Anthropic이 검색 실행)이나 multi-turn 루프 구조는 클라이언트 도구와 동일. stop_reason=tool_use가 오면 assistant 턴 추가 후 재호출 필요.
+- Kotlin `buildJsonArray { forEach { add() } }` 스코프 함정: forEach 람다 안에선 JsonArrayBuilder.add() 스코프가 사라짐 → for 루프로 대체
+
+**다음 할 일**
+- 슬라이스 2: EventSyncService + POST /events/sync(웹검색→구조화 JSON upsert) + GET /events?days=30
+
+---
+
 ## 2026-06-11 — 앱 아이콘 적용 (summit peak)
 
 **한 일**

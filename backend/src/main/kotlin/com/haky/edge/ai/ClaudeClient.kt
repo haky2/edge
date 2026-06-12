@@ -90,6 +90,7 @@ class ClaudeClient(
         systemPrompt: String,
         userFacts: String,
         maxTokens: Int = 2048,
+        maxSearchUses: Int = 3,
     ): WebSearchResult {
         if (apiKey.isBlank()) throw ClaudeException("ANTHROPIC_API_KEY 설정 필요")
 
@@ -118,6 +119,7 @@ class ClaudeClient(
                     add(buildJsonObject {
                         put("type", "web_search_20250305")
                         put("name", "web_search")
+                        put("max_uses", maxSearchUses)
                     })
                 })
             }
