@@ -41,13 +41,21 @@ class DartClient(private val apiKey: String) {
     private var corpCodeMap: Map<String, String>? = null
     private val mapMutex = Mutex()
 
+    // 공시 30분 캐시. 공시는 장중 언제든 올라올 수 있어 당일 캐시는 너무 길다 → 30분 버킷.
+    // key = "버킷번호|days|code". 버킷번호 = epoch-ms / 1,800,000 (30분마다 자동 무효화).
+    private val disclosureCache = ConcurrentHashMap<String, List<DartDisclosure>>()
+
     /**
-     * 종목코드 기준 최근 [days]일 공시 목록.
+     * 종목코드 기준 최근 [days]일 공시 목록. 30분 캐시 적용.
+     * 동일 제목·날짜 공시(임원 개별 제출 등)는 "(N건)"으로 그룹핑해 1행으로 표시.
      * corpCode 맵이 없으면 DART에서 다운로드 후 캐시한다.
      * 공시가 없으면 빈 리스트 반환(에러 아님).
      */
     suspend fun getDisclosures(stockCode: String, days: Int = 7): List<DartDisclosure> {
         if (apiKey.isBlank()) throw DartException("DART_API_KEY가 설정되지 않았습니다 (.env 확인)")
+
+        val cacheKey = "${System.currentTimeMillis() / 1_800_000}|$days|$stockCode"
+        disclosureCache[cacheKey]?.let { return it }
 
         ensureCorpCodeMap()
         val corpCode = corpCodeMap?.get(stockCode)
@@ -68,14 +76,20 @@ class DartClient(private val apiKey: String) {
             throw DartException("DART list API 오류: ${resp.message} (status=${resp.status})")
         }
 
-        return (resp.list ?: emptyList()).map { item ->
-            DartDisclosure(
-                corpName   = item.corpName,
-                reportName = item.reportName,
-                date       = item.rceptDt,
-                url        = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${item.rceptNo}",
-            )
-        }
+        // 동일 제목·날짜 공시(임원 개별 소유상황 보고 등)를 1행으로 그룹핑. 2건 이상이면 "(N건)" 접미.
+        val disclosures = (resp.list ?: emptyList())
+            .groupBy { "${it.reportName}|${it.rceptDt}" }
+            .map { (_, items) ->
+                val first = items.first()
+                DartDisclosure(
+                    corpName   = first.corpName,
+                    reportName = if (items.size > 1) "${first.reportName} (${items.size}건)" else first.reportName,
+                    date       = first.rceptDt,
+                    url        = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${first.rceptNo}",
+                )
+            }
+        disclosureCache[cacheKey] = disclosures
+        return disclosures
     }
 
     // 당일 실적 일정 캐시. 정기공시 제출 기한은 하루 안에 바뀌지 않으므로 날짜 단위로 캐싱.
