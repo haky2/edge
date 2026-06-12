@@ -13,8 +13,6 @@ struct StatsView: View {
     @State private var positionMap: [String: WatchItem] = [:]  // code → stop/target
     @State private var missedRows: [MissedRow] = []
     @State private var missedLoading = false
-    @State private var moodAccuracy: MoodAccuracyReport? = nil
-
     // 접기/펼치기 상태 (앱 재시작 시 유지)
     @AppStorage("statsRecentExpanded") private var recentExpanded = false
     @AppStorage("statsCodeExpanded")   private var codeExpanded   = false
@@ -24,7 +22,6 @@ struct StatsView: View {
     var body: some View {
         NavigationStack {
             List {
-                moodAccuracySection
                 if entries.isEmpty {
                     Section {
                         emptyPlaceholder
@@ -87,149 +84,6 @@ struct StatsView: View {
             Text(label).font(.caption).foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - 섹션: 코스피 방향 선행 신호
-
-    private var moodAccuracySection: some View {
-        Section {
-            if let acc = moodAccuracy {
-                // todayEntry가 nil이면 todayPending=false로 명시 (nil?.isCorrect==nil 버그 방지)
-                let todayEntry = acc.recentEntries.first
-                let todayPending = todayEntry != nil && todayEntry?.isCorrect == nil
-
-                if acc.recentEntries.isEmpty {
-                    // 기록 없음 — 섹션이 비어 보이지 않도록 안내 셀 표시
-                    Text("브리핑 탭 > 시장 분위기를 조회하면\n기록이 시작돼요.")
-                        .font(.subheadline).foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                } else {
-                    // 오늘 예측 카드 — PENDING(장 전·장 중)일 때만 상단에 띄움
-                    if todayPending, let entry = todayEntry {
-                        todayPredictionCard(entry.direction)
-                    }
-
-                    // 적중률 요약
-                    if acc.total > 0 {
-                        HStack(spacing: 16) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("\(acc.correct)/\(acc.total)회 적중")
-                                    .font(.headline)
-                                let rate = Int(Double(acc.correct) / Double(acc.total) * 100)
-                                Text("\(rate)% 정확도")
-                                    .font(.subheadline)
-                                    .foregroundColor(rate >= 60 ? .red : rate >= 40 ? .orange : .blue)
-                            }
-                            Spacer()
-                            if acc.pending > 0 {
-                                VStack(alignment: .trailing, spacing: 2) {
-                                    Text("대기 \(acc.pending)회")
-                                        .font(.caption).foregroundColor(.secondary)
-                                    Text("장 마감 후 자동 채점")
-                                        .font(.caption2).foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                        .padding(.vertical, 2)
-                    } else if !todayPending {
-                        Text("아직 채점된 기록 없어요")
-                            .font(.subheadline).foregroundColor(.secondary)
-                    }
-
-                    // 히스토리 — 오늘 PENDING 카드로 이미 표시한 경우 첫 항목 제외
-                    let historyEntries = todayPending
-                        ? Array(acc.recentEntries.dropFirst().prefix(7))
-                        : Array(acc.recentEntries.prefix(7))
-                    ForEach(historyEntries, id: \.date) { entry in
-                        moodLogRow(entry)
-                    }
-                }
-            } else {
-                HStack {
-                    ProgressView().padding(.trailing, 4)
-                    Text("불러오는 중…").foregroundColor(.secondary)
-                }
-            }
-        } header: {
-            Text("코스피 방향 선행 신호")
-        } footer: {
-            Text("나스닥·S&P500·EWY 등 미국 지수·달러 가중합으로 당일 코스피 방향을 예측해요. 미장 마감(오전 5시) 이후가 확인 적기이며, 장 마감(오후 3:30) 후 브리핑 탭 재조회 시 자동 채점돼요.")
-                .font(.caption2)
-        }
-    }
-
-    private func todayPredictionCard(_ direction: String) -> some View {
-        let (label, color, icon): (String, Color, String) = switch direction {
-            case "BULLISH": ("강세 예상 ↑", Color.red,       "arrow.up.circle.fill")
-            case "BEARISH": ("약세 예상 ↓", Color.blue,      "arrow.down.circle.fill")
-            default:        ("보합 예상",   Color.secondary,  "minus.circle.fill")
-        }
-        return HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(color)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("오늘 코스피")
-                    .font(.caption).foregroundColor(.secondary)
-                Text(label)
-                    .font(.headline).foregroundColor(color)
-            }
-            Spacer()
-            Text("미국 지수·달러 기반")
-                .font(.caption2).foregroundColor(.secondary)
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func moodLogRow(_ entry: MoodLogEntry) -> some View {
-        HStack(spacing: 8) {
-            Text(entry.date.suffix(5).replacingOccurrences(of: "-", with: "/"))
-                .font(.caption).foregroundColor(.secondary).frame(width: 40, alignment: .leading)
-
-            directionBadge(entry.direction, isActual: false)
-
-            Image(systemName: "arrow.right")
-                .font(.caption2).foregroundColor(.secondary)
-
-            if let actual = entry.actualDirection {
-                directionBadge(actual, isActual: true)
-            } else {
-                Text("대기").font(.caption2).foregroundColor(.secondary)
-            }
-
-            Spacer()
-
-            if let correct = entry.isCorrect {
-                let isOk = correct.boolValue
-                Image(systemName: isOk ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .foregroundColor(isOk ? .green : .red)
-                    .font(.body)
-            }
-
-            if let kChange = entry.kospiChange {
-                let v = kChange.doubleValue
-                let sign = v >= 0 ? "+" : ""
-                Text("코스피 \(sign)\(String(format: "%.1f", v))%")
-                    .font(.caption2).foregroundColor(v >= 0 ? .red : .blue)
-            }
-        }
-        .padding(.vertical, 1)
-    }
-
-    private func directionBadge(_ direction: String, isActual: Bool) -> some View {
-        let (label, color): (String, Color) = switch direction {
-            case "BULLISH": ("강세↑", .red)
-            case "BEARISH": ("약세↓", .blue)
-            default:        ("보합", .secondary)
-        }
-        return Text(label)
-            .font(.caption2.weight(.semibold))
-            .foregroundColor(isActual ? .primary : color)
-            .padding(.horizontal, 5).padding(.vertical, 2)
-            .background(isActual ? Color.secondary.opacity(0.12) : color.opacity(0.12))
-            .clipShape(Capsule())
     }
 
     private var emptyPlaceholder: some View {
@@ -777,11 +631,6 @@ struct StatsView: View {
         nameMap = Dictionary(uniqueKeysWithValues: watchItems.map { ($0.code, $0.name) })
         positionMap = Dictionary(uniqueKeysWithValues: watchItems.map { ($0.code, $0) })
         Task { await loadMissed() }
-        Task { await loadMoodAccuracy() }
-    }
-
-    private func loadMoodAccuracy() async {
-        moodAccuracy = try? await api.getMoodAccuracy()
     }
 
     private func loadMissed() async {

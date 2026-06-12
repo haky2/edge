@@ -52,6 +52,9 @@ struct BriefingView: View {
     @State private var moodGeneratedAt = ""
     @State private var moodExpanded = true    // 시장 탭 최상단이라 기본 펼침
 
+    // 코스피 방향 선행 신호 (미국 지수 가중합 예측 + 적중률)
+    @State private var moodAccuracy: MoodAccuracyReport? = nil
+
     // 섹터 동향
     @State private var sectorLoading = false
     @State private var sectorItems: [SectorIndex] = []
@@ -147,6 +150,7 @@ struct BriefingView: View {
                 dartSection
             } else {
                 marketMoodSection    // 오늘 시장 분위기 — 장 전 코스피 방향 한눈에
+                moodSignalSection    // 코스피 방향 선행 신호 (가중합 예측 + 적중률)
                 impactSection        // 내 종목 영향
                 marketSection
                 sectorSection
@@ -193,6 +197,129 @@ struct BriefingView: View {
                 }
             }
         }
+    }
+
+    // MARK: - 섹션: 코스피 방향 선행 신호
+
+    @ViewBuilder
+    private var moodSignalSection: some View {
+        Section {
+            if let acc = moodAccuracy {
+                let todayEntry = acc.recentEntries.first
+                let todayPending = todayEntry != nil && todayEntry?.isCorrect == nil
+
+                if acc.recentEntries.isEmpty {
+                    Text("매일 오전 5시·오후 3시 35분에\n자동으로 기록돼요.")
+                        .font(.subheadline).foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                } else {
+                    // 오늘 예측 카드 — PENDING(장 전·장 중)일 때만 표시
+                    if todayPending, let entry = todayEntry {
+                        moodTodayCard(entry.direction)
+                    }
+
+                    // 적중률 한 줄 요약
+                    if acc.total > 0 {
+                        let rate = Int(Double(acc.correct) / Double(acc.total) * 100)
+                        HStack {
+                            Text("\(acc.correct)/\(acc.total)회 적중 · \(rate)%")
+                                .font(.subheadline)
+                                .foregroundColor(rate >= 60 ? .red : rate >= 40 ? .orange : .blue)
+                            Spacer()
+                            if acc.pending > 0 {
+                                Text("대기 \(acc.pending)").font(.caption).foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    // 최근 5일 히스토리
+                    let historyEntries = todayPending
+                        ? Array(acc.recentEntries.dropFirst().prefix(5))
+                        : Array(acc.recentEntries.prefix(5))
+                    ForEach(historyEntries, id: \.date) { entry in
+                        moodHistoryRow(entry)
+                    }
+                }
+            } else {
+                HStack {
+                    ProgressView().scaleEffect(0.8)
+                    Text("불러오는 중…").font(.footnote).foregroundColor(.secondary)
+                }
+            }
+        } header: {
+            Text("코스피 방향 선행 신호")
+        } footer: {
+            Text("미장 마감(오전 5시) 이후 확인 적기. 장 마감(오후 3:30) 후 자동 채점돼요.")
+                .font(.caption2)
+        }
+    }
+
+    private func moodTodayCard(_ direction: String) -> some View {
+        let (label, color, icon): (String, Color, String) = switch direction {
+            case "BULLISH": ("강세 예상 ↑", Color.red,      "arrow.up.circle.fill")
+            case "BEARISH": ("약세 예상 ↓", Color.blue,     "arrow.down.circle.fill")
+            default:        ("보합 예상",   Color.secondary, "minus.circle.fill")
+        }
+        return HStack(spacing: 12) {
+            Image(systemName: icon).font(.title2).foregroundColor(color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("오늘 코스피").font(.caption).foregroundColor(.secondary)
+                Text(label).font(.headline).foregroundColor(color)
+            }
+            Spacer()
+            Text("미국 지수·달러 기반").font(.caption2).foregroundColor(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func moodHistoryRow(_ entry: MoodLogEntry) -> some View {
+        HStack(spacing: 6) {
+            Text(entry.date.suffix(5).replacingOccurrences(of: "-", with: "/"))
+                .font(.caption).foregroundColor(.secondary).frame(width: 40, alignment: .leading)
+
+            // 예측 레이블 + 배지
+            Text("예측").font(.caption2).foregroundColor(.secondary)
+            moodDirectionBadge(entry.direction, isActual: false)
+
+            Image(systemName: "arrow.right").font(.caption2).foregroundColor(.secondary)
+
+            // 실제 레이블 + 배지
+            Text("실제").font(.caption2).foregroundColor(.secondary)
+            if let actual = entry.actualDirection {
+                moodDirectionBadge(actual, isActual: true)
+            } else {
+                Text("대기").font(.caption2).foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            if let correct = entry.isCorrect {
+                Image(systemName: correct.boolValue ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundColor(correct.boolValue ? .green : .red).font(.body)
+            }
+            if let kChange = entry.kospiChange {
+                let v = kChange.doubleValue
+                Text("\(v >= 0 ? "+" : "")\(String(format: "%.1f", v))%")
+                    .font(.caption2).foregroundColor(v >= 0 ? .red : .blue)
+            }
+        }
+        .padding(.vertical, 1)
+    }
+
+    private func moodDirectionBadge(_ direction: String, isActual: Bool) -> some View {
+        let (label, color): (String, Color) = switch direction {
+            case "BULLISH": ("강세↑", .red)
+            case "BEARISH": ("약세↓", .blue)
+            default:        ("보합",  .secondary)
+        }
+        return Text(label)
+            .font(.caption2.weight(.semibold))
+            .foregroundColor(isActual ? .primary : color)
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(isActual ? Color.secondary.opacity(0.12) : color.opacity(0.12))
+            .clipShape(Capsule())
     }
 
     // MARK: - 섹션: 시장 지표
@@ -916,6 +1043,7 @@ struct BriefingView: View {
         // 시장 지표·분위기·섹터·실적일정·매크로 영향·섹터 브리핑은 quotes와 독립 병렬.
         async let macroTask: Void           = buildMacro()
         async let moodTask: Void            = buildMarketMood()
+        async let moodAccuracyTask: Void    = loadMoodAccuracy()
         async let sectorTask: Void          = buildSectors()
         async let earningsTask: Void        = buildEarnings(codes: codes)
         async let impactTask: Void          = buildImpact(allItems: allItems)
@@ -929,7 +1057,7 @@ struct BriefingView: View {
             loading = false
             supplyLoading = false
             dartLoading = false
-            _ = await (macroTask, moodTask, sectorTask, earningsTask, impactTask, sectorBriefingTask)
+            _ = await (macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, impactTask, sectorBriefingTask)
             return
         }
         let quoteMap = Dictionary(uniqueKeysWithValues: quotes.map { ($0.code, $0) })
@@ -945,7 +1073,7 @@ struct BriefingView: View {
         // supply·dart·macro·impact·sectorBriefing은 섹션 내부 스피너 유지하며 병렬 진행
         async let supplyTask: Void = buildSupply(allItems: allItems, quoteMap: quoteMap)
         async let dartTask: Void   = buildDart(codes: codes, allItems: allItems)
-        _ = await (supplyTask, dartTask, macroTask, moodTask, sectorTask, earningsTask, impactTask, sectorBriefingTask)
+        _ = await (supplyTask, dartTask, macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, impactTask, sectorBriefingTask)
 
         supplyLoading = false
         dartLoading = false
@@ -972,6 +1100,10 @@ struct BriefingView: View {
         guard let result = try? await api.getMarketMood(mode: analysisMode.rawValue, refresh: force) else { return }
         moodComment = result.comment
         moodGeneratedAt = result.generatedAt
+    }
+
+    private func loadMoodAccuracy() async {
+        moodAccuracy = try? await api.getMoodAccuracy()
     }
 
     private func regenAllAI() async {
