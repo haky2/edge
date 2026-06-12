@@ -50,6 +50,7 @@ class MarketMoodService(
     private val ecos: EcosClient,
     private val yahoo: YahooMacroClient,
     val moodLog: MarketMoodLogService = MarketMoodLogService(),
+    private val eventSync: EventSyncService? = null,
 ) {
     private val cache = ConcurrentHashMap<String, MarketMood>()
     private val fileCache = FileCache("market_mood", MarketMood.serializer())
@@ -72,7 +73,8 @@ class MarketMoodService(
             fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
         }
 
-        val facts = buildFacts(indicators)
+        val eventsText = runCatching { eventSync?.upcomingFactsText() }.getOrNull()
+        val facts = buildFacts(indicators, eventsText)
         val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
         // 상한(ceiling)일 뿐 — 3문단이면 보통 그 안에서 end_turn, 길어져도 ClaudeClient가 이어써 안 잘림.
         val comment = claude.complete(prompt, facts, maxTokens = 2000)
@@ -90,12 +92,16 @@ class MarketMoodService(
         return result
     }
 
-    private fun buildFacts(indicators: List<MacroIndicator>): String {
+    private fun buildFacts(indicators: List<MacroIndicator>, eventsText: String?): String {
         val sb = StringBuilder()
         sb.appendLine("현재 시장 지표 (전일 대비):")
         indicators.forEach { ind ->
             val sign = if (ind.changeRate >= 0) "+" else ""
             sb.appendLine("  - ${ind.label}: ${ind.value} ($sign${"%.2f".format(ind.changeRate)}%)")
+        }
+        if (eventsText != null) {
+            sb.appendLine()
+            sb.append(eventsText)
         }
         return sb.toString()
     }
@@ -116,6 +122,9 @@ class MarketMoodService(
             3. "지금 사라/팔라"처럼 매매를 지시하지 마라.
             4. 지표가 전부 보합(0%대)이면 "오늘은 해외 발 변수가 크지 않은 날"이라고 담백하게 써도 된다.
             5. 핵심 방향 키워드(우호적/부담/강세/약세 등)는 **굵게** 강조해 한눈에 들어오게 하라.
+            6. "임박 거시 이벤트" 섹션이 있으면, 그중 코스피 방향에 가장 영향이 큰 일정 1~2개만 문단 ③에서
+               날짜(또는 D-day)와 함께 짚어라(예: "이번 주 목요일 FOMC 금리결정을 앞두고 관망 심리가 짙어질 수 있다").
+               날짜·이름은 사실대로, 영향은 조건부로. 일정 전체를 나열하지 말고 핵심만.
         """.trimIndent()
 
         // 공격적: 방어적과 같은 사실·환각가드 위에서, 마지막 문단에 "오늘 어떤 자세가 합리적인지"
@@ -142,6 +151,8 @@ class MarketMoodService(
                단, 이것은 어조의 단호함이지 미래 보장이 아니다 — "반드시 오른다/떨어진다"처럼
                결과를 확정하는 표현은 쓰지 마라(스탠스는 단호하게, 결과 단정은 금지).
             5. 핵심 방향·스탠스 키워드(비중 축소/분할 매수/현금 확보/강세 등)는 **굵게** 강조하라.
+            6. "임박 거시 이벤트" 섹션이 있으면, 코스피 방향에 가장 영향이 큰 일정 1~2개를 문단 ③ 스탠스에 묶어라
+               (예: "D-2 FOMC 전까지 신규 베팅은 줄이고 결과를 보고 대응하라"). 날짜·이름은 사실대로, 결과 방향은 조건부로.
         """.trimIndent()
 
         /** 캐시 키 빌더. 날짜 + 모드로 두 모드가 서로 덮어쓰지 않게 분리. */

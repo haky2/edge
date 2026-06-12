@@ -79,6 +79,7 @@ class AnalysisService(
     private val krxShortSelling: KrxShortSellingClient,
     private val valuationBandSvc: ValuationBandService,
     private val backtestSvc: BacktestService,
+    private val eventSync: com.haky.edge.macro.EventSyncService,
 ) {
     private data class Cached(val analysis: Analysis)
     private val cache = ConcurrentHashMap<String, Cached>()
@@ -135,7 +136,9 @@ class AnalysisService(
             val news            = dedupeNews(rawNewsD.await(), limit = 8)
             println("[Timing] $code: facts=${System.currentTimeMillis() - t0}ms")
 
-            val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, valuationBand, backtest, flowSensitivity, quarterlyIncome, position)
+            // 임박 거시 이벤트(향후 2주) — 파일 캐시 읽기라 가벼움. 없으면 null로 건너뜀.
+            val eventsText = runCatching { eventSync.upcomingFactsText() }.getOrNull()
+            val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, valuationBand, backtest, flowSensitivity, quarterlyIncome, eventsText, position)
             // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
             val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
             val t1 = System.currentTimeMillis()
@@ -181,6 +184,7 @@ class AnalysisService(
         backtest: Backtest?,
         flowSensitivity: FlowSensitivity?,
         quarterlyIncome: QuarterlyIncome?,
+        eventsText: String?,
         position: Position? = null,
     ): String {
         val sb = StringBuilder()
@@ -290,6 +294,9 @@ class AnalysisService(
                 }
             }
         }
+        // 임박 거시 이벤트(향후 2주) — 이 종목·업종 변동성에 영향 줄 예정 일정.
+        if (eventsText != null) sb.appendLine().append(eventsText)
+
         if (position != null) {
             val currentPrice = q.price.toDouble()
             val pnlRate = if (position.avgPrice > 0)
@@ -620,6 +627,10 @@ class AnalysisService(
                 - "장 중": "현재 XXX원에 거래 중", "XXX원 수준" 등 실시간 표현
                 - "장 마감 후": "XXX원에 마감", "당일 XXX원으로 마감" 등 종가 표현
                 - "장 전" 또는 "주말(휴장)": "전일 XXX원에 마감" 등 전일 종가 표현
+            13. "임박 거시 이벤트" 섹션이 있으면, 그 일정이 이 종목·업종에 어떤 변동성이나 방향을 줄 수 있는지
+                종합 단락에서 한두 문장으로만 짚어라(별도 소제목 만들지 말 것). 날짜·이벤트명은 사실대로 쓰되
+                영향은 "~결과에 따라 ~할 수 있다"는 조건부로. 이 종목·업종과 분명히 관련된 일정만 다루고,
+                무관하면 억지로 엮지 말고 통째로 건너뛰어라. 일정 자체로 주가를 단정하지 마라.
         """.trimIndent()
 
         // 공격 모드 시스템 프롬프트. 방어 모드와 같은 사실·환각가드 위에서, 개별 종목 매매 판단까지
@@ -655,6 +666,9 @@ class AnalysisService(
                 - "장 중": "현재 XXX원에 거래 중", "XXX원 수준" 등 실시간 표현
                 - "장 마감 후": "XXX원에 마감", "당일 XXX원으로 마감" 등 종가 표현
                 - "장 전" 또는 "주말(휴장)": "전일 XXX원에 마감" 등 전일 종가 표현
+            11. "임박 거시 이벤트" 섹션이 있으면, 그 일정이 이 종목·업종 변동성에 미칠 영향을 종합·액션 단락에서
+                짚고 대응까지 못박아라(예: "D-2 FOMC 전까지 비중을 늘리지 말고 결과를 보고 대응하라"). 날짜·이벤트명은
+                사실대로, 결과 방향은 조건부로. 이 종목·업종과 무관한 일정은 억지로 엮지 말고 건너뛰어라.
         """.trimIndent()
     }
 }

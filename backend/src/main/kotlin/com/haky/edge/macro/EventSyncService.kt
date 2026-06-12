@@ -38,6 +38,37 @@ class EventSyncService(private val claude: ClaudeClient) {
         .also { it.parentFile.mkdirs() }
     private val json = Json { ignoreUnknownKeys = true }
 
+    companion object {
+        // 코멘트에 녹일 "임박" 이벤트 창(일). 이번 주~다음 주 일정을 잡는 길이.
+        const val EVENT_WINDOW_DAYS = 14
+    }
+
+    /**
+     * 임박 거시 이벤트를 Claude facts 주입용 텍스트로 정리. 향후 [days]일 이내 이벤트만.
+     * 날짜·이벤트명은 우리가 수집한 **사실**, 카테고리(호재/주의/중립)는 방향 힌트로만 준다.
+     * 영향 해석은 종목·시장 맥락에 맞춰 Claude가 하도록 우리 impact 문구는 넣지 않는다(환각·복붙 방지).
+     * 이벤트가 없으면 null.
+     */
+    fun upcomingFactsText(days: Int = EVENT_WINDOW_DAYS): String? {
+        val events = getUpcoming(days)
+        if (events.isEmpty()) return null
+        val today = LocalDate.now()
+        val sb = StringBuilder()
+        sb.appendLine("임박 거시 이벤트(향후 ${days}일, 날짜·이름은 확정 사실 / 영향은 조건부 해석):")
+        events.forEach { e ->
+            val dday = runCatching {
+                java.time.temporal.ChronoUnit.DAYS.between(today, LocalDate.parse(e.date)).toInt()
+            }.getOrNull()
+            val ddayStr = when {
+                dday == null -> ""
+                dday <= 0    -> " (오늘, D-day)"
+                else         -> " (D-$dday)"
+            }
+            sb.appendLine("  - ${e.date}$ddayStr ${e.title} [${e.category}]")
+        }
+        return sb.toString()
+    }
+
     fun getUpcoming(days: Int): List<MarketEvent> {
         if (!storeFile.exists()) return emptyList()
         val store = runCatching {

@@ -72,6 +72,7 @@ class MacroImpactService(
     private val ecos: EcosClient,
     private val naver: NaverNewsClient,
     private val yahoo: YahooMacroClient,
+    private val eventSync: EventSyncService? = null,
 ) {
     private val cache = ConcurrentHashMap<String, MacroImpact>()
     private val fileCache = FileCache("macro_impact", MacroImpact.serializer())
@@ -101,7 +102,8 @@ class MacroImpactService(
         val watchImpacts = watchlist.map { buildStockImpact(it, indicators) }
 
         val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
-        val facts = buildFacts(indicators, holdingImpacts, watchImpacts, positionMap)
+        val eventsText = runCatching { eventSync?.upcomingFactsText() }.getOrNull()
+        val facts = buildFacts(indicators, holdingImpacts, watchImpacts, positionMap, eventsText)
         // 상한(ceiling)일 뿐 — 3~4문단이면 보통 그 안에서 end_turn, 길어져도 ClaudeClient가 이어써 안 잘림.
         val comment = claude.complete(prompt, facts, maxTokens = 2800)
 
@@ -144,6 +146,7 @@ class MacroImpactService(
         holdings: List<StockImpact>,
         watchlist: List<StockImpact>,
         positionMap: Map<String, HoldingPosition> = emptyMap(),
+        eventsText: String? = null,
     ): String {
         val sb = StringBuilder()
         sb.appendLine("오늘 시장 지표(전일 대비):")
@@ -154,6 +157,10 @@ class MacroImpactService(
         appendGroup(sb, "[보유 종목]", holdings, positionMap)
         sb.appendLine()
         appendGroup(sb, "[관심 종목(미보유)]", watchlist, emptyMap())
+        if (eventsText != null) {
+            sb.appendLine()
+            sb.append(eventsText)
+        }
         return sb.toString()
     }
 
@@ -429,6 +436,9 @@ $enumList
             4. 어려운 금융 영어는 한국어로 바꾸거나 괄호 설명을 붙여라.
             5. 형식: 불릿·번호 목록과 볼드 '제목 줄'은 금지(이야기처럼 흐르는 연속 문단). 단, 핵심 종목명과 영향 방향(우호/부담) 같은 키워드는 문장 안에서 **굵게** 강조해 한눈에 들어오게 하라.
             6. 지표가 전부 보합(0%대)이면 "오늘은 매크로 영향이 크지 않은 날"이라고 담백하게 말해도 된다.
+            7. "임박 거시 이벤트" 섹션이 있으면, 그중 내 보유·관심 종목(섹터)에 영향이 큰 일정 1~2개를 마무리 문단(④)에서
+               날짜(또는 D-day)와 함께 짚어라(예: "이번 주 목요일 FOMC를 앞두고 금리 민감한 반도체·성장주는 변동성이 커질 수 있다").
+               날짜·이름은 사실대로, 영향은 조건부로. 일정을 전부 나열하지 말고 내 종목과 관련된 핵심만, 무관하면 건너뛰어라.
         """.trimIndent()
 
         // 공격적: 방어적과 같은 사실·환각가드 위에서, 포트폴리오 스탠스 의견까지 단호하게 제시.
@@ -455,6 +465,9 @@ $enumList
                단, "반드시 오른다/떨어진다" 같은 결과 확정 표현은 쓰지 마라(스탠스는 단호하게, 결과 단정 금지).
             5. 형식: 불릿·번호 목록, # 제목(헤더), --- 구분선 금지. 빈 줄(줄바꿈 2번)로만 문단을 나눠라.
                핵심 종목명·섹터·스탠스 키워드(비중 축소/차익 실현/분할 진입 등)는 **굵게** 강조하라.
+            6. "임박 거시 이벤트" 섹션이 있으면, 내 보유·관심 종목(섹터)에 영향이 큰 일정 1~2개를 마무리 스탠스(④)에 묶어
+               대응까지 못박아라(예: "D-2 FOMC 전까지 금리 민감 반도체 비중은 늘리지 말고 결과를 보고 대응하라").
+               날짜·이름은 사실대로, 결과 방향은 조건부로. 내 종목과 무관한 일정은 건너뛰어라.
         """.trimIndent()
 
         /** 섹터 목록 + 지표 목록 → 지표별 방향 신호. buildStockImpact 에서 추출한 순수 함수(외부 I/O 없음). */

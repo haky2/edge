@@ -133,7 +133,9 @@
 - [ ] **UI/UX 개선 v2** — 1차 이후 누적된 개선 요구사항 정리 후 진행. 별도 슬라이스 계획 필요.
 - (검토 중) 분석 C: Claude 웹검색 도구로 실시간 촉매(예: 인물 방한 일정) 보강 — 검색 건당 별도 과금·지연 증가라 비용 검토 후 결정
 - [x] **거시 이벤트 캘린더 슬라이스 1 — ClaudeClient 웹검색 지원** ✅ `completeWithWebSearch()`: `tools:[web_search_20250305]` + JsonElement 기반 multi-turn 루프(MAX_SEARCH_TURNS=5) + 출처 URL 추출. `WebSearchResult`/`WebSearchSource` 모델. `GET /websearch-test` 검증 라우트. **curl 실호출 검증**: CPI·FOMC·MSCI 일정 텍스트 + 소스 15개↑ 정상 반환. 커밋 add8777.
-- [ ] **거시 이벤트 캘린더 슬라이스 2 — 이벤트 동기화+저장** — `EventSyncService` + `POST /events/sync`(웹검색→구조화 JSON upsert) + `GET /events?days=30`. 계산 가능 이벤트(동시만기일 등) 룰로 고정. Sonnet.
+- [x] **거시 이벤트 캘린더 슬라이스 2 — 이벤트 동기화+저장** ✅ `EventSyncService` + `POST /events/sync`(웹검색 2단계: 자유텍스트→JSON upsert) + `GET /events?days=30`. 동시만기일(분기 둘째 목요일) 룰 고정. 커밋 153aa9f.
+- [x] **거시 이벤트 캘린더 슬라이스 3 — 브리핑 노출** ✅ `MarketEvent` SharedLogic 모델 + `EdgeApi.getEvents()/syncEvents()` + BriefingView "이벤트 캘린더(30일)" 섹션. 빈 캐시 시 앱이 /events/sync 자동 호출. 카테고리 호재/주의/중립. 커밋 37a39d4(배포·시뮬 검증).
+- [x] **거시 이벤트 캘린더 슬라이스 4 — 코멘트에 녹이기(영향 해석, Opus)** ✅ `EventSyncService.upcomingFactsText(14일)` 헬퍼(날짜·이름=사실/카테고리만 힌트, 우리 impact 문구는 미주입→Claude 재해석·복붙방지, D-day 포함). 세 곳에 facts 주입 + 프롬프트 규칙: `AnalysisService`(종목 상세), `MarketMoodService`(브리핑 시장 분위기), `MacroImpactService`(브리핑 내 종목 영향 — 보유·관심 섹터 관련 일정만 마무리 문단에). 공통 원칙: 관련 일정만 조건부 해석, 무관하면 건너뜀, 별도 소제목 금지. 캐시키 불변(이벤트는 일 단위 안정). **curl 검증**: 시장 분위기 문단③ PPI(D-day)·FOMC(D-5) / SK하이닉스 종합 단락 FOMC(6/17)→반도체 변동성 / 내 종목 영향 마무리 FOMC(D-5)→금리민감 반도체 보유분 변동성. 무관 일정(한국PPI·Juneteenth·중국LPR) 자동 제외. iOS 코드 변경 없음(코멘트 텍스트만 풍부).
 
 ### Phase 4 — 학습 / 통계
 - [x] **행동 로그 통계 v1** — 관심종목 행동 로그(매수·매도·관심 등록) 집계 → 신호별 승률·내 패턴 통계 화면. Phase 1부터 `action_log`에 데이터 쌓임. ✅ StatsView(신호별 승률·손절익절규율·관심후미매수·사유태그·보유기간·AI적중률)

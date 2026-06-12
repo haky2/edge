@@ -127,16 +127,16 @@ fun Application.module() {
     val copper = CopperClient()
     val ecos = EcosClient(apiKey = System.getenv("ECOS_API_KEY").orEmpty())
     val yahoo = YahooMacroClient()
-    val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos, naver, yahoo)
+    val eventSync = EventSyncService(claude)
+    val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos, naver, yahoo, eventSync)
     val krxShortSelling = KrxShortSellingClient()
     val valuationBand = ValuationBandService(kis, dart)
     val backtest = BacktestService(kis)
-    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling, valuationBand, backtest)
+    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling, valuationBand, backtest, eventSync)
     val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand)
     val moodLog = MarketMoodLogService()
-    val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, moodLog)
+    val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, moodLog, eventSync)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
-    val eventSync = EventSyncService(claude)
 
     // 서버 시작 직후 백그라운드로 KIS 토큰 + DART corpCode 맵을 미리 로드한다.
     // 첫 번째 실제 요청이 올 때 이 두 초기화 작업(각 수 초)을 기다리지 않아도 되게 함.
