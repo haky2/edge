@@ -1,7 +1,7 @@
 [versions]
 agp = "9.0.1"
 android-compileSdk = "36"
-android-minSdk = "24"
+android-minSdk = "30"
 android-targetSdk = "36"
 androidx-activity = "1.13.0"
 androidx-appcompat = "1.7.1"
@@ -35,6 +35,7 @@ compose-material3 = { module = "org.jetbrains.compose.material3:material3", vers
 compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
 compose-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "composeMultiplatform" }
 compose-uiToolingPreview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "composeMultiplatform" }
+compose-materialIconsExtended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "composeMultiplatform" }
 
 # 네트워킹(백엔드 호출) — Ktor 클라이언트 + 직렬화 + 코루틴
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
