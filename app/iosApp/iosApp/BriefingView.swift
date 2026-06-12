@@ -173,15 +173,23 @@ struct BriefingView: View {
     private var marketMoodSection: some View {
         Section {
             if moodLoading {
-                HStack {
-                    ProgressView().scaleEffect(0.8)
-                    Text("AI가 분석 중…").font(.footnote).foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    aiSectionTitle("오늘 시장 분위기", aggressive: analysisMode == .aggressive)
+                    HStack {
+                        ProgressView().scaleEffect(0.8)
+                        Text("AI가 분석 중…").font(.footnote).foregroundColor(.secondary)
+                    }
                 }
             } else if moodComment.isEmpty {
-                Text("불러오지 못했어요").font(.footnote).foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    aiSectionTitle("오늘 시장 분위기", aggressive: analysisMode == .aggressive)
+                    Text("불러오지 못했어요").font(.footnote).foregroundColor(.secondary)
+                }
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     aiCommentToggle(
+                        title: "오늘 시장 분위기",
+                        aggressive: analysisMode == .aggressive,
                         expanded: moodExpanded,
                         generatedAt: moodGeneratedAt,
                         isLoading: moodLoading,
@@ -189,18 +197,6 @@ struct BriefingView: View {
                         regenAction: { Task { await buildMarketMood(force: true) } }
                     )
                     if moodExpanded { proseBlock(moodComment) }
-                }
-            }
-        } header: {
-            HStack(spacing: 6) {
-                Text("오늘 시장 분위기")
-                if analysisMode == .aggressive {
-                    Text("⚔️ 공격적 모드")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.orange.opacity(0.15))
-                        .foregroundColor(.orange)
-                        .clipShape(Capsule())
                 }
             }
         }
@@ -509,15 +505,22 @@ struct BriefingView: View {
     private var sectorBriefingSection: some View {
         Section {
             if sectorBriefingLoading {
-                HStack {
-                    ProgressView().scaleEffect(0.8)
-                    Text("AI가 분석 중…").font(.footnote).foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    aiSectionTitle("섹터 분석")
+                    HStack {
+                        ProgressView().scaleEffect(0.8)
+                        Text("AI가 분석 중…").font(.footnote).foregroundColor(.secondary)
+                    }
                 }
             } else if sectorBriefingComment.isEmpty {
-                Text("장 시작 전이거나 섹터 데이터가 없어요").font(.footnote).foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    aiSectionTitle("섹터 분석")
+                    Text("장 시작 전이거나 섹터 데이터가 없어요").font(.footnote).foregroundColor(.secondary)
+                }
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     aiCommentToggle(
+                        title: "섹터 분석",
                         expanded: sectorBriefingExpanded,
                         generatedAt: sectorBriefingGeneratedAt,
                         isLoading: sectorBriefingLoading,
@@ -549,8 +552,6 @@ struct BriefingView: View {
                     }
                 }
             }
-        } header: {
-            Text("섹터 분석")
         }
     }
 
@@ -770,6 +771,8 @@ struct BriefingView: View {
                     if !impactComment.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             aiCommentToggle(
+                                title: "AI 코멘트",
+                                compact: true,
                                 expanded: impactExpanded,
                                 generatedAt: impactGeneratedAt,
                                 isLoading: impactLoading,
@@ -786,7 +789,27 @@ struct BriefingView: View {
 
     // "AI 코멘트" 접기 토글 + 메타 행. 제목 행(접기/펼치기)과 재생성 버튼을
     // 서로 다른 줄에 두어, 제목을 탭할 때 재생성이 잘못 눌리지 않게 분리한다.
+    // 섹션 제목 행 — ✨(AI 생성 표시) + 제목. 로딩/실패 상태에서도 동일하게 사용.
+    // compact=true: 다른 섹션 하위에 들어가는 작은 라벨(.subheadline). false: 섹션 제목(.headline).
+    private func aiSectionTitle(_ title: String, aggressive: Bool = false, compact: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "sparkles").font(compact ? .caption2 : .caption).foregroundColor(.purple)
+            Text(title).font(compact ? .subheadline.weight(.medium) : .headline)
+            if aggressive {
+                Text("⚔️ 공격적 모드")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.15))
+                    .foregroundColor(.orange)
+                    .clipShape(Capsule())
+            }
+        }
+    }
+
     private func aiCommentToggle(
+        title: String,
+        aggressive: Bool = false,
+        compact: Bool = false,
         expanded: Bool,
         generatedAt: String,
         isLoading: Bool,
@@ -794,13 +817,12 @@ struct BriefingView: View {
         regenAction: @escaping () -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            // 제목 행 — 행 전체 탭 = 접기/펼치기
+            // 제목 행 — ✨ + 제목 + chevron. 행 전체 탭 = 접기/펼치기
             HStack(spacing: 5) {
-                Image(systemName: "sparkles").font(.caption2).foregroundColor(.purple)
-                Text("AI 코멘트").font(.subheadline.weight(.medium))
+                aiSectionTitle(title, aggressive: aggressive, compact: compact)
                 Spacer()
                 Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                    .font(.caption2).foregroundColor(.secondary)
+                    .font(compact ? .caption2 : .caption).foregroundColor(.secondary)
             }
             .foregroundColor(.primary)
             .contentShape(Rectangle())
