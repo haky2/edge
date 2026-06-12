@@ -31,6 +31,7 @@ import com.haky.edge.routes.dartRoutes
 import com.haky.edge.routes.earningsRoutes
 import com.haky.edge.routes.investorRoutes
 import com.haky.edge.routes.macroImpactRoutes
+import com.haky.edge.routes.sectorClassifyRoutes
 import com.haky.edge.routes.macroRoutes
 import com.haky.edge.routes.marketMoodLogRoutes
 import com.haky.edge.routes.marketMoodRoutes
@@ -150,6 +151,7 @@ fun Application.module() {
             investorRoutes(kis)
             macroRoutes(kis, fearGreed, copper, ecos, yahoo)
             macroImpactRoutes(macroImpact)
+            sectorClassifyRoutes(macroImpact)
             marketMoodRoutes(marketMood)
             marketMoodLogRoutes(moodLog)
             newsRoutes(naver)

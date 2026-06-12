@@ -15,6 +15,7 @@ import com.haky.edge.model.StockImpact
 import com.haky.edge.model.NewsItem
 import com.haky.edge.model.Quote
 import com.haky.edge.model.SectorBriefing
+import com.haky.edge.model.SectorEntry
 import com.haky.edge.model.SectorIndex
 import com.haky.edge.model.ShortSellingSummary
 import com.haky.edge.model.StockInfo
@@ -192,6 +193,16 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getSectors(): List<SectorIndex> =
         client.get("$baseUrl/sectors").body()
+
+    /**
+     * 종목 코드 목록 → 대표 섹터 레이블 매핑. 포트폴리오 섹터 비중 계산용.
+     * 백엔드가 7일 캐시하므로 첫 호출 외엔 즉시 반환.
+     */
+    @Throws(Exception::class)
+    suspend fun getSectorClassify(codes: List<String>): List<SectorEntry> =
+        client.get("$baseUrl/sector-classify") {
+            parameter("codes", codes.joinToString(","))
+        }.body()
 
     /**
      * 오늘 섹터 트렌드 분석 + 관심종목 중 주목 종목. 브리핑 시장 탭 "섹터 분석" 섹션용.

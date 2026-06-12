@@ -6,12 +6,19 @@ import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.MacroIndicator
 import com.haky.edge.master.StockMaster
 import com.haky.edge.news.NaverNewsClient
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
 
 // ── 앱에 내려주는 응답 DTO ────────────────────────────────────────────
+
+/** 종목 코드 → 대표 섹터 레이블 1건. /sector-classify 응답용. */
+@Serializable
+data class SectorEntry(val code: String, val sectorLabel: String)
 
 /** 매크로 → 내 종목 영향 분석 결과. comment = 보유/관심을 묶어 해석한 Claude 종합 코멘트. */
 @Serializable
@@ -200,6 +207,21 @@ class MacroImpactService(
         val sectorKey = GROUP_TO_SECTOR_KEY[sectors.first().group] ?: return null
         val sectorIndices = runCatching { kis.getSectorIndices() }.getOrElse { return null }
         return sectorIndices.firstOrNull { it.key == sectorKey }?.changeRate
+    }
+
+    /**
+     * 종목 코드 목록 → 대표 섹터 레이블 매핑. 포트폴리오 섹터 비중 계산에 사용.
+     * MANUAL_OVERRIDES → 7일 sectorCache → Claude 추론 순으로 결정. 병렬 실행.
+     */
+    suspend fun classifyStocks(codes: List<String>): List<SectorEntry> = coroutineScope {
+        codes.map { code ->
+            async {
+                val name = master.search(code).firstOrNull { it.code == code }?.name ?: code
+                val kisName = runCatching { kis.getPrice(code).sectorName }.getOrElse { "" }
+                val sectors = resolveSectors(code, name, kisName)
+                SectorEntry(code, if (sectors.isEmpty()) "기타" else sectors.first().label)
+            }
+        }.awaitAll()
     }
 
     /** 종목 1개의 매크로 지표 영향 신호. Claude 호출 없음 — 섹터 결정 + 지표별 방향 계산만. 상세화면용. */

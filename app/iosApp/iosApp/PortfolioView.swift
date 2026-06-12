@@ -7,30 +7,28 @@ import Charts
 struct PortfolioView: View {
     private let api = Db.api
     @State private var rows: [HoldingRow] = []
+    @State private var sectorClassify: [String: String] = [:]  // code → sectorLabel (백엔드)
     @State private var loading = false
     @State private var lastUpdated: Date?
 
-    // 도넛·레전드 공용 팔레트(SwiftUI Charts 기본 색 순서와 유사하게). 인덱스로 색을 고정한다.
+    // 도넛·레전드 공용 팔레트. 인덱스로 색을 고정한다.
     private static let sliceColors: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .mint, .cyan, .yellow]
     private static func sliceColor(_ i: Int) -> Color { sliceColors[i % sliceColors.count] }
 
-    // 종목코드 → 섹터 레이블 (보유 종목 추가 시 여기에 등록)
-    private static let sectorMap: [String: String] = [
-        "005930": "반도체", "000660": "반도체",                         // 삼성전자, SK하이닉스
-        "018260": "IT서비스", "307950": "IT서비스",                     // 삼성SDS, 현대오토에버
-        "064400": "IT서비스", "035420": "IT서비스",                     // LG씨엔에스, NAVER
-        "012450": "방산", "047810": "방산",                             // 한화에어로스페이스, 한국항공우주
-        "267260": "전력기기", "001440": "전력기기", "062040": "전력기기", // HD현대일렉트릭, 대한전선, 산일전기
-        "329180": "조선",                                               // HD현대중공업
-        "066570": "전자",                                               // LG전자
-        "034020": "에너지",                                             // 두산에너빌리티
-        "005380": "자동차",                                             // 현대차
+    // 섹터 라벨 → 색상 (백엔드 Sector.label 기준)
+    private static let sectorColorMap: [String: Color] = [
+        "메모리반도체": .blue, "파운드리·장비": .cyan, "AI반도체": .indigo,
+        "AI·클라우드": .purple, "IT서비스·SI": .purple,
+        "인터넷플랫폼": .mint, "로봇·자동화": .teal, "자율주행": .teal,
+        "완성차": .orange, "자동차부품": .orange, "2차전지": .yellow,
+        "조선": .teal, "방산·항공우주": .red,
+        "전력기기": .orange, "전선": .orange, "신재생에너지": .green,
+        "가전": .green, "디스플레이": .cyan, "전자부품": .green,
+        "기타": .secondary,
     ]
-    private static let sectorColors: [String: Color] = [
-        "반도체": .blue, "IT서비스": .purple, "방산": .red,
-        "전력기기": .orange, "조선": .teal, "전자": .green,
-        "에너지": .yellow, "자동차": .cyan, "기타": .secondary,
-    ]
+    private static func sectorColor(_ label: String) -> Color {
+        sectorColorMap[label] ?? .secondary
+    }
 
     var body: some View {
         NavigationStack {
@@ -77,14 +75,12 @@ struct PortfolioView: View {
     // 보유 종목 리스트 + 상단 집계 카드
     private var holdingsList: some View {
         List {
-            // 상단 집계 카드
             Section {
                 summaryCard
             }
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
 
-            // 보유 종목 행
             Section("보유 종목 \(rows.count)개") {
                 ForEach(rows, id: \.item.code) { row in
                     NavigationLink {
@@ -94,11 +90,10 @@ struct PortfolioView: View {
                     }
                 }
             }
-
         }
     }
 
-    // 총 투자금·평가금액·손익·수익률 집계 카드 + 종목 비중 도넛
+    // 총 투자금·평가금액·손익·수익률 집계 카드 + 도넛 + 손익 기여도 + 섹터 비중
     private var summaryCard: some View {
         let invested   = rows.reduce(0.0) { $0 + $1.invested }
         let evaluated  = rows.reduce(0.0) { $0 + $1.evaluated }
@@ -107,7 +102,7 @@ struct PortfolioView: View {
         let pnlColor: Color = totalPnl > 0 ? .red : totalPnl < 0 ? .blue : .secondary
 
         return VStack(spacing: 12) {
-            // 숫자 요약
+            // ── 숫자 요약 ──
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("총 평가금액").font(.caption).foregroundColor(.secondary)
@@ -132,10 +127,8 @@ struct PortfolioView: View {
                 Text("\(Int(invested).formatted())원").font(.caption)
             }
 
-            // 종목 비중 도넛
+            // ── 종목 비중 도넛 ──
             if rows.count > 1 {
-                // 도넛 조각과 레전드 점이 같은 색을 쓰도록 종목명→색을 명시적으로 고정한다.
-                // (레전드 Circle은 차트 밖 도형이라 Charts가 자동으로 색을 주지 않음)
                 let colorByName = Dictionary(
                     uniqueKeysWithValues: rows.enumerated().map { ($1.item.name, Self.sliceColor($0)) }
                 )
@@ -157,7 +150,6 @@ struct PortfolioView: View {
                     .chartLegend(.hidden)
                     .frame(width: 100, height: 100)
 
-                    // 간단 레전드 — 도넛과 동일한 색
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(rows.sorted { $0.evaluated > $1.evaluated }, id: \.item.code) { row in
                             let pct = evaluated == 0 ? 0 : row.evaluated / evaluated * 100
@@ -175,33 +167,17 @@ struct PortfolioView: View {
                 }
             }
 
-            // 섹터 비중 바
-            if rows.count >= 1 && !sectorRows.isEmpty {
+            // ── 손익 기여도 발산 막대 ──
+            let hasPnl = rows.contains { $0.pnl != 0 }
+            if rows.count >= 1 && hasPnl {
                 Divider()
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("섹터 비중").font(.caption).foregroundColor(.secondary)
-                    let totalEval = sectorRows.reduce(0.0) { $0 + $1.evaluated }
-                    ForEach(sectorRows, id: \.sector) { row in
-                        let pct = totalEval == 0 ? 0.0 : row.evaluated / totalEval
-                        let color = Self.sectorColors[row.sector] ?? .secondary
-                        HStack(spacing: 8) {
-                            Text(row.sector)
-                                .font(.caption2)
-                                .foregroundColor(color)
-                                .frame(width: 52, alignment: .leading)
-                            GeometryReader { geo in
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(color.opacity(0.75))
-                                    .frame(width: max(4, geo.size.width * CGFloat(pct)), height: 10)
-                            }
-                            .frame(height: 10)
-                            Text(String(format: "%.0f%%", pct * 100))
-                                .font(.caption2.monospacedDigit())
-                                .foregroundColor(.secondary)
-                                .frame(width: 30, alignment: .trailing)
-                        }
-                    }
-                }
+                pnlContributionView
+            }
+
+            // ── 섹터 비중 + 집중도 경고 ──
+            if !sectorRows.isEmpty {
+                Divider()
+                sectorWeightView(totalEval: evaluated)
             }
         }
         .padding()
@@ -211,7 +187,119 @@ struct PortfolioView: View {
         .padding(.vertical, 4)
     }
 
-    // 보유 종목 한 행: 이름 + 현재가/등락 | 평가손익/수익률
+    // MARK: - 손익 기여도 발산 막대
+
+    private var pnlContributionView: some View {
+        let sorted = rows.sorted { $0.pnl > $1.pnl }  // 수익 → 손실 순
+        let maxAbs = max(sorted.map { abs($0.pnl) }.max() ?? 1.0, 1.0)
+
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("손익 기여도").font(.caption).foregroundColor(.secondary)
+            ForEach(sorted, id: \.item.code) { row in
+                HStack(spacing: 6) {
+                    Text(row.item.name)
+                        .font(.caption2)
+                        .lineLimit(1)
+                        .frame(width: 68, alignment: .leading)
+
+                    // 발산 막대: 가운데 기준선, 수익 오른쪽(빨강), 손실 왼쪽(파랑)
+                    GeometryReader { geo in
+                        let half = geo.size.width / 2
+                        let ratio = CGFloat(min(abs(row.pnl) / maxAbs, 1.0))
+                        let fillW = max(2, half * ratio)
+                        ZStack {
+                            Rectangle()
+                                .fill(Color.secondary.opacity(0.2))
+                                .frame(width: 1, height: 10)
+                            if row.pnl >= 0 {
+                                HStack(spacing: 0) {
+                                    Color.clear.frame(width: half)
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(Color.red.opacity(0.65))
+                                        .frame(width: fillW, height: 8)
+                                    Spacer()
+                                }
+                            } else {
+                                HStack(spacing: 0) {
+                                    Spacer()
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(Color.blue.opacity(0.65))
+                                        .frame(width: fillW, height: 8)
+                                    Color.clear.frame(width: half)
+                                }
+                            }
+                        }
+                    }
+                    .frame(height: 10)
+
+                    let sign = row.pnl >= 0 ? "+" : ""
+                    Text("\(sign)\(Int(row.pnl).formatted())")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundColor(row.pnl >= 0 ? .red : .blue)
+                        .frame(width: 64, alignment: .trailing)
+                }
+            }
+        }
+    }
+
+    // MARK: - 섹터 비중 + 집중도 경고
+
+    private func sectorWeightView(totalEval: Double) -> some View {
+        let total = sectorRows.reduce(0.0) { $0 + $1.evaluated }
+        let concentratedSectors = sectorRows.filter { $0.evaluated / total > 0.4 }
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("섹터 비중").font(.caption).foregroundColor(.secondary)
+                if !concentratedSectors.isEmpty {
+                    HStack(spacing: 3) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                        Text("\(concentratedSectors.map { $0.sector }.joined(separator: "·")) 집중")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                    }
+                }
+            }
+
+            ForEach(sectorRows, id: \.sector) { row in
+                let pct = total == 0 ? 0.0 : row.evaluated / total
+                let isConcentrated = pct > 0.4
+                let color = Self.sectorColor(row.sector)
+                HStack(spacing: 8) {
+                    Text(row.sector)
+                        .font(.caption2)
+                        .foregroundColor(isConcentrated ? .orange : color)
+                        .frame(width: 80, alignment: .leading)
+                    GeometryReader { geo in
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill((isConcentrated ? Color.orange : color).opacity(0.75))
+                            .frame(width: max(4, geo.size.width * CGFloat(pct)), height: 10)
+                    }
+                    .frame(height: 10)
+                    Text(String(format: "%.0f%%", pct * 100))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundColor(isConcentrated ? .orange : .secondary)
+                        .frame(width: 30, alignment: .trailing)
+                    if isConcentrated {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                    }
+                }
+            }
+
+            if !concentratedSectors.isEmpty {
+                Text("한 섹터 비중이 40%를 초과하면 특정 업황·지표에 포트폴리오 전체가 흔들릴 수 있어요.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    // MARK: - 보유 종목 행
+
     private func holdingRow(_ row: HoldingRow) -> some View {
         let pnlColor: Color = row.pnl > 0 ? .red : row.pnl < 0 ? .blue : .secondary
         return HStack {
@@ -248,21 +336,24 @@ struct PortfolioView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // 섹터별 평가금액 합산
+    // MARK: - 집계 연산
+
+    // 백엔드 분류 우선, 없으면 "기타"
     private var sectorRows: [(sector: String, evaluated: Double)] {
         var map: [String: Double] = [:]
         for row in rows {
-            let sector = Self.sectorMap[row.item.code] ?? "기타"
+            let sector = sectorClassify[row.item.code] ?? "기타"
             map[sector, default: 0] += row.evaluated
         }
         return map.map { (sector: $0.key, evaluated: $0.value) }
                   .sorted { $0.evaluated > $1.evaluated }
     }
 
+    // MARK: - 로드
+
     private func load() async {
         loading = true
         let all = Db.watchlist.all()
-        // 평단가·수량이 모두 입력된 종목만
         let holdings = all.filter { $0.avgPrice != nil && $0.qty != nil }
         guard !holdings.isEmpty else {
             rows = []
@@ -277,11 +368,23 @@ struct PortfolioView: View {
             let avg = avgNum.doubleValue
             let qty = Double(qtyNum.int64Value)
             let quote = quoteMap[item.code]
-            let price = quote.map { Double($0.price) } ?? avg  // 시세 없으면 평단으로 대체
+            let price = quote.map { Double($0.price) } ?? avg
             return HoldingRow(item: item, quote: quote, avg: avg, qty: qty, price: price)
         }
         lastUpdated = Date()
         loading = false
+
+        // 섹터 분류는 7일 캐시라 별도 비동기 로드 (화면 표시 차단 없이)
+        if let entries = try? await api.getSectorClassify(codes: codes) {
+            sectorClassify = Dictionary(uniqueKeysWithValues: entries.map { ($0.code, $0.sectorLabel) })
+        }
+    }
+
+    // MARK: - 포맷 헬퍼
+
+    private func shortTime(_ d: Date) -> String {
+        let f = DateFormatter(); f.dateFormat = "HH:mm"
+        return f.string(from: d)
     }
 }
 
