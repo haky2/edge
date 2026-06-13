@@ -58,6 +58,7 @@ import com.haky.edge.model.WatchItem
 import com.haky.edge.ui.theme.ChangeDown
 import com.haky.edge.ui.theme.ChangeUp
 import com.haky.edge.ui.theme.OrangeAccent
+import com.haky.edge.ui.theme.PurpleAccent
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import java.util.Locale
@@ -84,6 +85,7 @@ fun StockDetailScreen(
     var earnings by remember { mutableStateOf<com.haky.edge.model.EarningsEntry?>(null) }
     var disclosures by remember { mutableStateOf<List<com.haky.edge.model.DartDisclosure>>(emptyList()) }
     var stockSignal by remember { mutableStateOf<com.haky.edge.model.StockImpact?>(null) }
+    var targetPrice by remember { mutableStateOf<com.haky.edge.model.TargetPriceInfo?>(null) }
     var analysis by remember { mutableStateOf<com.haky.edge.model.Analysis?>(null) }
     var analyzing by remember { mutableStateOf(false) }
     var chartPeriod by remember { mutableStateOf(ChartPeriod.M3) }
@@ -143,6 +145,7 @@ fun StockDetailScreen(
         try { earnings = api.getEarnings(listOf(code)).firstOrNull() } catch (_: Exception) {}
         try { disclosures = api.getDartDisclosures(code, days = 30) } catch (_: Exception) {}
         try { stockSignal = api.getStockSignals(code) } catch (_: Exception) {}
+        try { targetPrice = api.getTargetPrice(code) } catch (_: Exception) {}
     }
 
     Scaffold(
@@ -213,12 +216,13 @@ fun StockDetailScreen(
             }
             if (flows.isNotEmpty()) FlowCard(flows)
             if (news.isNotEmpty()) NewsCard(news)
+            quote?.let { InterpretationCard(it, flows, targetPrice) }
             valuationBand?.let { ValuationBandCard(it) }
             backtest?.let { BacktestCard(it) }
             flowSensitivity?.let { FlowSensitivityCard(it) }
             shortSelling?.let { ShortSellingCard(it) }
-            earnings?.let { EarningsCard(it) }
             if (disclosures.isNotEmpty()) DartDisclosureCard(disclosures)
+            earnings?.let { EarningsCard(it) }
             stockSignal?.let { MacroSignalCard(it) }
         }
     }
@@ -560,9 +564,12 @@ private fun PositionCard(item: WatchItem, quote: Quote?, onEditClick: () -> Unit
     ) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("내 포지션", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            TextButton(onClick = onEditClick) {
-                Text(if (item.avgPrice == null) "입력" else "수정", style = MaterialTheme.typography.bodySmall)
-            }
+            Text(
+                if (item.avgPrice == null) "입력" else "수정",
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = PurpleAccent,
+                modifier = Modifier.clickable { onEditClick() }.padding(horizontal = 8.dp, vertical = 4.dp),
+            )
         }
 
         val price = quote?.price?.toDouble()
@@ -764,22 +771,26 @@ private fun TrendSignal(r: com.haky.edge.analysis.TechnicalResult, price: Double
 @Composable
 private fun TrendDot(label: String, ma: Double?, price: Double) {
     val above = ma?.let { price >= it }
+    val circleColor = when (above) {
+        null -> Color.LightGray.copy(alpha = 0.5f)
+        true -> ChangeUp
+        false -> ChangeDown
+    }
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Box(
-            modifier = Modifier
-                .size(14.dp)
-                .background(
-                    when (above) {
-                        null -> Color.LightGray.copy(alpha = 0.5f)
-                        true -> ChangeUp
-                        false -> ChangeDown
-                    },
-                    androidx.compose.foundation.shape.CircleShape,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
+        // 원 + 흰 삼각형(상승↑/하락↓)을 Canvas로 직접 그려 선명하게.
+        Canvas(modifier = Modifier.size(18.dp)) {
+            drawCircle(circleColor)
             if (above != null) {
-                Text(if (above) "↑" else "↓", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp), color = Color.White)
+                val cx = size.width / 2f
+                val cy = size.height / 2f
+                val w = size.width * 0.30f
+                val h = size.height * 0.26f
+                val tri = androidx.compose.ui.graphics.Path().apply {
+                    if (above) { moveTo(cx, cy - h); lineTo(cx - w, cy + h); lineTo(cx + w, cy + h) }
+                    else { moveTo(cx, cy + h); lineTo(cx - w, cy - h); lineTo(cx + w, cy - h) }
+                    close()
+                }
+                drawPath(tri, Color.White)
             }
         }
         Text(label, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)

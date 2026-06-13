@@ -99,6 +99,23 @@ internal fun CollapsibleCard(
     }
 }
 
+// 선명한 방향 화살표(채운 삼각형). 유니코드 화살표가 얇아 잘 안 보이는 문제 해결.
+@Composable
+private fun ArrowGlyph(up: Boolean, color: Color, sizeDp: androidx.compose.ui.unit.Dp = 11.dp) {
+    Canvas(modifier = Modifier.size(sizeDp)) {
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val w = size.width * 0.36f
+        val h = size.height * 0.30f
+        val p = androidx.compose.ui.graphics.Path().apply {
+            if (up) { moveTo(cx, cy - h); lineTo(cx - w, cy + h); lineTo(cx + w, cy + h) }
+            else { moveTo(cx, cy + h); lineTo(cx - w, cy - h); lineTo(cx + w, cy - h) }
+            close()
+        }
+        drawPath(p, color)
+    }
+}
+
 @Composable
 private fun BadgePill(text: String, color: Color) {
     Text(
@@ -227,8 +244,9 @@ internal fun BacktestCard(bt: Backtest) {
         trailing = { Text("최근 ${bt.tradingDays}거래일 실측", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            val baseAvg = "%+.2f".format(bt.baselineAvgReturn)
             Text(
-                "평소 익일 상승확률 ${bt.baselineWinRate}% · 평균 %+.2f%% (세로선=평소 기준)".format(bt.baselineAvgReturn),
+                "평소 익일 상승확률 ${bt.baselineWinRate}% · 평균 ${baseAvg}% (세로선=평소 기준)",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             shown.forEachIndexed { idx, s ->
@@ -348,8 +366,8 @@ internal fun ShortSellingCard(ss: ShortSellingSummary) {
                 modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).padding(10.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Text("공매도는 주식을 빌려서 파는 것이에요.", style = MaterialTheme.typography.bodySmall)
-                Text("지금 비싸게 팔고 → 나중에 싸게 사서 갚아 차익을 얻는 방식이라, 하락에 베팅하는 세력이 많을수록 공매도 잔고가 늘어나요.", style = MaterialTheme.typography.bodySmall)
+                Text(parseMarkdownBold("공매도는 **주식을 빌려서 파는** 것이에요."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("지금 비싸게 팔고 → 나중에 싸게 사서 갚아 차익을 얻는 방식이라, 하락에 베팅하는 세력이 많을수록 공매도 잔고가 늘어나요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text("잔고 증가", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = ChangeUp)
@@ -375,11 +393,13 @@ internal fun ShortSellingCard(ss: ShortSellingSummary) {
                     val bal = ss.balance
                     if (bal != null) {
                         Text("${formatShortVol(bal)}주", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                             ss.balanceChangePct?.let { pct ->
                                 val isUp = pct > 0.5; val isDown = pct < -0.5
                                 val c = if (isUp) ChangeUp else if (isDown) ChangeDown else MaterialTheme.colorScheme.onSurfaceVariant
-                                Text("${if (isUp) "↑" else if (isDown) "↓" else "−"} ${if (pct >= 0) "+" else ""}%.1f%%".format(pct), style = MaterialTheme.typography.labelSmall, color = c)
+                                if (isUp || isDown) ArrowGlyph(isUp, c)
+                                val pctStr = "%.1f".format(pct)
+                                Text("${if (pct >= 0) "+" else ""}$pctStr%", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = c)
                             }
                             ss.balanceDate?.let { Text("($it 확정)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         }
@@ -470,7 +490,10 @@ internal fun MacroSignalCard(sig: StockImpact) {
             } else {
                 sig.signals.forEach { s ->
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(signalArrow(s.direction), style = MaterialTheme.typography.labelSmall, color = directionColor(s.direction))
+                        Box(modifier = Modifier.padding(top = 3.dp)) {
+                            if (s.direction != 0) ArrowGlyph(s.direction > 0, directionColor(s.direction))
+                            else Text("→", style = MaterialTheme.typography.labelSmall, color = directionColor(s.direction))
+                        }
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             Text("${s.indicator} ${signedPct(s.changeRate)}%", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium))
                             Text(s.note, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -499,6 +522,125 @@ private fun signedPct(v: Double): String = (if (v >= 0) "+" else "") + "%.2f".fo
 // "20260814" → "2026.08.14"
 private fun formattedDate8(d: String): String =
     if (d.length != 8) d else "${d.substring(0, 4)}.${d.substring(4, 6)}.${d.substring(6, 8)}"
+
+// ─── 지표 해석 (계산 기반, LLM 없음) ────────────────────
+
+@Composable
+internal fun InterpretationCard(
+    quote: com.haky.edge.model.Quote,
+    flows: List<com.haky.edge.model.InvestorFlow>,
+    targetPrice: com.haky.edge.model.TargetPriceInfo?,
+) {
+    val ctx = com.haky.edge.analysis.StockAnalysis.priceContext(quote)
+    val streaks = com.haky.edge.analysis.StockAnalysis.flowStreaks(flows)
+    val hasValuation = quote.per > 0 || quote.pbr > 0
+    if (ctx == null && !hasValuation && targetPrice == null && streaks.isEmpty()) return
+    var helpExpanded by remember { mutableStateOf(false) }
+    CollapsibleCard(title = "지표 해석") {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (ctx != null) {
+                RangeGauge(ctx.pctInRange52w)
+                InsightRow("52주 고점 대비", "%.1f%%".format(ctx.pctFromHigh52w))
+                InsightRow("52주 저점 대비", "+%.1f%%".format(ctx.pctFromLow52w))
+            }
+            if (hasValuation) {
+                if (ctx != null) HorizontalDivider()
+                if (quote.sectorName.isNotEmpty()) InsightRow("업종", quote.sectorName)
+                if (quote.per > 0) ValuationRow("PER", "%.2f배".format(quote.per), "내 돈을 몇 년 모으면 이 회사를 통째로 살 수 있나 — 낮을수록 이익 대비 싼 편이에요. 성장 기대가 크면 높게 매겨져요.", helpExpanded)
+                if (quote.pbr > 0) ValuationRow("PBR", "%.2f배".format(quote.pbr), "회사가 가진 재산(장부가치) 대비 주가예요. 1배면 딱 장부가치 수준, 낮을수록 자산 대비 싼 편.", helpExpanded)
+                Text(
+                    if (helpExpanded) "ⓘ 설명 접기 ▲" else "ⓘ PER·PBR이 뭐죠? ▼",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.clickable { helpExpanded = !helpExpanded }.padding(vertical = 2.dp),
+                )
+            }
+            targetPrice?.let { tp ->
+                if (ctx != null || hasValuation) HorizontalDivider()
+                val upside = (tp.price - quote.price).toDouble() / quote.price * 100
+                val c = if (upside >= 5) ChangeUp else if (upside < -5) ChangeDown else MaterialTheme.colorScheme.onSurfaceVariant
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("컨센서스 목표주가", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        Text("${tp.price.fmt()}원", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium))
+                        Text(
+                            "  ${if (upside >= 0) "▲" else "▼"}${"%.1f".format(abs(upside))}%",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = c,
+                        )
+                    }
+                    Text(tp.basis, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (streaks.isNotEmpty()) {
+                if (ctx != null || hasValuation) HorizontalDivider()
+                streaks.forEach { s ->
+                    val sc = if (s.buying) ChangeUp else ChangeDown
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(modifier = Modifier.size(6.dp).background(sc, androidx.compose.foundation.shape.CircleShape))
+                        Text("${s.investor} ${s.days}일 연속 ${if (s.buying) "순매수" else "순매도"}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                        Text("누적 ${flowAbbrev(s.net)}", style = MaterialTheme.typography.labelMedium, color = sc)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InsightRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        Text(value, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium))
+    }
+}
+
+@Composable
+private fun ValuationRow(label: String, value: String, meaning: String, expanded: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Text(value, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium))
+        }
+        if (expanded) Text(meaning, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun RangeGauge(pct: Double) {
+    val color = when {
+        pct < 25 -> ChangeDown
+        pct < 75 -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> ChangeUp
+    }
+    val label = when {
+        pct < 25 -> "저점권"
+        pct < 50 -> "중하단"
+        pct < 75 -> "중상단"
+        else -> "고점권"
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("52주 위치", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Text("${pct.toInt()}%  $label", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium), color = color)
+        }
+        Canvas(modifier = Modifier.fillMaxWidth().height(5.dp)) {
+            drawRoundRect(Color.Gray.copy(alpha = 0.18f), size = size, cornerRadius = CornerRadius(size.height / 2f))
+            val w = (size.width * (pct / 100.0)).toFloat().coerceAtLeast(5f)
+            drawRoundRect(color, size = Size(w, size.height), cornerRadius = CornerRadius(size.height / 2f))
+        }
+    }
+}
+
+// 순매수 누적량 축약(부호 포함): +1.2억 / +14만 / +234.
+private fun flowAbbrev(n: Long): String {
+    if (n == 0L) return "0"
+    val sign = if (n > 0) "+" else "-"
+    val a = abs(n).toDouble()
+    return when {
+        a >= 1e8 -> sign + "%.1f억".format(a / 1e8)
+        a >= 1e4 -> sign + "%.0f만".format(a / 1e4)
+        else -> sign + abs(n).fmt()
+    }
+}
 
 // ─── AI 종합 코멘트 (C5) ─────────────────────────────────
 

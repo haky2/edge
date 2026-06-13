@@ -6,9 +6,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -40,7 +43,8 @@ fun PositionInputSheet(
     onDismiss: () -> Unit,
     onSave: (WatchItem) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState()
+    // 부분 확장 detent를 건너뛰어 처음부터 전체 높이로 펼친다(저장/취소 버튼이 바로 보이게).
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var avgTfv by remember { mutableStateOf(item.avgPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue("")) }
     var qtyText by remember { mutableStateOf(item.qty?.toString() ?: "") }
@@ -54,6 +58,8 @@ fun PositionInputSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .imePadding()
                 .padding(horizontal = 16.dp)
                 .navigationBarsPadding()
                 .padding(bottom = 16.dp),

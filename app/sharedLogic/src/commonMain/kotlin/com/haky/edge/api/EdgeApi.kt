@@ -25,6 +25,7 @@ import com.haky.edge.model.MoodAccuracyReport
 import com.haky.edge.model.ValuationBand
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.get
@@ -58,6 +59,12 @@ class EdgeApi(
         install(ContentNegotiation) {
             // 백엔드가 우리가 안 보는 필드를 추가해도 깨지지 않게.
             json(Json { ignoreUnknownKeys = true })
+        }
+        // AI 분석(getAnalysis)은 Claude 생성에 10~50초 걸린다. Android OkHttp 기본 읽기 타임아웃(~10초)이면
+        // 타임아웃 예외로 "불러오지 못했어요"가 떴다 → 넉넉히 120초로. (iOS Darwin도 동일 적용)
+        install(HttpTimeout) {
+            requestTimeoutMillis = 120_000
+            socketTimeoutMillis = 120_000
         }
         // 토큰이 있으면 모든 요청에 공유 토큰 헤더를 자동 첨부(배포 백엔드 인증 통과용).
         if (apiToken.isNotEmpty()) {
