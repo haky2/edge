@@ -45,7 +45,9 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.haky.edge.api.EdgeApi
@@ -73,6 +75,7 @@ fun StockDetailScreen(
     var watchItem by remember { mutableStateOf(item) }
     var quote by remember { mutableStateOf(initialQuote) }
     var dailyBars by remember { mutableStateOf<List<com.haky.edge.model.DailyBar>>(emptyList()) }
+    var flows by remember { mutableStateOf<List<com.haky.edge.model.InvestorFlow>>(emptyList()) }
     var chartPeriod by remember { mutableStateOf(ChartPeriod.M3) }
     var trendHelpExpanded by remember { mutableStateOf(false) }
     var indicatorHelpExpanded by remember { mutableStateOf(false) }
@@ -94,6 +97,9 @@ fun StockDetailScreen(
     LaunchedEffect(Unit) { refresh() }
     LaunchedEffect(watchItem.code) {
         try { dailyBars = api.getDaily(watchItem.code, bars = 160) } catch (_: Exception) {}
+    }
+    LaunchedEffect(watchItem.code) {
+        try { flows = api.getInvestorFlow(watchItem.code, days = 5) } catch (_: Exception) {}
     }
 
     Scaffold(
@@ -157,6 +163,7 @@ fun StockDetailScreen(
                     onHelpToggle = { indicatorHelpExpanded = !indicatorHelpExpanded },
                 )
             }
+            if (flows.isNotEmpty()) FlowCard(flows)
         }
     }
 
@@ -802,6 +809,139 @@ private fun rsiLabel(v: Double): String = when {
     v >= 70 -> "과매수권"
     v <= 30 -> "과매도권"
     else -> ""
+}
+
+// ─── 수급 카드 ───────────────────────────────────────────
+
+private val FlowForeign = Color(0xFFFF9500) // 외인 주황
+private val FlowInstitution = Color(0xFF30B0C7) // 기관 청록
+
+@Composable
+private fun FlowCard(flows: List<com.haky.edge.model.InvestorFlow>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("수급 · 순매수", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Text(
+                "전일 확정",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+        // 범례
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FlowLegendDot("외인", FlowForeign)
+            FlowLegendDot("기관", FlowInstitution)
+        }
+        FlowBars(flows, modifier = Modifier.fillMaxWidth().height(110.dp))
+        HorizontalDivider()
+        // 정확 수치표
+        FlowTableHeader()
+        flows.forEach { f ->
+            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(mmdd(f.date), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1.2f))
+                FlowCell(f.foreign, Modifier.weight(1f))
+                FlowCell(f.institution, Modifier.weight(1f))
+                FlowCell(f.individual, Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun FlowLegendDot(label: String, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        Box(modifier = Modifier.size(8.dp).background(color, androidx.compose.foundation.shape.CircleShape))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun FlowTableHeader() {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("날짜", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1.2f))
+        listOf("외국인", "기관", "개인").forEach {
+            Text(
+                it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.End, modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun FlowCell(n: Long, modifier: Modifier = Modifier) {
+    Text(
+        flowText(n),
+        style = MaterialTheme.typography.labelMedium,
+        color = if (n > 0) ChangeUp else if (n < 0) ChangeDown else MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = androidx.compose.ui.text.style.TextAlign.End,
+        modifier = modifier,
+    )
+}
+
+// 외인/기관 그룹 막대(0선 기준 상승=위·하락=아래). iOS BarMark position(by:) 대응.
+@Composable
+private fun FlowBars(flows: List<com.haky.edge.model.InvestorFlow>, modifier: Modifier = Modifier) {
+    val measurer = rememberTextMeasurer()
+    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val n = flows.size
+    if (n == 0) return
+    val maxAbs = flows.flatMap { listOf(abs(it.foreign), abs(it.institution)) }.maxOrNull()?.coerceAtLeast(1L) ?: 1L
+    val labelStyle = androidx.compose.ui.text.TextStyle(fontSize = 9.sp, color = secondary)
+
+    Canvas(modifier = modifier) {
+        val labelH = 14.dp.toPx()
+        val plotH = size.height - labelH
+        val zeroY = plotH / 2f
+        val slot = size.width / n
+        val barW = slot * 0.28f
+        val gap = slot * 0.06f
+        flows.forEachIndexed { i, f ->
+            val center = slot * i + slot / 2f
+            fun bar(value: Long, color: Color, xCenter: Float) {
+                val h = (zeroY - 2f) * (abs(value).toFloat() / maxAbs)
+                if (value >= 0) {
+                    drawRect(color.copy(alpha = 0.85f), Offset(xCenter - barW / 2f, zeroY - h), Size(barW, h))
+                } else {
+                    drawRect(color.copy(alpha = 0.85f), Offset(xCenter - barW / 2f, zeroY), Size(barW, h))
+                }
+            }
+            bar(f.foreign, FlowForeign, center - (barW + gap) / 2f)
+            bar(f.institution, FlowInstitution, center + (barW + gap) / 2f)
+            // 날짜 라벨
+            val txt = measurer.measure(mmdd(f.date), labelStyle)
+            drawText(txt, topLeft = Offset(center - txt.size.width / 2f, plotH + (labelH - txt.size.height) / 2f))
+        }
+        // 0선
+        drawLine(secondary.copy(alpha = 0.4f), Offset(0f, zeroY), Offset(size.width, zeroY), strokeWidth = 0.8f)
+    }
+}
+
+// 순매수 수량 축약: +1.2억 / +14만 / +234. 부호 포함. iOS flowText 대응.
+private fun flowText(n: Long): String {
+    if (n == 0L) return "0"
+    val sign = if (n > 0) "+" else "-"
+    val a = abs(n).toDouble()
+    return when {
+        a >= 1e8 -> sign + "%.1f억".format(a / 1e8)
+        a >= 1e4 -> sign + "%.0f만".format(a / 1e4)
+        else -> sign + abs(n).fmt()
+    }
+}
+
+// "20260602" → "06/02"
+private fun mmdd(d: String): String {
+    if (d.length != 8) return d
+    return "${d.substring(4, 6)}/${d.substring(6, 8)}"
 }
 
 // ─── 숫자 포맷 헬퍼 ──────────────────────────────────────
