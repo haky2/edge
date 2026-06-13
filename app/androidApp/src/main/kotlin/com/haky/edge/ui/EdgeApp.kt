@@ -116,9 +116,9 @@ fun EdgeApp(
                         },
                         onAddClick = { destination = AppDestination.Search },
                     )
-                    is AppDestination.StockDetail -> StockDetailStubScreen(
+                    is AppDestination.StockDetail -> StockDetailScreen(
                         item = dest.item,
-                        quote = dest.quote,
+                        initialQuote = dest.quote,
                         watchlistRepo = watchlistRepo,
                         actionLogRepo = actionLogRepo,
                         api = api,

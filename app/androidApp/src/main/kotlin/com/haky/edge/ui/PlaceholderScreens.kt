@@ -4,11 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -28,58 +24,6 @@ import androidx.compose.ui.unit.dp
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.ActionLogRepository
 import com.haky.edge.db.WatchlistRepository
-import com.haky.edge.model.Quote
-import com.haky.edge.model.WatchItem
-
-// ──── 종목 상세 스텁 (Batch B에서 전체 구현) ─────────────────────────────────
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun StockDetailStubScreen(
-    item: WatchItem,
-    quote: Quote?,
-    watchlistRepo: WatchlistRepository,
-    actionLogRepo: ActionLogRepository,
-    api: EdgeApi,
-    onBack: () -> Unit,
-) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(item.name) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "뒤로")
-                    }
-                },
-            )
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(item.name, style = MaterialTheme.typography.headlineSmall)
-                Text(item.code, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (quote != null) {
-                    Text(
-                        "%,d원".format(quote.price),
-                        style = MaterialTheme.typography.headlineMedium,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                }
-                Text(
-                    "종목 상세 — Batch C에서 구현",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 16.dp),
-                )
-            }
-        }
-    }
-}
 
 // ──── 내 자산 탭 스텁 (Batch E에서 구현) ───────────────────────────────────
 
