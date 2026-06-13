@@ -100,9 +100,13 @@ class KisClient(
                 throw KisException("토큰 발급 실패: ${resp.errorCode} ${resp.errorDescription}".trim())
             }
             cachedToken = resp.accessToken
-            // 만료 60초 전에 미리 폐기해, 경계 시점에 막 만료된 토큰으로 호출하는 일을 피한다.
-            // coerceAtLeast(60): expires_in 이 비정상적으로 작아도 음수 만료가 되지 않도록 하한선.
-            tokenExpiryMs = System.currentTimeMillis() + (resp.expiresIn - 60).coerceAtLeast(60) * 1000
+            // KIS는 "1일 1회 발급 원칙"에 따라 기존 토큰을 재사용해 돌려줄 수 있다.
+            // 이 경우 expiresIn=86400 이지만 토큰의 실제 만료(JWT exp)는 원래 발급 시각+24h 라
+            // currentTimeMs + expiresIn 이 JWT exp 보다 늦게 계산되어 만료된 토큰을 유효하다고 믿는 버그가 생긴다.
+            // JWT exp 를 직접 파싱해 두 값 중 더 이른 것을 사용하면 재사용 토큰도 정확히 만료된다.
+            val fromExpiresIn = System.currentTimeMillis() + (resp.expiresIn - 60).coerceAtLeast(60) * 1000
+            val fromJwtExp = jwtExpMs(resp.accessToken)
+            tokenExpiryMs = if (fromJwtExp > 0) minOf(fromExpiresIn, fromJwtExp) else fromExpiresIn
             saveTokenToFile() // 다음 재시작 때 재사용하도록 파일에 기록
             resp.accessToken
         }
@@ -460,11 +464,43 @@ class KisClient(
         throw KisException("한투 업종지수 조회 실패(${spec.iscd}): $lastMsg")
     }
 
+    /**
+     * 코스피200 선물 현재가 조회 (FHMIF10000000).
+     * 야간 선물 세션(18:00~05:00)에서만 output1(선물 가격)이 채워진다.
+     * 필드명 탐색용으로 raw JsonElement 그대로 반환한다.
+     * iscd: 근월물 코드 후보 — "101W2609"(YYMMformat), "101WU6"(월 letter) 등 시도.
+     */
+    suspend fun getFuturesRaw(iscd: String): KisFuturesResponse {
+        val accessToken = token()
+        return rateLimiter.withPermit {
+            http.get("$baseUrl/uapi/domestic-futureoption/v1/quotations/inquire-price") {
+                header("authorization", "Bearer $accessToken")
+                header("appkey", appKey)
+                header("appsecret", appSecret)
+                header("tr_id", "FHMIF10000000")
+                header("custtype", "P")
+                parameter("FID_COND_MRKT_DIV_CODE", "F")
+                parameter("FID_INPUT_ISCD", iscd)
+            }.body()
+        }
+    }
+
     companion object {
         private const val MAX_ATTEMPTS = 4
         private const val BACKOFF_MS = 250L
     }
 }
+
+// JWT payload 의 exp 클레임(초)을 밀리초로 변환. 파싱 실패 시 0 반환(호출부에서 무시).
+// Base64url 디코딩만 하면 되고 서명 검증은 불필요(한투 서버가 이미 발급한 토큰).
+internal fun jwtExpMs(token: String): Long = try {
+    val payload = token.split(".").getOrNull(1) ?: return 0L
+    val padded = payload + "=".repeat((4 - payload.length % 4) % 4)
+    val json = java.util.Base64.getUrlDecoder().decode(padded).decodeToString()
+    // {"exp":1781299545,...} 에서 exp 값만 추출. JSON 라이브러리 없이 정규식으로 충분.
+    val exp = Regex(""""exp"\s*:\s*(\d+)""").find(json)?.groupValues?.get(1)?.toLongOrNull() ?: return 0L
+    (exp - 60) * 1000 // 60초 여유 빼기
+} catch (_: Exception) { 0L }
 
 // 한투 원본(문자열) → 우리 Quote 로 변환.
 // 주의: prdy_vrss(전일대비)·prdy_ctrt(등락률)는 이미 부호 포함("-192000","-9.58") → 부호 재적용 금지.

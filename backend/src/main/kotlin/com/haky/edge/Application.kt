@@ -46,6 +46,7 @@ import com.haky.edge.routes.shortSellingRoutes
 import com.haky.edge.routes.targetPriceRoutes
 import com.haky.edge.routes.valuationBandRoutes
 import com.haky.edge.routes.webSearchTestRoutes
+import com.haky.edge.routes.futuresTestRoutes
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.http.HttpStatusCode
@@ -172,6 +173,7 @@ fun Application.module() {
             comparisonRoutes(comparison)
             eventRoutes(eventSync)
             webSearchTestRoutes(claude)
+            futuresTestRoutes(kis)
         }
     }
 }
