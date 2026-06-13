@@ -84,6 +84,8 @@ fun StockDetailScreen(
     var earnings by remember { mutableStateOf<com.haky.edge.model.EarningsEntry?>(null) }
     var disclosures by remember { mutableStateOf<List<com.haky.edge.model.DartDisclosure>>(emptyList()) }
     var stockSignal by remember { mutableStateOf<com.haky.edge.model.StockImpact?>(null) }
+    var analysis by remember { mutableStateOf<com.haky.edge.model.Analysis?>(null) }
+    var analyzing by remember { mutableStateOf(false) }
     var chartPeriod by remember { mutableStateOf(ChartPeriod.M3) }
     var trendHelpExpanded by remember { mutableStateOf(false) }
     var indicatorHelpExpanded by remember { mutableStateOf(false) }
@@ -102,7 +104,29 @@ fun StockDetailScreen(
         }
     }
 
+    fun loadAnalysis(force: Boolean) {
+        scope.launch {
+            analyzing = true
+            if (force) analysis = null
+            val avg = watchItem.avgPrice
+            val qty = watchItem.qty
+            try {
+                analysis = if (avg != null && qty != null) {
+                    api.getAnalysisPersonalized(
+                        watchItem.code, avg, qty,
+                        watchItem.targetPrice ?: 0.0, watchItem.stopPrice ?: 0.0,
+                        refresh = force,
+                    )
+                } else {
+                    api.getAnalysis(watchItem.code, refresh = force)
+                }
+            } catch (_: Exception) {}
+            analyzing = false
+        }
+    }
+
     LaunchedEffect(Unit) { refresh() }
+    LaunchedEffect(watchItem.code) { loadAnalysis(false) }
     LaunchedEffect(watchItem.code) {
         try { dailyBars = api.getDaily(watchItem.code, bars = 160) } catch (_: Exception) {}
     }
@@ -172,6 +196,11 @@ fun StockDetailScreen(
                 item = watchItem,
                 quote = quote,
                 onEditClick = { showPositionSheet = true },
+            )
+            AICommentCard(
+                analysis = analysis,
+                analyzing = analyzing,
+                onRegenerate = { loadAnalysis(true) },
             )
             val q = quote
             if (technical != null && q != null) {

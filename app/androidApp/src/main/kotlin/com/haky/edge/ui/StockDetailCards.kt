@@ -7,13 +7,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,11 +35,17 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.haky.edge.model.Analysis
 import com.haky.edge.model.Backtest
+import com.haky.edge.model.FactsRichness
 import com.haky.edge.model.DartDisclosure
 import com.haky.edge.model.EarningsEntry
 import com.haky.edge.model.FlowCorrelation
@@ -46,6 +58,7 @@ import com.haky.edge.model.ValuationBand
 import com.haky.edge.ui.theme.ChangeDown
 import com.haky.edge.ui.theme.ChangeUp
 import com.haky.edge.ui.theme.OrangeAccent
+import com.haky.edge.ui.theme.PurpleAccent
 import kotlin.math.abs
 
 private val CardShape = RoundedCornerShape(12.dp)
@@ -486,3 +499,169 @@ private fun signedPct(v: Double): String = (if (v >= 0) "+" else "") + "%.2f".fo
 // "20260814" → "2026.08.14"
 private fun formattedDate8(d: String): String =
     if (d.length != 8) d else "${d.substring(0, 4)}.${d.substring(4, 6)}.${d.substring(6, 8)}"
+
+// ─── AI 종합 코멘트 (C5) ─────────────────────────────────
+
+// **굵게** + 한글 경계 버그 회피: CommonMark 파서 대신 정규식으로 직접 AnnotatedString 빌드.
+// (iOS는 NSRegularExpression 직접 파싱 — 커밋 4a6e1ea. Compose도 동일 전략.)
+internal fun parseMarkdownBold(s: String): AnnotatedString {
+    // ~~취소선~~ 은 내용만 남기고 제거
+    var text = Regex("~~(.+?)~~").replace(s) { it.groupValues[1] }
+    text = text.replace("~~", "")
+    return buildAnnotatedString {
+        var cursor = 0
+        for (m in Regex("""\*\*(.+?)\*\*""").findAll(text)) {
+            if (m.range.first > cursor) append(text.substring(cursor, m.range.first).replace("**", ""))
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(m.groupValues[1]) }
+            cursor = m.range.last + 1
+        }
+        if (cursor < text.length) append(text.substring(cursor).replace("**", ""))
+    }
+}
+
+internal data class CommentSection(val heading: String?, val body: List<String>)
+
+// "\n\n" 블록 분리 후 **소제목**만 있는 줄을 헤더로, 이어지는 블록을 본문으로 묶음.
+internal fun parseCommentSections(comment: String): List<CommentSection> {
+    val blocks = comment.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() && it != "---" }
+    val sections = mutableListOf<CommentSection>()
+    var heading: String? = null
+    var body = mutableListOf<String>()
+    fun flush() {
+        if (heading != null || body.isNotEmpty()) sections.add(CommentSection(heading, body.toList()))
+        heading = null
+        body = mutableListOf()
+    }
+    for (b in blocks) {
+        val h = headingOnly(b)
+        if (h != null) { flush(); heading = h } else body.add(b)
+    }
+    flush()
+    return sections
+}
+
+private fun headingOnly(s: String): String? {
+    if (!s.startsWith("**") || !s.endsWith("**") || s.length <= 4) return null
+    val inner = s.substring(2, s.length - 2)
+    if (inner.contains("**") || inner.contains("\n") || inner.length > 20) return null
+    return inner
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun AICommentCard(
+    analysis: Analysis?,
+    analyzing: Boolean,
+    onRegenerate: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface, CardShape).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("✨", style = MaterialTheme.typography.bodyMedium)
+            Text("AI 종합 코멘트", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            if (analyzing) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+        }
+
+        if (analysis != null) {
+            val sections = remember(analysis.comment) { parseCommentSections(analysis.comment) }
+            val collapsible = sections.size > 2
+            var expanded by remember(analysis.comment) { mutableStateOf(false) }
+            val visible = if (collapsible && !expanded) sections.take(2) else sections
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.height(IntrinsicSize.Min)) {
+                Box(modifier = Modifier.width(3.dp).fillMaxHeight().background(PurpleAccent.copy(alpha = 0.35f), RoundedCornerShape(2.dp)))
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    visible.forEach { sec ->
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            sec.heading?.let {
+                                Text(it, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = PurpleAccent)
+                            }
+                            sec.body.forEach { p ->
+                                Text(
+                                    parseMarkdownBold(p),
+                                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (collapsible) {
+                Text(
+                    if (expanded) "접기 ▲" else "더보기 ▼",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = PurpleAccent,
+                    modifier = Modifier.clickable { expanded = !expanded }.padding(vertical = 2.dp),
+                )
+            }
+
+            analysis.factsRichness?.let { FactsRichnessRow(it) }
+
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.padding(top = 2.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(aiCommentFreshLabel(analysis), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    if (!analyzing) {
+                        Text("↻ 재생성", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = PurpleAccent, modifier = Modifier.clickable { onRegenerate() })
+                    }
+                }
+                Text("투자 판단과 책임은 본인에게 있습니다", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else if (analyzing) {
+            Text("시세·수급·뉴스를 종합해 코멘트를 생성하고 있어요…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Text("코멘트를 불러오지 못했어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("↻ 다시 시도", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = PurpleAccent, modifier = Modifier.clickable { onRegenerate() }.padding(top = 4.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FactsRichnessRow(r: FactsRichness) {
+    val chips = listOf(
+        (if (r.newsCount > 0) "뉴스 ${r.newsCount}건" else "뉴스 없음") to (r.newsCount > 0),
+        "수급" to r.hasInvestorFlow,
+        "연간재무" to r.hasFinancials,
+        "분기실적" to r.hasQuarterlyIncome,
+        "공매도" to r.hasShortSelling,
+        "밸류밴드" to r.hasValuationBand,
+        "백테스트" to r.hasBacktest,
+        "수급민감도" to r.hasFlowSensitivity,
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
+        Text("근거 데이터", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            chips.forEach { (label, on) ->
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = if (on) PurpleAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .background((if (on) PurpleAccent else Color.Gray).copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
+        }
+    }
+}
+
+// "참고용 · 오늘 HH:mm 생성 · N,NNN원 기준"
+private fun aiCommentFreshLabel(a: Analysis): String {
+    var label = if (a.generatedAt.isNotEmpty()) {
+        if (todayYmd() == a.date) "참고용 · 오늘 ${a.generatedAt} 생성" else "참고용 · ${a.date} ${a.generatedAt} 생성"
+    } else "참고용 · ${a.date} 기준"
+    a.generatedPrice?.let { gp ->
+        val price = gp.toLong()
+        if (price > 0) label += " · ${price.fmt()}원 기준"
+    }
+    return label
+}
+
+private fun todayYmd(): String {
+    val c = java.util.Calendar.getInstance()
+    return "%04d-%02d-%02d".format(c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH) + 1, c.get(java.util.Calendar.DAY_OF_MONTH))
+}
