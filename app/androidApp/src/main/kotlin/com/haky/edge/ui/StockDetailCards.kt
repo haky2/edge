@@ -362,11 +362,8 @@ private fun StrengthBar(fraction: Float, color: Color, dimmed: Boolean, modifier
 internal fun ShortSellingCard(ss: ShortSellingSummary) {
     CollapsibleCard(title = "공매도 동향") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            // 설명 박스
-            Column(
-                modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
+            // 설명 (배경 박스 없이 다른 카드와 통일)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(parseMarkdownBold("공매도는 **주식을 빌려서 파는** 것이에요."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("지금 비싸게 팔고 → 나중에 싸게 사서 갚아 차익을 얻는 방식이라, 하락에 베팅하는 세력이 많을수록 공매도 잔고가 늘어나요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
