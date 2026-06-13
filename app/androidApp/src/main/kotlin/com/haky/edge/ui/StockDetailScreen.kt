@@ -76,6 +76,14 @@ fun StockDetailScreen(
     var quote by remember { mutableStateOf(initialQuote) }
     var dailyBars by remember { mutableStateOf<List<com.haky.edge.model.DailyBar>>(emptyList()) }
     var flows by remember { mutableStateOf<List<com.haky.edge.model.InvestorFlow>>(emptyList()) }
+    var news by remember { mutableStateOf<List<com.haky.edge.model.NewsItem>>(emptyList()) }
+    var shortSelling by remember { mutableStateOf<com.haky.edge.model.ShortSellingSummary?>(null) }
+    var valuationBand by remember { mutableStateOf<com.haky.edge.model.ValuationBand?>(null) }
+    var backtest by remember { mutableStateOf<com.haky.edge.model.Backtest?>(null) }
+    var flowSensitivity by remember { mutableStateOf<com.haky.edge.model.FlowSensitivity?>(null) }
+    var earnings by remember { mutableStateOf<com.haky.edge.model.EarningsEntry?>(null) }
+    var disclosures by remember { mutableStateOf<List<com.haky.edge.model.DartDisclosure>>(emptyList()) }
+    var stockSignal by remember { mutableStateOf<com.haky.edge.model.StockImpact?>(null) }
     var chartPeriod by remember { mutableStateOf(ChartPeriod.M3) }
     var trendHelpExpanded by remember { mutableStateOf(false) }
     var indicatorHelpExpanded by remember { mutableStateOf(false) }
@@ -100,6 +108,17 @@ fun StockDetailScreen(
     }
     LaunchedEffect(watchItem.code) {
         try { flows = api.getInvestorFlow(watchItem.code, days = 5) } catch (_: Exception) {}
+    }
+    LaunchedEffect(watchItem.code) {
+        val code = watchItem.code
+        try { news = api.getNews(watchItem.name) } catch (_: Exception) {}
+        try { shortSelling = api.getShortSelling(code) } catch (_: Exception) {}
+        try { valuationBand = api.getValuationBand(code) } catch (_: Exception) {}
+        try { backtest = api.getBacktest(code) } catch (_: Exception) {}
+        try { flowSensitivity = api.getFlowSensitivity(code) } catch (_: Exception) {}
+        try { earnings = api.getEarnings(listOf(code)).firstOrNull() } catch (_: Exception) {}
+        try { disclosures = api.getDartDisclosures(code, days = 30) } catch (_: Exception) {}
+        try { stockSignal = api.getStockSignals(code) } catch (_: Exception) {}
     }
 
     Scaffold(
@@ -164,6 +183,14 @@ fun StockDetailScreen(
                 )
             }
             if (flows.isNotEmpty()) FlowCard(flows)
+            if (news.isNotEmpty()) NewsCard(news)
+            valuationBand?.let { ValuationBandCard(it) }
+            backtest?.let { BacktestCard(it) }
+            flowSensitivity?.let { FlowSensitivityCard(it) }
+            shortSelling?.let { ShortSellingCard(it) }
+            earnings?.let { EarningsCard(it) }
+            if (disclosures.isNotEmpty()) DartDisclosureCard(disclosures)
+            stockSignal?.let { MacroSignalCard(it) }
         }
     }
 
