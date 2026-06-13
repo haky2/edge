@@ -7,8 +7,6 @@
   </defs>
   <g clip-path="url(#squircle)">
     <rect width="1024" height="1024" fill="#15110A"/>
-    <line x1="190" y1="772" x2="834" y2="772" stroke="#3A2E14" stroke-width="8" stroke-linecap="round"/>
     <path d="M214 772 L512 272 L810 772" fill="none" stroke="#E0A93B" stroke-width="104" stroke-linejoin="round" stroke-linecap="round"/>
-    <circle cx="724" cy="300" r="58" fill="#F2C96A"/>
   </g>
 </svg>

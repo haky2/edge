@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Edge app icon foreground — summit peak. Coords match docs/assets/edge-icon-summit.svg
-     (1024 viewport). Scaled to ~0.62 around center so it sits inside the adaptive safe zone. -->
+<!-- Edge app icon foreground — summit chevron. Matches docs/assets/edge-icon-summit.svg.
+     Scaled to ~0.62 around center to sit inside the adaptive safe zone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -11,22 +11,11 @@
         android:pivotY="512"
         android:scaleX="0.62"
         android:scaleY="0.62">
-        <!-- baseline -->
-        <path
-            android:pathData="M190,772 L834,772"
-            android:strokeColor="#3A2E14"
-            android:strokeWidth="8"
-            android:strokeLineCap="round" />
-        <!-- summit peak -->
         <path
             android:pathData="M214,772 L512,272 L810,772"
             android:strokeColor="#E0A93B"
             android:strokeWidth="104"
             android:strokeLineCap="round"
             android:strokeLineJoin="round" />
-        <!-- sun dot -->
-        <path
-            android:fillColor="#F2C96A"
-            android:pathData="M724,242 a58,58 0 1,1 0,116 a58,58 0 1,1 0,-116 z" />
     </group>
 </vector>
