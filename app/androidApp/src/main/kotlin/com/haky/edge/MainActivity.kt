@@ -17,7 +17,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         val driverFactory = DriverFactory(this)
-        val watchlistRepo = WatchlistRepository(driverFactory).also { it.ensureSeeded() }
+        // 첫 실행은 빈 관심종목으로 시작한다(시드 없음). 사용자가 검색으로 직접 추가.
+        val watchlistRepo = WatchlistRepository(driverFactory)
         val actionLogRepo = ActionLogRepository(driverFactory)
         val baseUrl = BuildConfig.EDGE_BASE_URL.ifEmpty { "http://10.0.2.2:8080" }
         val api = EdgeApi(baseUrl = baseUrl, apiToken = BuildConfig.EDGE_API_TOKEN)

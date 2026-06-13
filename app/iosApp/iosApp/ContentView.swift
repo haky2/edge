@@ -4,9 +4,8 @@ import SharedLogic
 // 앱 전역 싱글톤. DB는 한 번만 열고, api 인스턴스도 공유한다.
 enum Db {
     static let watchlist: WatchlistRepository = {
-        let repo = WatchlistRepository(driverFactory: DriverFactory())
-        repo.ensureSeeded()
-        return repo
+        // 첫 실행은 빈 관심종목으로 시작한다(시드 없음). 사용자가 검색으로 직접 추가.
+        WatchlistRepository(driverFactory: DriverFactory())
     }()
     static let actionLog = ActionLogRepository(driverFactory: DriverFactory())
     // 백엔드 주소·토큰은 빌드 설정(Config.xcconfig → Info.plist)에서 읽는다.
@@ -35,19 +34,25 @@ struct WatchlistView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                if let e = errorText {
-                    Text(e).font(.footnote).foregroundColor(.secondary)
-                }
-                ForEach(watchlist, id: \.code) { item in
-                    // 탭하면 상세 화면으로. 리스트가 받아둔 시세를 넘겨 즉시 표시.
-                    NavigationLink {
-                        StockDetailView(item: item, quote: quotes[item.code], api: api)
-                    } label: {
-                        row(item)
+            Group {
+                if watchlist.isEmpty {
+                    emptyState
+                } else {
+                    List {
+                        if let e = errorText {
+                            Text(e).font(.footnote).foregroundColor(.secondary)
+                        }
+                        ForEach(watchlist, id: \.code) { item in
+                            // 탭하면 상세 화면으로. 리스트가 받아둔 시세를 넘겨 즉시 표시.
+                            NavigationLink {
+                                StockDetailView(item: item, quote: quotes[item.code], api: api)
+                            } label: {
+                                row(item)
+                            }
+                        }
+                        .onDelete(perform: delete)   // 1.3c — 스와이프 삭제 → DB에서 제거
                     }
                 }
-                .onDelete(perform: delete)   // 1.3c — 스와이프 삭제 → DB에서 제거
             }
             .navigationTitle("관심종목")
             .toolbar {
@@ -87,6 +92,24 @@ struct WatchlistView: View {
                 SearchView(api: api)
             }
         }
+    }
+
+    // 관심종목이 하나도 없을 때: 안내 + 추가 버튼.
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "star").font(.system(size: 40)).foregroundColor(.secondary)
+            Text("관심종목이 없어요")
+                .font(.headline).foregroundColor(.secondary)
+            Text("종목을 검색해 관심종목에 추가하면\n시세·수급·AI 분석을 한눈에 볼 수 있어요")
+                .font(.caption).foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            Button { showSearch = true } label: {
+                Label("종목 추가", systemImage: "plus")
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // 종목 한 줄: 이름/코드+수급배지, 현재가/등락.
