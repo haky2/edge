@@ -21,7 +21,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.haky.edge.api.EdgeApi
-import com.haky.edge.db.ActionLogRepository
 import com.haky.edge.db.WatchlistRepository
 
 // ──── 브리핑 탭 스텁 (Batch D에서 구현) ────────────────────────────────────
@@ -42,28 +41,6 @@ fun BriefingScreen(
             contentAlignment = Alignment.Center,
         ) {
             Text("브리핑 — Batch D에서 구현", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-// ──── 내 패턴 탭 스텁 (Batch E에서 구현) ───────────────────────────────────
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun StatsScreen(
-    watchlistRepo: WatchlistRepository,
-    actionLogRepo: ActionLogRepository,
-) {
-    Scaffold(
-        topBar = {
-            CompactHeader(title = "내 패턴")
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("내 패턴 — Batch E에서 구현", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

@@ -134,7 +134,7 @@ fun EdgeApp(
                         api = api,
                     )
                     is AppDestination.Briefing -> BriefingScreen(api = api, watchlistRepo = watchlistRepo)
-                    is AppDestination.Stats -> StatsScreen(watchlistRepo = watchlistRepo, actionLogRepo = actionLogRepo)
+                    is AppDestination.Stats -> StatsScreen(watchlistRepo = watchlistRepo, actionLogRepo = actionLogRepo, api = api)
                     is AppDestination.Settings -> SettingsScreen()
                 }
             }

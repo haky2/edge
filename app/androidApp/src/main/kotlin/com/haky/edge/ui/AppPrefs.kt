@@ -6,11 +6,29 @@ import android.content.Context
 object AppPrefs {
     private const val PREFS = "edge_prefs"
     private const val KEY_MODE = "analysis_mode"
+    private const val KEY_STATS_RECENT   = "stats_recent_expanded"
+    private const val KEY_STATS_CODE     = "stats_code_expanded"
+    private const val KEY_STATS_HOLD     = "stats_hold_expanded"
+    private const val KEY_STATS_REASON   = "stats_reason_expanded"
+
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun getMode(ctx: Context): String =
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_MODE, "defensive") ?: "defensive"
+        prefs(ctx).getString(KEY_MODE, "defensive") ?: "defensive"
 
     fun setMode(ctx: Context, mode: String) {
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_MODE, mode).apply()
+        prefs(ctx).edit().putString(KEY_MODE, mode).apply()
     }
+
+    fun getStatsExpanded(ctx: Context, key: String, default: Boolean = false): Boolean =
+        prefs(ctx).getBoolean(key, default)
+
+    fun setStatsExpanded(ctx: Context, key: String, value: Boolean) {
+        prefs(ctx).edit().putBoolean(key, value).apply()
+    }
+
+    const val STATS_RECENT = KEY_STATS_RECENT
+    const val STATS_CODE   = KEY_STATS_CODE
+    const val STATS_HOLD   = KEY_STATS_HOLD
+    const val STATS_REASON = KEY_STATS_REASON
 }
