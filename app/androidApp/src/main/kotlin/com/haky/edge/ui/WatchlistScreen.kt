@@ -140,24 +140,18 @@ fun WatchlistScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("관심종목") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
-                actions = {
-                    IconButton(onClick = onAddClick) {
-                        Icon(Icons.Filled.Add, contentDescription = "종목 추가")
+            CompactHeader(title = "관심종목") {
+                IconButton(onClick = onAddClick) {
+                    Icon(Icons.Filled.Add, contentDescription = "종목 추가")
+                }
+                IconButton(onClick = { refresh() }) {
+                    if (loading) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Filled.Refresh, contentDescription = "새로고침")
                     }
-                    IconButton(onClick = { refresh() }) {
-                        if (loading) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Filled.Refresh, contentDescription = "새로고침")
-                        }
-                    }
-                },
-            )
+                }
+            }
         }
     ) { innerPadding ->
         PullToRefreshBox(

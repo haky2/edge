@@ -35,10 +35,7 @@ fun PortfolioScreen(
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("내 자산") },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-            )
+            CompactHeader(title = "내 자산")
         }
     ) { innerPadding ->
         Box(
@@ -60,10 +57,7 @@ fun BriefingScreen(
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("브리핑") },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-            )
+            CompactHeader(title = "브리핑")
         }
     ) { innerPadding ->
         Box(
@@ -85,10 +79,7 @@ fun StatsScreen(
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("내 패턴") },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-            )
+            CompactHeader(title = "내 패턴")
         }
     ) { innerPadding ->
         Box(
@@ -112,10 +103,7 @@ fun SettingsScreen() {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("설정") },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-            )
+            CompactHeader(title = "설정")
         }
     ) { innerPadding ->
         Column(
