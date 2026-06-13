@@ -26,12 +26,15 @@ fun CompactHeader(
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
             .statusBarsPadding()
-            .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+            .padding(start = 16.dp, end = 8.dp, top = 0.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             title,
-            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+            style = MaterialTheme.typography.headlineSmall.copy(
+                fontWeight = FontWeight.Bold,
+                lineHeight = MaterialTheme.typography.headlineSmall.fontSize, // 글자 위아래 여분 줄 간격 제거
+            ),
             modifier = Modifier.weight(1f),
         )
         actions()
