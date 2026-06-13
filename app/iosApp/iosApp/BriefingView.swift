@@ -32,6 +32,7 @@ struct BriefingView: View {
     @State private var impactHoldings: [StockImpact] = []
     @State private var impactWatch: [StockImpact] = []
     @State private var impactGeneratedAt = ""      // 캐시 최초 생성 시각 HH:mm
+    @State private var impactDate = ""             // 생성 기준일 YYYY-MM-DD
 
     @State private var topGainers: [QuoteRow] = []
     @State private var topLosers: [QuoteRow] = []
@@ -54,6 +55,7 @@ struct BriefingView: View {
     @State private var moodLoading = false
     @State private var moodComment = ""
     @State private var moodGeneratedAt = ""
+    @State private var moodDate = ""          // 생성 기준일 YYYY-MM-DD
     @State private var moodExpanded = true    // 시장 탭 최상단이라 기본 펼침
 
     // 코스피 방향 선행 신호 (미국 지수 가중합 예측 + 적중률)
@@ -68,6 +70,7 @@ struct BriefingView: View {
     @State private var sectorBriefingComment = ""
     @State private var sectorSpotlight: [SpotlightStock] = []
     @State private var sectorBriefingGeneratedAt = ""  // 캐시 최초 생성 시각 HH:mm
+    @State private var sectorBriefingDate = ""         // 생성 기준일 YYYY-MM-DD
 
     // 접기/펼치기 상태 (기본 접힘)
     @State private var supplyExpanded = false
@@ -148,7 +151,10 @@ struct BriefingView: View {
             }
             .pickerStyle(.segmented)
             .listRowBackground(Color(.systemGroupedBackground))
-            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+
+            // 데이터 기준일 배너 — 지금 보는 시세·지표가 언제 것인지(장중 실시간 / 직전 거래일 종가).
+            dataFreshnessBanner
 
             if selectedTab == .myStocks {
                 highlightSection
@@ -192,7 +198,9 @@ struct BriefingView: View {
                         title: "오늘 시장 분위기",
                         aggressive: analysisMode == .aggressive,
                         expanded: moodExpanded,
+                        dateLabel: mdLabel(moodDate),
                         generatedAt: moodGeneratedAt,
+                        weekendReuse: freshness.isSundayReuse,
                         isLoading: moodLoading,
                         action: { withAnimation { moodExpanded.toggle() } },
                         regenAction: { Task { await buildMarketMood(force: true) } }
@@ -523,7 +531,9 @@ struct BriefingView: View {
                     aiCommentToggle(
                         title: "섹터 분석",
                         expanded: sectorBriefingExpanded,
+                        dateLabel: mdLabel(sectorBriefingDate),
                         generatedAt: sectorBriefingGeneratedAt,
+                        weekendReuse: freshness.isSundayReuse,
                         isLoading: sectorBriefingLoading,
                         action: { withAnimation { sectorBriefingExpanded.toggle() } },
                         regenAction: {
@@ -729,7 +739,7 @@ struct BriefingView: View {
         Section {
             Button { withAnimation { impactSectionExpanded.toggle() } } label: {
                 HStack(spacing: 6) {
-                    Text("내 종목 영향 (오늘)").font(.headline)
+                    Text("내 종목 영향").font(.headline)
                     if analysisMode == .aggressive {
                         Text("⚔️ 공격적 모드")
                             .font(.caption2.weight(.semibold))
@@ -775,7 +785,9 @@ struct BriefingView: View {
                                 title: "AI 코멘트",
                                 compact: true,
                                 expanded: impactExpanded,
+                                dateLabel: mdLabel(impactDate),
                                 generatedAt: impactGeneratedAt,
+                                weekendReuse: freshness.isSundayReuse,
                                 isLoading: impactLoading,
                                 action: { withAnimation { impactExpanded.toggle() } },
                                 regenAction: { Task { await buildImpact(allItems: allItemsLoaded, force: true) } }
@@ -807,12 +819,78 @@ struct BriefingView: View {
         }
     }
 
+    // MARK: - 데이터 신선도(배너 + 주말 재사용 판정)
+
+    // KST 기준 데이터가 언제 것인지 판정. 장중=실시간, 그 외=직전 거래일 종가 기준.
+    // 일요일은 백엔드가 토요일 분석을 재사용하므로(데이터 동일) AI 섹션에 안내 + 재생성 비활성.
+    private struct Freshness {
+        let isLive: Bool         // 장중 실시간 시세
+        let isSundayReuse: Bool  // 일요일: 토요일 분석 재사용 안내 + 재생성 잠금
+        let bannerText: String
+    }
+
+    private var freshness: Freshness { Self.computeFreshness() }
+
+    private static func computeFreshness(_ now: Date = Date()) -> Freshness {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Seoul")!
+        let wd = cal.component(.weekday, from: now)        // 1=일 … 7=토
+        let mins = cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now)
+        let isWeekend = (wd == 1 || wd == 7)
+        let open = 540, close = 930                        // 09:00 ~ 15:30
+        let isLive = !isWeekend && mins >= open && mins < close
+        let afterClose = !isWeekend && mins >= close
+
+        // 마지막 거래일: 장 마감 후 평일이면 오늘, 그 외엔 직전 평일(주말 건너뜀). 공휴일은 미반영.
+        var lastTD = now
+        if !afterClose {
+            lastTD = cal.date(byAdding: .day, value: -1, to: now)!
+            while cal.component(.weekday, from: lastTD) == 1 || cal.component(.weekday, from: lastTD) == 7 {
+                lastTD = cal.date(byAdding: .day, value: -1, to: lastTD)!
+            }
+        }
+        let banner: String
+        if isLive {
+            banner = "실시간 시세 · 수초 지연"
+        } else {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "ko_KR"); f.timeZone = cal.timeZone; f.dateFormat = "M/d(E)"
+            let suffix = isWeekend ? " · 주말 휴장" : (mins < open ? " · 개장 전" : "")
+            banner = "\(f.string(from: lastTD)) 종가 기준\(suffix)"
+        }
+        return Freshness(isLive: isLive, isSundayReuse: (wd == 1), bannerText: banner)
+    }
+
+    // "YYYY-MM-DD" → "M/d(요일)" (AI 섹션 생성 기준일 표시용)
+    private func mdLabel(_ ymd: String) -> String {
+        let inF = DateFormatter(); inF.dateFormat = "yyyy-MM-dd"; inF.timeZone = TimeZone(identifier: "Asia/Seoul")
+        guard let d = inF.date(from: ymd) else { return "" }
+        let outF = DateFormatter()
+        outF.locale = Locale(identifier: "ko_KR"); outF.timeZone = inF.timeZone; outF.dateFormat = "M/d(E)"
+        return outF.string(from: d)
+    }
+
+    // 데이터 기준일 배너 (양 탭 공통, 세그먼트 picker 바로 아래).
+    private var dataFreshnessBanner: some View {
+        let fr = freshness
+        return HStack(spacing: 5) {
+            Image(systemName: fr.isLive ? "dot.radiowaves.left.and.right" : "calendar")
+                .font(.caption2)
+            Text(fr.bannerText).font(.caption2)
+        }
+        .foregroundColor(.secondary)
+        .listRowBackground(Color(.systemGroupedBackground))
+        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 6, trailing: 16))
+    }
+
     private func aiCommentToggle(
         title: String,
         aggressive: Bool = false,
         compact: Bool = false,
         expanded: Bool,
+        dateLabel: String = "",
         generatedAt: String,
+        weekendReuse: Bool = false,
         isLoading: Bool,
         action: @escaping () -> Void,
         regenAction: @escaping () -> Void
@@ -829,19 +907,29 @@ struct BriefingView: View {
             .contentShape(Rectangle())
             .onTapGesture(perform: action)
 
-            // 메타 행 — 생성 시각 + 재생성(제목 행과 다른 줄이라 오탭 없음)
+            // 메타 행 — 생성 기준일·시각 + 재생성(제목 행과 다른 줄이라 오탭 없음)
             HStack {
-                if !generatedAt.isEmpty {
-                    Text("오늘 \(generatedAt) 생성")
+                if weekendReuse {
+                    // 일요일: 백엔드가 토요일 분석을 재사용(데이터 동일) → 안내만, 재생성 잠금.
+                    Text("주말엔 시세가 그대로라 직전 분석을 보여드려요")
                         .font(.caption2).foregroundColor(.secondary)
-                }
-                Spacer()
-                if isLoading {
-                    ProgressView().scaleEffect(0.6)
+                    Spacer()
                 } else {
-                    Button(action: regenAction) {
-                        Label("재생성", systemImage: "arrow.clockwise")
-                            .font(.caption2).foregroundColor(.purple)
+                    if !generatedAt.isEmpty {
+                        Text(dateLabel.isEmpty ? "오늘 \(generatedAt) 생성" : "\(dateLabel) \(generatedAt) 생성")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    if isLoading {
+                        ProgressView().scaleEffect(0.6)
+                    } else {
+                        Button(action: regenAction) {
+                            Label("재생성", systemImage: "arrow.clockwise")
+                                .font(.caption2).foregroundColor(.purple)
+                        }
+                        // List row 안의 Button은 buttonStyle을 지정하지 않으면 row 전체가 탭 영역이 돼
+                        // 본문(proseBlock)을 눌러도 재생성이 발동한다 → borderless로 버튼 자체로만 한정.
+                        .buttonStyle(.borderless)
                     }
                 }
             }
@@ -955,12 +1043,12 @@ struct BriefingView: View {
             // 변동 없으면 섹션 자체 숨김
         } else {
             if !topGainers.isEmpty {
-                Section("오늘 상승") {
+                Section("상승 종목") {
                     ForEach(topGainers, id: \.item.code) { quoteLink($0) }
                 }
             }
             if !topLosers.isEmpty {
-                Section("오늘 하락") {
+                Section("하락 종목") {
                     ForEach(topLosers, id: \.item.code) { quoteLink($0) }
                 }
             }
@@ -1233,6 +1321,7 @@ struct BriefingView: View {
         sectorBriefingComment = result.comment
         sectorSpotlight = result.spotlight
         sectorBriefingGeneratedAt = result.generatedAt
+        sectorBriefingDate = result.date
     }
 
     private func buildMacro() async {
@@ -1247,6 +1336,7 @@ struct BriefingView: View {
         guard let result = try? await api.getMarketMood(mode: analysisMode.rawValue, refresh: force) else { return }
         moodComment = result.comment
         moodGeneratedAt = result.generatedAt
+        moodDate = result.date
     }
 
     private func loadMoodAccuracy() async {
@@ -1311,6 +1401,7 @@ struct BriefingView: View {
         impactHoldings = impact.holdings
         impactWatch = impact.watchlist
         impactGeneratedAt = impact.generatedAt
+        impactDate = impact.date
     }
 
     private func buildHighlights(allItems: [WatchItem], quoteMap: [String: Quote]) {

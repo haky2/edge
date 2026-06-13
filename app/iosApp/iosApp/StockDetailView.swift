@@ -233,8 +233,22 @@ struct StockDetailView: View {
         }()
         let volRatio = avg20Vol > 0 ? Double(q.volume) / avg20Vol : 0
         let priceUp  = q.changeRate >= 0
+        // 이 탭의 시세·거래량이 언제 것인지 — 최근 일봉 날짜(주말이면 금요일). 없으면 표시 안 함.
+        let asOf: String? = {
+            guard let d = dailyBars.first?.date else { return nil }
+            let t = tradingDayLabel(d)
+            return t.isEmpty ? nil : t
+        }()
 
         return VStack(alignment: .leading, spacing: 12) {
+            // 데이터 기준일 — 주말/장전엔 직전 거래일(예: 금요일)임을 명확히.
+            if let asOf {
+                HStack(spacing: 4) {
+                    Image(systemName: "calendar").font(.caption2)
+                    Text("\(asOf) 기준").font(.caption2)
+                }
+                .foregroundColor(.secondary)
+            }
             // 시가·현재가
             HStack(alignment: .top) {
                 ohlcStat("시가", q.open.formatted())
@@ -286,7 +300,7 @@ struct StockDetailView: View {
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .lastTextBaseline, spacing: 4) {
-                        Text("오늘 거래량").font(.caption).foregroundColor(.secondary)
+                        Text("거래량").font(.caption).foregroundColor(.secondary)
                         Text("\(q.volume.formatted())주").font(.caption.weight(.semibold))
                         if avg20Vol > 0 {
                             Text("(평소의 \(String(format: "%.1f", volRatio))배)")
@@ -808,6 +822,10 @@ struct StockDetailView: View {
                         Spacer()
                         if analyzing {
                             ProgressView().scaleEffect(0.7)
+                        } else if isSundayReuse {
+                            // 일요일: 주말 동안 시세가 그대로라 직전(토요일) 분석을 재사용 → 재생성 잠금.
+                            Text("주말엔 그대로라 직전 분석 표시")
+                                .font(.caption2).foregroundColor(.secondary)
                         } else {
                             Button {
                                 Task { await loadAnalysis(force: true) }
@@ -1178,6 +1196,22 @@ struct StockDetailView: View {
         f.dateFormat = "yyyy-MM-dd"
         f.timeZone = TimeZone(identifier: "Asia/Seoul")
         return f.string(from: Date())
+    }
+
+    // 일요일(KST): 백엔드가 토요일 분석을 재사용(데이터 동일) → 재생성 잠금 + 안내.
+    private var isSundayReuse: Bool {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Seoul")!
+        return cal.component(.weekday, from: Date()) == 1
+    }
+
+    // "YYYYMMDD"(일봉 date) → "M/d(요일)". 오늘 탭 거래일 표시용.
+    private func tradingDayLabel(_ ymd8: String) -> String {
+        let inF = DateFormatter(); inF.dateFormat = "yyyyMMdd"; inF.timeZone = TimeZone(identifier: "Asia/Seoul")
+        guard ymd8.count == 8, let d = inF.date(from: ymd8) else { return "" }
+        let outF = DateFormatter()
+        outF.locale = Locale(identifier: "ko_KR"); outF.timeZone = inF.timeZone; outF.dateFormat = "M/d(E)"
+        return outF.string(from: d)
     }
 
     // 밸류에이션 히스토리 밴드 카드 — PER/PBR 현재값을 과거 N년 밴드 위에 표시
