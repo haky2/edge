@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -88,6 +91,7 @@ fun ComparisonScreen(
         topBar = {
             TopAppBar(
                 title = { Text("종목 비교", style = MaterialTheme.typography.titleMedium) },
+                windowInsets = WindowInsets(0),
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -274,8 +278,8 @@ private fun CommentCard(c: Comparison, mode: String) {
 
 @Composable
 private fun ProseBlock(text: String) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Surface(modifier = Modifier.width(3.dp).height(200.dp), // 높이는 자동으로 채워짐
+    Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Surface(modifier = Modifier.width(3.dp).fillMaxHeight(),
             shape = RoundedCornerShape(2.dp), color = PurpleAccent.copy(alpha = 0.35f)) {}
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             text.split("\n\n").forEach { para ->

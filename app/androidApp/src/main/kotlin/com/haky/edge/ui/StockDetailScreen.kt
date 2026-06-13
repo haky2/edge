@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -157,6 +158,7 @@ fun StockDetailScreen(
         topBar = {
             TopAppBar(
                 title = { Text(watchItem.name) },
+                windowInsets = WindowInsets(0),
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -657,7 +659,7 @@ private fun UpsideGauge(
     val reached = currentPrice >= targetPrice
     val anchor = stopPrice ?: avgPrice ?: minOf(currentPrice * 0.85, targetPrice * 0.75)
     val range = maxOf(targetPrice - anchor, 1.0)
-    val progress = ((currentPrice - anchor) / range).coerceIn(0.0, 1.05).toFloat()
+    val progress = ((currentPrice - anchor) / range).coerceIn(0.0, 1.0).toFloat()
     val fillColor = if (reached) Color(0xFF34C759) else OrangeAccent
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -688,7 +690,7 @@ private fun UpsideGauge(
                 size = Size(fillW, trackH),
                 cornerRadius = CornerRadius(radius),
             )
-            val tickX = (fillW - tickW / 2f).coerceAtLeast(0f)
+            val tickX = (fillW - tickW / 2f).coerceIn(0f, size.width - tickW)
             drawRoundRect(
                 color = fillColor,
                 topLeft = Offset(tickX, (size.height - tickH) / 2f),

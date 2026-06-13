@@ -165,6 +165,7 @@ fun WatchlistScreen(
             modifier = Modifier.padding(innerPadding),
         ) {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
+                item { HorizontalDivider() }
                 error?.let { msg ->
                     item {
                         Text(
