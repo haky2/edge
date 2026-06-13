@@ -2,7 +2,9 @@ package com.haky.edge.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -69,6 +71,9 @@ fun StockDetailScreen(
 ) {
     var watchItem by remember { mutableStateOf(item) }
     var quote by remember { mutableStateOf(initialQuote) }
+    var dailyBars by remember { mutableStateOf<List<com.haky.edge.model.DailyBar>>(emptyList()) }
+    var chartPeriod by remember { mutableStateOf(ChartPeriod.M3) }
+    var trendHelpExpanded by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var showPositionSheet by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -82,6 +87,9 @@ fun StockDetailScreen(
     }
 
     LaunchedEffect(Unit) { refresh() }
+    LaunchedEffect(watchItem.code) {
+        try { dailyBars = api.getDaily(watchItem.code, bars = 160) } catch (_: Exception) {}
+    }
 
     Scaffold(
         topBar = {
@@ -117,7 +125,19 @@ fun StockDetailScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             PriceHeader(code = watchItem.code, quote = quote)
-            quote?.let { q -> MarketDataCard(q) }
+            quote?.let { q ->
+                PriceChartCard(
+                    quote = q,
+                    bars = dailyBars,
+                    period = chartPeriod,
+                    onPeriodChange = { chartPeriod = it },
+                    avg = watchItem.avgPrice,
+                    target = watchItem.targetPrice,
+                    stop = watchItem.stopPrice,
+                    trendHelpExpanded = trendHelpExpanded,
+                    onTrendHelpToggle = { trendHelpExpanded = !trendHelpExpanded },
+                )
+            }
             PositionCard(
                 item = watchItem,
                 quote = quote,
@@ -182,38 +202,272 @@ private fun PriceHeader(code: String, quote: Quote?) {
     }
 }
 
-// ─── 시세 카드 ───────────────────────────────────────────
+// ─── 가격 흐름 카드 (차트 + 시세) ────────────────────────
 
 @Composable
-private fun MarketDataCard(q: Quote) {
+private fun PriceChartCard(
+    quote: Quote,
+    bars: List<com.haky.edge.model.DailyBar>,
+    period: ChartPeriod,
+    onPeriodChange: (ChartPeriod) -> Unit,
+    avg: Double?,
+    target: Double?,
+    stop: Double?,
+    trendHelpExpanded: Boolean,
+    onTrendHelpToggle: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("시세", style = MaterialTheme.typography.titleSmall)
-        Spacer(modifier = Modifier.height(2.dp))
-        val rows = listOf(
-            listOf("거래량" to q.volume.fmt(), "시가" to q.open.fmt()),
-            listOf("고가" to q.high.fmt(), "저가" to q.low.fmt()),
-            listOf("52주 최고" to q.high52w.fmt(), "52주 최저" to q.low52w.fmt()),
+        if (bars.isNotEmpty() || period == ChartPeriod.TODAY) {
+            Text("가격 흐름", style = MaterialTheme.typography.titleSmall)
+            val opts = ChartPeriod.entries
+            SegmentedToggle(
+                options = opts.map { if (it == ChartPeriod.ALL) allPeriodLabel(bars.size) else it.label },
+                selectedIndex = opts.indexOf(period),
+                onSelect = { onPeriodChange(opts[it]) },
+            )
+
+            if (period == ChartPeriod.TODAY) {
+                TodaySummary(quote, bars)
+            } else if (bars.isNotEmpty()) {
+                ChartLegend(expanded = trendHelpExpanded, onToggle = onTrendHelpToggle)
+                PriceLineChart(
+                    bars = bars,
+                    displayCount = period.barCount,
+                    avg = avg,
+                    target = target,
+                    stop = stop,
+                    modifier = Modifier.fillMaxWidth().height(190.dp),
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("거래량", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("빨강 = 평소 2배↑", style = MaterialTheme.typography.labelSmall, color = ChangeUp.copy(alpha = 0.65f))
+                }
+                VolumeBars(
+                    bars = bars,
+                    displayCount = period.barCount,
+                    modifier = Modifier.fillMaxWidth().height(36.dp),
+                )
+            }
+            HorizontalDivider()
+        }
+        // 시세 그리드
+        val gridRows = listOf(
+            listOf("거래량" to quote.volume.fmt(), "시가" to quote.open.fmt()),
+            listOf("고가" to quote.high.fmt(), "저가" to quote.low.fmt()),
+            listOf("52주 최고" to quote.high52w.fmt(), "52주 최저" to quote.low52w.fmt()),
         )
-        rows.forEach { row ->
+        gridRows.forEach { row ->
             Row(modifier = Modifier.fillMaxWidth()) {
                 row.forEachIndexed { idx, (label, value) ->
                     if (idx > 0) Spacer(modifier = Modifier.width(16.dp))
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
+                    Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(value, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium))
                     }
                 }
             }
         }
+    }
+}
+
+// "전체" 라벨 — 거래일 수 기준 개월/년 환산 (22거래일 ≈ 1개월). iOS allPeriodLabel 대응.
+private fun allPeriodLabel(barCount: Int): String {
+    if (barCount <= 0) return "전체"
+    val months = barCount / 22
+    return when {
+        months < 1 -> "전체"
+        months < 12 -> "${months}개월"
+        else -> "%.1f년".format(months / 12.0)
+    }
+}
+
+// ─── 차트 범례 ───────────────────────────────────────────
+
+@Composable
+private fun ChartLegend(expanded: Boolean, onToggle: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 고저 폭
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 12.dp, height = 8.dp)
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), RoundedCornerShape(2.dp))
+                )
+                Text("고저 폭", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            LegendLine("종가", MaterialTheme.colorScheme.onSurface, dash = false)
+            LegendLine("추세선", OrangeAccent, dash = true)
+            Text(
+                "ⓘ",
+                style = MaterialTheme.typography.labelSmall,
+                color = OrangeAccent.copy(alpha = 0.8f),
+                modifier = Modifier.clickable { onToggle() }.padding(2.dp),
+            )
+        }
+        if (expanded) {
+            Text(
+                "추세선(주황 점선): 최근 20거래일 종가 평균. 현재가가 위면 단기 상승추세, 아래면 하락추세.\n고저 폭(회색 띠): 각 날의 하루 중 가격 변동 범위(고가~저가).",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LegendLine(label: String, color: Color, dash: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        if (dash) {
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                repeat(3) { Box(modifier = Modifier.size(width = 3.dp, height = 1.5.dp).background(color)) }
+            }
+        } else {
+            Box(modifier = Modifier.size(width = 12.dp, height = 2.dp).background(color))
+        }
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+// ─── 오늘 탭 요약 ────────────────────────────────────────
+
+@Composable
+private fun TodaySummary(q: Quote, bars: List<com.haky.edge.model.DailyBar>) {
+    val avg20Vol = run {
+        val recent = bars.take(20)
+        if (recent.isEmpty()) 0.0 else recent.sumOf { it.volume.toDouble() } / recent.size
+    }
+    val volRatio = if (avg20Vol > 0) q.volume.toDouble() / avg20Vol else 0.0
+    val priceUp = q.changeRate >= 0
+    val asOf = bars.firstOrNull()?.date?.let { tradingDayLabel(it) }?.takeIf { it.isNotEmpty() }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (asOf != null) {
+            Text("$asOf 기준", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        // 시가 / 현재가
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            OhlcStat("시가", q.open.fmt())
+            Column(horizontalAlignment = Alignment.End) {
+                Text("${q.price.fmt()} 원", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+                Text(
+                    "${if (q.changeRate >= 0) "+" else ""}%.2f%%".format(q.changeRate),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (priceUp) ChangeUp else ChangeDown,
+                )
+            }
+        }
+        // 고가 / 저가
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            OhlcStat("고가", q.high.fmt(), ChangeUp)
+            OhlcStat("저가", q.low.fmt(), ChangeDown)
+        }
+        // 장중 위치 게이지
+        if (q.high > q.low) {
+            val pos = (q.price - q.low).toFloat() / (q.high - q.low).toFloat()
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Canvas(modifier = Modifier.fillMaxWidth().height(9.dp)) {
+                    val trackH = 5.dp.toPx()
+                    drawRoundRect(
+                        color = Color.LightGray.copy(alpha = 0.4f),
+                        topLeft = Offset(0f, (size.height - trackH) / 2f),
+                        size = Size(size.width, trackH),
+                        cornerRadius = CornerRadius(trackH / 2f),
+                    )
+                    val dotR = 4.5.dp.toPx()
+                    val cx = (size.width - dotR * 2) * pos.coerceIn(0f, 1f) + dotR
+                    drawCircle(if (priceUp) ChangeUp else ChangeDown, dotR, Offset(cx, size.height / 2f))
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("저 ${q.low.fmt()}", style = MaterialTheme.typography.labelSmall, color = ChangeDown)
+                    Text("현재 위치", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("고 ${q.high.fmt()}", style = MaterialTheme.typography.labelSmall, color = ChangeUp)
+                }
+            }
+        }
+        HorizontalDivider()
+        // 거래량 + 해석
+        if (q.open == 0L) {
+            Text(
+                "장 시작 전 거래 데이터가 없어요",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("거래량", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${q.volume.fmt()}주", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
+                    if (avg20Vol > 0) {
+                        Text("(평소의 %.1f배)".format(volRatio), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                val intradayPos = if (q.high > q.low) (q.price - q.low).toDouble() / (q.high - q.low) else null
+                val (emoji, title, desc) = volPriceSignal(priceUp, volRatio, intradayPos)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), RoundedCornerShape(10.dp))
+                        .padding(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(emoji, style = MaterialTheme.typography.titleMedium)
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(title, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
+                        Text(desc, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OhlcStat(label: String, value: String, valueColor: Color = Color.Unspecified) {
+    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = valueColor)
+    }
+}
+
+// 최근 일봉 날짜(YYYYMMDD) → "M/d(요일)". iOS tradingDayLabel 대응.
+private fun tradingDayLabel(ymd8: String): String {
+    if (ymd8.length != 8) return ""
+    val y = ymd8.substring(0, 4).toIntOrNull() ?: return ""
+    val mo = ymd8.substring(4, 6).toIntOrNull() ?: return ""
+    val d = ymd8.substring(6, 8).toIntOrNull() ?: return ""
+    val cal = java.util.Calendar.getInstance().apply { set(y, mo - 1, d) }
+    val dow = arrayOf("일", "월", "화", "수", "목", "금", "토")[cal.get(java.util.Calendar.DAY_OF_WEEK) - 1]
+    return "$mo/$d($dow)"
+}
+
+// 거래량×가격 방향 추론 (8케이스). iOS volPriceSignal 대응.
+private fun volPriceSignal(priceUp: Boolean, ratio: Double, intradayPos: Double?): Triple<String, String, String> {
+    val r = "%.1f".format(ratio)
+    val tier = if (ratio >= 2.5) 3 else if (ratio >= 1.5) 2 else if (ratio >= 0.7) 1 else 0
+    val posNote = when {
+        intradayPos == null -> ""
+        intradayPos >= 0.75 -> " 고가권에서 마감해 강세가 끝까지 유지됐어요."
+        intradayPos <= 0.25 -> " 저가권에서 마감해 낙폭을 회복하지 못했어요."
+        else -> ""
+    }
+    return when {
+        priceUp && tier == 3 -> Triple("🚀", "폭발적 매수세", "평소의 ${r}배 거래량이 터지며 올랐어요. 기관·세력의 대량 매수가 들어왔을 가능성이 높아요. 다음 날 추가 상승인지 차익실현인지가 핵심이에요.$posNote")
+        priceUp && tier == 2 -> Triple("📈", "강한 매수세", "거래량이 ${r}배로 실리며 가격이 올랐어요. 상승에 힘이 있는 날이에요. 거래량이 계속 동반되는지 확인해 보세요.$posNote")
+        priceUp && tier == 1 -> Triple("↗️", "조심스러운 상승", "거래량 없이 올랐어요. 매수 주체가 약해 다음 날 되돌릴 수 있어요. 내일 거래량이 늘며 가격이 버텨주는지가 포인트예요.$posNote")
+        priceUp -> Triple("🌤️", "거래위축 상승", "평소보다 거래가 적은데 올랐어요. 매도 압력이 약해 오른 것으로, 추세로 이어지려면 거래량이 동반돼야 해요.$posNote")
+        tier == 3 -> Triple("💥", "투매성 하락", "평소의 ${r}배 거래량이 터지며 내렸어요. 대량 매도가 출회된 날이에요. 악재 확인이 필요하고, 단기 반등을 노린 저가 매수가 들어올 수도 있어요.$posNote")
+        tier == 2 -> Triple("📉", "강한 매도세", "거래량이 ${r}배로 실리며 가격이 내렸어요. 하락에 힘이 실린 날이에요. 지지선을 이탈했는지 확인해 보세요.$posNote")
+        tier == 1 -> Triple("↘️", "완만한 하락", "평범한 거래량에 소폭 내렸어요. 뚜렷한 악재보다는 차익실현이나 관망 분위기예요. 거래량이 터지지 않으면 추세 하락은 아닐 수 있어요.$posNote")
+        else -> Triple("😴", "소강 하락", "거래도 적고 가격도 내렸어요. 뚜렷한 매도 주체 없이 관심이 식는 신호일 수 있어요. 거래량이 줄면서 하락하는 패턴은 장기 추세 약화 시그널이에요.$posNote")
     }
 }
 
