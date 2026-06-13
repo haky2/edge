@@ -2,6 +2,7 @@ package com.haky.edge.macro
 
 import com.haky.edge.ai.ClaudeClient
 import com.haky.edge.ai.FileCache
+import com.haky.edge.ai.effectiveMarketDate
 import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.SectorIndex
 import com.haky.edge.master.StockMaster
@@ -43,7 +44,8 @@ class SectorBriefingService(
     private val fileCache = FileCache("sector_briefing", SectorBriefing.serializer())
 
     suspend fun analyze(codes: List<String>, force: Boolean = false): SectorBriefing {
-        val today = LocalDate.now().toString()
+        // 주말 통합 거래일: 일요일은 토요일로 접어 재사용(데이터 동일). 평일·토요일은 당일.
+        val today = effectiveMarketDate()
         val sectorIndices = kis.getSectorIndices()
 
         // 모든 섹터가 0% = 장 전 또는 데이터 미수신. Claude 호출 불필요, 캐시도 하지 않는다.

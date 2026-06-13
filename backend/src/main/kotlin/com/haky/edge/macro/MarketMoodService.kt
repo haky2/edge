@@ -2,6 +2,7 @@ package com.haky.edge.macro
 
 import com.haky.edge.ai.ClaudeClient
 import com.haky.edge.ai.FileCache
+import com.haky.edge.ai.effectiveMarketDate
 import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.MacroIndicator
 import kotlinx.serialization.Serializable
@@ -56,7 +57,9 @@ class MarketMoodService(
     private val fileCache = FileCache("market_mood", MarketMood.serializer())
 
     suspend fun get(mode: AnalysisMode = AnalysisMode.DEFENSIVE, force: Boolean = false): MarketMood {
+        // moodLog는 실제 달력 날짜로 기록(평일 예측 추적·채점). 캐시 키/표시 기준일은 주말 통합 거래일 사용.
         val today = LocalDate.now().toString()
+        val effectiveDate = effectiveMarketDate()
         val kisIndicators = kis.getMacroIndicators()
         val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get()) + yahoo.get()
         val indicators = kisIndicators + extras
@@ -65,9 +68,9 @@ class MarketMoodService(
         val direction = moodLog.inferDirection(indicators)
         moodLog.addOrUpdateEntry(today, direction, indicators)
 
-        // 키 = 날짜 + 모드. 두 모드가 서로 안 덮어쓰게(각각 당일 1회 호출·전 유저 공유).
-        // 지표가 바뀌어도 당일은 캐시 재사용. force=true면 캐시 건너뜀.
-        val cacheKey = buildKey(today, mode)
+        // 키 = 거래일 + 모드. 두 모드가 서로 안 덮어쓰게(각각 당일 1회 호출·전 유저 공유).
+        // 일요일은 토요일 키로 접혀 재사용. 지표가 바뀌어도 당일은 캐시 재사용. force=true면 캐시 건너뜀.
+        val cacheKey = buildKey(effectiveDate, mode)
         if (!force) {
             cache[cacheKey]?.let { return it }
             fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
@@ -82,7 +85,7 @@ class MarketMoodService(
         val now = LocalTime.now(ZoneId.of("Asia/Seoul"))
             .format(DateTimeFormatter.ofPattern("HH:mm"))
         val result = MarketMood(
-            date = today,
+            date = effectiveDate,
             comment = comment,
             indicators = indicators,
             generatedAt = now,

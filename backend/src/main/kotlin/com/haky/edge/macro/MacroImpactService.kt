@@ -2,6 +2,7 @@ package com.haky.edge.macro
 
 import com.haky.edge.ai.ClaudeClient
 import com.haky.edge.ai.FileCache
+import com.haky.edge.ai.effectiveMarketDate
 import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.MacroIndicator
 import com.haky.edge.master.StockMaster
@@ -84,7 +85,8 @@ class MacroImpactService(
         positionMap: Map<String, HoldingPosition> = emptyMap(),
         force: Boolean = false,
     ): MacroImpact {
-        val today = LocalDate.now().toString()
+        // 주말 통합 거래일: 일요일은 토요일로 접어 재사용(데이터 동일). 평일·토요일은 당일.
+        val today = effectiveMarketDate()
         val kisIndicators = kis.getMacroIndicators()
         // usdjpy·copper·rate3y는 방향 계산 대상(buildStockImpact). fear_greed·tnx·dxy·vix·nikkei는 맥락용(방향 계산 제외).
         val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get()) + yahoo.get()

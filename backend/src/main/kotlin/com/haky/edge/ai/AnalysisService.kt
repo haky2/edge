@@ -86,7 +86,8 @@ class AnalysisService(
     private val fileCache = FileCache("analysis", Analysis.serializer())
 
     suspend fun analyze(code: String, position: Position? = null, mode: AnalysisMode = AnalysisMode.DEFENSIVE, force: Boolean = false): Analysis {
-        val today = LocalDate.now().toString()
+        // 주말 통합 거래일: 일요일은 토요일로 접어 토요일 분석을 재사용(데이터 동일). 평일·토요일은 당일.
+        val today = effectiveMarketDate()
         // 캐시 키: 포지션 없으면 (code,date,mode) 전 유저 공유. 포지션 있으면 평단·수량·목표가·손절가까지 포함해
         // 사용자별 분리 — 공격 모드의 평단 기반 매매 판단이 다른 사용자에게 새지 않게.
         // 목표가·손절가도 키에 포함: facts에 반영되는데 캐시 적중으로 옛 코멘트가 나오는 불일치 방지.

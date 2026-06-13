@@ -2,6 +2,7 @@ package com.haky.edge
 
 import com.haky.edge.ai.AnalysisService
 import com.haky.edge.ai.Position
+import com.haky.edge.ai.effectiveMarketDate
 import com.haky.edge.macro.AnalysisMode
 import com.haky.edge.macro.MacroImpactService
 import com.haky.edge.macro.MarketMoodService
@@ -109,5 +110,34 @@ class CacheKeyTest {
         val k1 = SectorBriefingService.buildKey("2026-06-11", listOf("009150"))
         val k2 = SectorBriefingService.buildKey("2026-06-11", listOf("000660"))
         assertNotEquals(k1, k2)
+    }
+
+    // ── effectiveMarketDate (주말 통합 거래일) ──────────────────────────────
+
+    @Test fun `평일은 그대로 반환`() {
+        // 2026-06-11 = 목요일
+        assertEquals("2026-06-11", effectiveMarketDate(java.time.LocalDate.of(2026, 6, 11)))
+    }
+
+    @Test fun `토요일은 그대로 반환(금요일과 구분돼 새로 생성)`() {
+        // 2026-06-13 = 토요일
+        assertEquals("2026-06-13", effectiveMarketDate(java.time.LocalDate.of(2026, 6, 13)))
+    }
+
+    @Test fun `일요일은 토요일로 접혀 재사용`() {
+        // 2026-06-14(일) → 2026-06-13(토)
+        assertEquals("2026-06-13", effectiveMarketDate(java.time.LocalDate.of(2026, 6, 14)))
+    }
+
+    @Test fun `토요일과 일요일은 같은 거래일 키`() {
+        val sat = effectiveMarketDate(java.time.LocalDate.of(2026, 6, 13))
+        val sun = effectiveMarketDate(java.time.LocalDate.of(2026, 6, 14))
+        assertEquals(sat, sun)
+    }
+
+    @Test fun `금요일과 토요일은 다른 거래일 키`() {
+        val fri = effectiveMarketDate(java.time.LocalDate.of(2026, 6, 12))
+        val sat = effectiveMarketDate(java.time.LocalDate.of(2026, 6, 13))
+        assertNotEquals(fri, sat)
     }
 }
