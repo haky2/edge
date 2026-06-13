@@ -41,6 +41,7 @@ sealed class AppDestination {
     object Briefing : AppDestination()
     object Stats : AppDestination()
     object Settings : AppDestination()
+    data class Comparison(val itemA: WatchItem, val itemB: WatchItem) : AppDestination()
 }
 
 enum class AppTab(val label: String, val icon: ImageVector) {
@@ -60,15 +61,22 @@ fun EdgeApp(
     var destination by remember { mutableStateOf<AppDestination>(AppDestination.Watchlist) }
     var activeTab by remember { mutableStateOf(AppTab.Watchlist) }
 
-    // 상세 화면/검색 화면에서 뒤로가기 → 이전 탭으로
-    val isDetailScreen = destination is AppDestination.StockDetail || destination is AppDestination.Search
+    // 상세/검색/비교 화면에서 뒤로가기 → 이전 탭으로
+    val isDetailScreen = destination is AppDestination.StockDetail
+            || destination is AppDestination.Search
+            || destination is AppDestination.Comparison
     BackHandler(enabled = isDetailScreen) {
-        destination = when (activeTab) {
-            AppTab.Watchlist -> AppDestination.Watchlist
-            AppTab.Portfolio -> AppDestination.Portfolio
-            AppTab.Briefing -> AppDestination.Briefing
-            AppTab.Stats -> AppDestination.Stats
-            AppTab.Settings -> AppDestination.Settings
+        destination = when (destination) {
+            is AppDestination.Comparison -> AppDestination.StockDetail(
+                (destination as AppDestination.Comparison).itemA, null
+            )
+            else -> when (activeTab) {
+                AppTab.Watchlist -> AppDestination.Watchlist
+                AppTab.Portfolio -> AppDestination.Portfolio
+                AppTab.Briefing -> AppDestination.Briefing
+                AppTab.Stats -> AppDestination.Stats
+                AppTab.Settings -> AppDestination.Settings
+            }
         }
     }
 
@@ -123,6 +131,9 @@ fun EdgeApp(
                         actionLogRepo = actionLogRepo,
                         api = api,
                         onBack = { destination = AppDestination.Watchlist },
+                        onCompare = { itemB ->
+                            destination = AppDestination.Comparison(dest.item, itemB)
+                        },
                     )
                     is AppDestination.Search -> SearchScreen(
                         api = api,
@@ -136,6 +147,12 @@ fun EdgeApp(
                     is AppDestination.Briefing -> BriefingScreen(api = api, watchlistRepo = watchlistRepo)
                     is AppDestination.Stats -> StatsScreen(watchlistRepo = watchlistRepo, actionLogRepo = actionLogRepo, api = api)
                     is AppDestination.Settings -> SettingsScreen()
+                    is AppDestination.Comparison -> ComparisonScreen(
+                        itemA = dest.itemA,
+                        itemB = dest.itemB,
+                        api = api,
+                        onBack = { destination = AppDestination.StockDetail(dest.itemA, null) },
+                    )
                 }
             }
         }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -72,6 +73,7 @@ fun StockDetailScreen(
     actionLogRepo: ActionLogRepository,
     api: EdgeApi,
     onBack: () -> Unit,
+    onCompare: ((WatchItem) -> Unit)? = null,
 ) {
     var watchItem by remember { mutableStateOf(item) }
     var quote by remember { mutableStateOf(initialQuote) }
@@ -96,6 +98,7 @@ fun StockDetailScreen(
     }
     var loading by remember { mutableStateOf(false) }
     var showPositionSheet by remember { mutableStateOf(false) }
+    var showComparePicker by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     fun refresh() {
@@ -161,6 +164,11 @@ fun StockDetailScreen(
                     }
                 },
                 actions = {
+                    if (onCompare != null) {
+                        IconButton(onClick = { showComparePicker = true }) {
+                            Icon(Icons.Filled.List, contentDescription = "종목 비교")
+                        }
+                    }
                     IconButton(onClick = { showPositionSheet = true }) {
                         Icon(Icons.Filled.Edit, contentDescription = "포지션 입력")
                     }
@@ -239,6 +247,18 @@ fun StockDetailScreen(
                 watchItem = updated
                 showPositionSheet = false
             },
+        )
+    }
+
+    if (showComparePicker && onCompare != null) {
+        ComparePickerSheet(
+            currentCode = watchItem.code,
+            watchlist = watchlistRepo.all(),
+            onSelect = { selected ->
+                showComparePicker = false
+                onCompare(selected)
+            },
+            onDismiss = { showComparePicker = false },
         )
     }
 }
