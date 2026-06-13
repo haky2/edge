@@ -3,6 +3,7 @@ package com.haky.edge.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -114,7 +115,7 @@ fun SettingsScreen() {
         ) {
             Text("분석 모드", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 8.dp))
 
-            SingleChoiceSegmentedButtonRow {
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 analysisModes.forEachIndexed { index, (_, label) ->
                     SegmentedButton(
                         selected = modeIndex == index,
@@ -123,7 +124,15 @@ fun SettingsScreen() {
                             AppPrefs.setMode(ctx, analysisModes[index].first)
                         },
                         shape = SegmentedButtonDefaults.itemShape(index = index, count = analysisModes.size),
-                        label = { Text(label) },
+                        icon = {}, // 체크마크 제거 — 이모지 + 선택 하이라이트로 충분
+                        label = {
+                            Text(
+                                label,
+                                maxLines = 1,
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
