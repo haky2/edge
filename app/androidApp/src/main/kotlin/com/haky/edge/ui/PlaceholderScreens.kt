@@ -107,7 +107,8 @@ private val analysisModes = listOf("defensive" to "방어 🛡️", "aggressive"
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen() {
-    var modeIndex by remember { mutableStateOf(0) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var modeIndex by remember { mutableStateOf(if (AppPrefs.getMode(ctx) == "aggressive") 1 else 0) }
 
     Scaffold(
         topBar = {
@@ -129,7 +130,10 @@ fun SettingsScreen() {
                 analysisModes.forEachIndexed { index, (_, label) ->
                     SegmentedButton(
                         selected = modeIndex == index,
-                        onClick = { modeIndex = index },
+                        onClick = {
+                            modeIndex = index
+                            AppPrefs.setMode(ctx, analysisModes[index].first)
+                        },
                         shape = SegmentedButtonDefaults.itemShape(index = index, count = analysisModes.size),
                         label = { Text(label) },
                     )

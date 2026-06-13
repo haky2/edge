@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -694,6 +695,7 @@ private fun headingOnly(s: String): String? {
 internal fun AICommentCard(
     analysis: Analysis?,
     analyzing: Boolean,
+    aggressive: Boolean,
     onRegenerate: () -> Unit,
 ) {
     Column(
@@ -702,7 +704,9 @@ internal fun AICommentCard(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("✨", style = MaterialTheme.typography.bodyMedium)
-            Text("AI 종합 코멘트", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Text("AI 종합 코멘트", style = MaterialTheme.typography.titleSmall)
+            if (aggressive) BadgePill("⚔️ 공격적 모드", OrangeAccent)
+            Spacer(modifier = Modifier.weight(1f))
             if (analyzing) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
         }
 

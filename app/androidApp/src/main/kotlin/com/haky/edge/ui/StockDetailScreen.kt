@@ -106,21 +106,23 @@ fun StockDetailScreen(
         }
     }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
     fun loadAnalysis(force: Boolean) {
         scope.launch {
             analyzing = true
             if (force) analysis = null
             val avg = watchItem.avgPrice
             val qty = watchItem.qty
+            val mode = AppPrefs.getMode(context)
             try {
                 analysis = if (avg != null && qty != null) {
                     api.getAnalysisPersonalized(
                         watchItem.code, avg, qty,
                         watchItem.targetPrice ?: 0.0, watchItem.stopPrice ?: 0.0,
-                        refresh = force,
+                        mode = mode, refresh = force,
                     )
                 } else {
-                    api.getAnalysis(watchItem.code, refresh = force)
+                    api.getAnalysis(watchItem.code, mode = mode, refresh = force)
                 }
             } catch (_: Exception) {}
             analyzing = false
@@ -203,6 +205,7 @@ fun StockDetailScreen(
             AICommentCard(
                 analysis = analysis,
                 analyzing = analyzing,
+                aggressive = AppPrefs.getMode(context) == "aggressive",
                 onRegenerate = { loadAnalysis(true) },
             )
             val q = quote

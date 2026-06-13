@@ -10,6 +10,10 @@ private val LightColors = lightColorScheme(
     onPrimary = Color.White,
     secondary = Color(0xFF5856D6),
     surface = Color.White,
+    onSurface = Color(0xFF1C1C1E),         // 값·코멘트·금액 (검정)
+    onSurfaceVariant = Color(0xFF8E8E93),  // 라벨·설명 (옅은 회색, iOS systemGray) — 값과 구별
+    surfaceVariant = Color(0xFFE5E5EA),    // 옅은 박스 배경 (iOS systemGray5)
+    outlineVariant = Color(0xFFD1D1D6),    // divider
     background = Color(0xFFF2F2F7),    // iOS systemGroupedBackground
     onBackground = Color(0xFF1C1C1E),
 )
