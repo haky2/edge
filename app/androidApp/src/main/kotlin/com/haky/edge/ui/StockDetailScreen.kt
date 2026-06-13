@@ -47,6 +47,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.ActionLogRepository
 import com.haky.edge.db.WatchlistRepository
@@ -74,6 +75,10 @@ fun StockDetailScreen(
     var dailyBars by remember { mutableStateOf<List<com.haky.edge.model.DailyBar>>(emptyList()) }
     var chartPeriod by remember { mutableStateOf(ChartPeriod.M3) }
     var trendHelpExpanded by remember { mutableStateOf(false) }
+    var indicatorHelpExpanded by remember { mutableStateOf(false) }
+    val technical = remember(dailyBars) {
+        if (dailyBars.isNotEmpty()) com.haky.edge.analysis.TechnicalIndicators.calculate(dailyBars) else null
+    }
     var loading by remember { mutableStateOf(false) }
     var showPositionSheet by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -143,6 +148,15 @@ fun StockDetailScreen(
                 quote = quote,
                 onEditClick = { showPositionSheet = true },
             )
+            val q = quote
+            if (technical != null && q != null) {
+                TechnicalCard(
+                    r = technical,
+                    price = q.price.toDouble(),
+                    helpExpanded = indicatorHelpExpanded,
+                    onHelpToggle = { indicatorHelpExpanded = !indicatorHelpExpanded },
+                )
+            }
         }
     }
 
@@ -604,6 +618,190 @@ private fun UpsideGauge(
             }
         }
     }
+}
+
+// ─── 기술적 지표 카드 ────────────────────────────────────
+
+@Composable
+private fun TechnicalCard(
+    r: com.haky.edge.analysis.TechnicalResult,
+    price: Double,
+    helpExpanded: Boolean,
+    onHelpToggle: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("기술적 지표", style = MaterialTheme.typography.titleSmall)
+
+        // 추세 신호등 + RSI 게이지
+        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            TrendSignal(r, price)
+            if (r.rsi14 != null) {
+                Box(modifier = Modifier.width(1.dp).height(44.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                RsiGauge(r.rsi14!!, modifier = Modifier.weight(1f))
+            }
+        }
+
+        r.volumeRatio?.let { VolumeBadge(it) }
+
+        // 접이식 설명
+        Column {
+            Row(
+                modifier = Modifier.clickable { onHelpToggle() }.padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    if (helpExpanded) "ⓘ 설명 접기 ▲" else "ⓘ 이게 무슨 뜻이죠? ▼",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (helpExpanded) {
+                Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HelpItem("추세 신호등", "최근 5·20·60일 평균값보다 지금 주가가 위에 있으면 빨강↑(오름세), 아래면 파랑↓(내림세)예요. 셋 다 빨강이면 단기·중기·장기 모두 상승 흐름.")
+                    r.rsi14?.let { v ->
+                        HelpItem("RSI ${"%.0f".format(v)}", "주가가 얼마나 달아올랐는지 0~100으로 보는 막대예요. 70 넘으면 좀 과열(🔴), 30 밑이면 너무 식음(🔵). 지금은 ${rsiPlainLabel(v)}.")
+                    }
+                    r.volumeRatio?.let { v ->
+                        HelpItem("거래량 ${"%.1f".format(v)}배", "최근 거래일 거래량을 최근 20일 평균과 비교한 거예요. 2배 넘으면 평소보다 사람이 확 몰린 것 — 큰 뉴스나 수급 변화 신호일 수 있어요.")
+                    }
+                    if (r.ma5 != null || r.ma20 != null || r.ma60 != null) {
+                        HorizontalDivider()
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            r.ma5?.let { MaValueChip("5일", it) }
+                            r.ma20?.let { MaValueChip("20일", it) }
+                            r.ma60?.let { MaValueChip("60일", it) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 추세 신호등: MA5/20/60 각각 현재가가 위면 빨강↑·아래면 파랑↓ 점.
+@Composable
+private fun TrendSignal(r: com.haky.edge.analysis.TechnicalResult, price: Double) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("추세", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            TrendDot("MA5", r.ma5, price)
+            TrendDot("MA20", r.ma20, price)
+            TrendDot("MA60", r.ma60, price)
+        }
+    }
+}
+
+@Composable
+private fun TrendDot(label: String, ma: Double?, price: Double) {
+    val above = ma?.let { price >= it }
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Box(
+            modifier = Modifier
+                .size(14.dp)
+                .background(
+                    when (above) {
+                        null -> Color.LightGray.copy(alpha = 0.5f)
+                        true -> ChangeUp
+                        false -> ChangeDown
+                    },
+                    androidx.compose.foundation.shape.CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (above != null) {
+                Text(if (above) "↑" else "↓", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp), color = Color.White)
+            }
+        }
+        Text(label, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+// RSI 게이지: 0~100 바 + 30/70 구간 + 현재 위치 마커.
+@Composable
+private fun RsiGauge(v: Double, modifier: Modifier = Modifier) {
+    val bg = MaterialTheme.colorScheme.background
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val markerColor = if (v >= 70 || v <= 30) rsiColor(v) else onSurface
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("RSI", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("%.0f".format(v), style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = rsiColor(v))
+            if (rsiLabel(v).isNotEmpty()) {
+                Text(rsiLabel(v), style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), color = rsiColor(v))
+            }
+        }
+        Canvas(modifier = Modifier.fillMaxWidth().height(10.dp)) {
+            val h = 6.dp.toPx()
+            val top = (size.height - h) / 2f
+            val w = size.width
+            val radius = CornerRadius(h / 2f)
+            // 3구간 배경 (clip해서 캡슐 모양)
+            drawRoundRect(ChangeDown.copy(alpha = 0.18f), Offset(0f, top), Size(w * 0.3f, h), radius)
+            drawRect(Color.LightGray.copy(alpha = 0.35f), Offset(w * 0.3f, top), Size(w * 0.4f, h))
+            drawRoundRect(ChangeUp.copy(alpha = 0.18f), Offset(w * 0.7f, top), Size(w * 0.3f, h), radius)
+            // 현재 위치 마커
+            val markR = 5.dp.toPx()
+            val cx = (w * (v / 100.0).toFloat()).coerceIn(markR, w - markR)
+            drawCircle(bg, markR + 1.5.dp.toPx(), Offset(cx, size.height / 2f))
+            drawCircle(markerColor, markR, Offset(cx, size.height / 2f))
+        }
+    }
+}
+
+// 거래량 배지: 평소 대비 배수. 2배↑ 주황 강조.
+@Composable
+private fun VolumeBadge(v: Double) {
+    val hot = v >= 2.0
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(if (hot) "🔥" else "📊", style = MaterialTheme.typography.labelSmall)
+        Text(
+            "거래량 평소의 %.1f배".format(v),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (hot) OrangeAccent else MaterialTheme.colorScheme.onSurface,
+        )
+        if (hot) Text("거래 급증", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), color = OrangeAccent)
+    }
+}
+
+@Composable
+private fun HelpItem(title: String, body: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
+        Text(body, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun MaValueChip(label: String, v: Double) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(v.toLong().fmt(), style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium))
+    }
+}
+
+private fun rsiPlainLabel(v: Double): String = when {
+    v >= 70 -> "좀 달아오른 편이에요"
+    v <= 30 -> "많이 식은 편이에요"
+    else -> "적당한 편이에요"
+}
+
+private fun rsiColor(v: Double): Color = when {
+    v >= 70 -> ChangeUp
+    v <= 30 -> ChangeDown
+    else -> Color.Unspecified
+}
+
+private fun rsiLabel(v: Double): String = when {
+    v >= 70 -> "과매수권"
+    v <= 30 -> "과매도권"
+    else -> ""
 }
 
 // ─── 숫자 포맷 헬퍼 ──────────────────────────────────────
