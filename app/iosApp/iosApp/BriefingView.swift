@@ -70,6 +70,7 @@ struct BriefingView: View {
     @State private var sectorBriefingGeneratedAt = ""  // 캐시 최초 생성 시각 HH:mm
 
     // 접기/펼치기 상태 (기본 접힘)
+    @State private var supplyExpanded = false
     @State private var dartExpanded = false
     @State private var earningsExpanded = false
     @State private var eventsExpanded = false
@@ -1039,24 +1040,46 @@ struct BriefingView: View {
         .padding(.vertical, 2)
     }
 
-    // MARK: - 섹션: 수급주목
+    // MARK: - 섹션: 외인·기관 동향
 
     @ViewBuilder
     private var supplySection: some View {
-        Section("수급주목 (3일 연속 순매수 · 전일 확정)") {
+        Section {
+            Button { withAnimation { supplyExpanded.toggle() } } label: {
+                HStack {
+                    Text("외인·기관 동향").font(.headline)
+                    // 신호(3일 연속 순매수) 있는 종목 수 뱃지 — 접힌 상태에서도 클릭 유도
+                    if !supplyLoading && !supplyRows.isEmpty {
+                        Text("\(supplyRows.count)")
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.15))
+                            .foregroundColor(.orange)
+                            .clipShape(Capsule())
+                    }
+                    Spacer()
+                    Image(systemName: supplyExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+            .foregroundColor(.primary)
             if supplyLoading {
                 HStack {
                     ProgressView().scaleEffect(0.8)
                     Text("확인 중…").font(.footnote).foregroundColor(.secondary)
                 }
-            } else if supplyRows.isEmpty {
-                Text("해당하는 종목이 없어요").font(.footnote).foregroundColor(.secondary)
-            } else {
-                ForEach(supplyRows, id: \.item.code) { row in
-                    NavigationLink {
-                        StockDetailView(item: row.item, quote: row.quote, api: api)
-                    } label: {
-                        supplyRow(row)
+            } else if supplyExpanded {
+                Text("3일 연속 순매수 · 전일 확정")
+                    .font(.caption2).foregroundColor(.secondary)
+                if supplyRows.isEmpty {
+                    Text("해당하는 종목이 없어요").font(.footnote).foregroundColor(.secondary)
+                } else {
+                    ForEach(supplyRows, id: \.item.code) { row in
+                        NavigationLink {
+                            StockDetailView(item: row.item, quote: row.quote, api: api)
+                        } label: {
+                            supplyRow(row)
+                        }
                     }
                 }
             }
