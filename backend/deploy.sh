@@ -46,8 +46,11 @@ EDGE_TOKEN=$(gcloud secrets versions access latest --secret=EDGE_API_TOKEN --pro
 
 scheduler_upsert() {
   local JOB=$1; shift
-  gcloud scheduler jobs create http "$JOB" "$@" --project="$PROJECT" --location="$REGION" 2>/dev/null \
-    || gcloud scheduler jobs update http "$JOB" "$@" --project="$PROJECT" --location="$REGION"
+  # delete 후 create로 통일한다. update http는 헤더 플래그가 --update-headers 로 달라(create는 --headers)
+  # 같은 인자를 양쪽에 넘기면 update가 깨진다 → 항상 create 문법만 쓰도록 delete+create.
+  # 잡은 스케줄대로만 발화하므로 재배포 중 잠깐 없어도 무방하다.
+  gcloud scheduler jobs delete "$JOB" --project="$PROJECT" --location="$REGION" --quiet 2>/dev/null || true
+  gcloud scheduler jobs create http "$JOB" "$@" --project="$PROJECT" --location="$REGION"
 }
 
 # mood-log-morning: 매주 월~금 오전 5:00 KST — 코스피 방향 예측 기록
@@ -74,5 +77,15 @@ scheduler_upsert events-sync \
   --message-body="{}" \
   --attempt-deadline=300s \
   --description="매주 월요일 오전 6시 KST 거시 이벤트 캘린더 자동 동기화 (Claude 웹검색, 6주치)"
+
+# prewarm: 매주 월~금 오전 8:45 KST — 관심종목 시세·수급·공시 캐시 예열(아침 첫 진입 가속)
+# 코드 목록은 CLAUDE.md 관심종목 11개. 사용자가 종목을 바꿔도 미포함분은 온디맨드로 조회됨(예열은 best-effort).
+PREWARM_CODES="018260,329180,066570,307950,000660,005930,267260,001440,062040,047810,012450"
+scheduler_upsert prewarm \
+  --schedule="45 8 * * 1-5" --time-zone="Asia/Seoul" \
+  --uri="$URL/prewarm?codes=${PREWARM_CODES}" --http-method=GET \
+  --headers="X-Edge-Token=${EDGE_TOKEN}" \
+  --attempt-deadline=120s \
+  --description="매주 월~금 오전 8:45 KST 관심종목 시세·수급·공시 캐시 예열"
 
 echo "→ Scheduler 잡 동기화 완료"

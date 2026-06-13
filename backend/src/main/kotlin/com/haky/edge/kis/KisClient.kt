@@ -55,9 +55,14 @@ class KisClient(
     private val priceCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Quote, Long>>()
     private val PRICE_CACHE_TTL_MS = 30_000L
 
-    // 수급 당일 캐시. 외인/기관 확정값은 장후(~16:30)에 확정되고 다음 장 전까지 바뀌지 않는다.
+    // 수급 당일 캐시(인메모리). 외인/기관 확정값은 장후(~16:30)에 확정되고 다음 장 전까지 바뀌지 않는다.
     // 날짜 prefix("YYYY-MM-DD|code")로 키를 잡아 날짜가 바뀌면 자동 무효화.
     private val investorCache = java.util.concurrent.ConcurrentHashMap<String, List<InvestorFlow>>()
+
+    // 수급 파일 캐시(GCS 영속). 콜드 스타트 시 인메모리 캐시는 날아가지만, 당일 확정값이라 파일에서 재사용 가능.
+    // 키에 오늘 날짜("YYYY-MM-DD|code")가 있어 FileCache의 날짜 stale 판정을 통과한다.
+    private val investorFileCache =
+        com.haky.edge.ai.FileCache("investor", kotlinx.serialization.builtins.ListSerializer(InvestorFlow.serializer()))
 
     // 한투 시세 호출 동시 실행 수 제한.
     // 한투 정책: "신규 고객은 신청 후 3일간 초당 3건"으로 유량 제한, 이후 기본 유량으로 자동 상향.
@@ -193,6 +198,11 @@ class KisClient(
         investorCache[cacheKey]?.let { cached ->
             return if (days <= cached.size) cached.take(days) else cached
         }
+        // 콜드 스타트 직후: 당일 확정값이면 GCS 파일에서 재사용(인메모리에도 올림).
+        investorFileCache.get(cacheKey)?.let { cached ->
+            investorCache[cacheKey] = cached
+            return if (days <= cached.size) cached.take(days) else cached
+        }
 
         val accessToken = token()
         var lastMsg = ""
@@ -206,6 +216,7 @@ class KisClient(
                     .filter { it.foreign != 0L || it.institution != 0L || it.individual != 0L }
                     .take(30) // 당일 캐시 목적으로 넉넉히 보관
                 investorCache[cacheKey] = flows
+                investorFileCache.put(cacheKey, flows) // 콜드 스타트 재사용용 GCS 영속
                 return flows.take(days)
             }
             lastMsg = resp.msg1.ifBlank { "rt_cd=${resp.rtCd}" }

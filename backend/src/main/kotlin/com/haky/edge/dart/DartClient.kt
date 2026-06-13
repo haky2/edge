@@ -10,12 +10,17 @@ import io.ktor.client.statement.bodyAsBytes
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import com.haky.edge.ai.FileCache
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.xml.sax.Attributes
 import org.xml.sax.helpers.DefaultHandler
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -41,9 +46,15 @@ class DartClient(private val apiKey: String) {
     private var corpCodeMap: Map<String, String>? = null
     private val mapMutex = Mutex()
 
-    // 공시 30분 캐시. 공시는 장중 언제든 올라올 수 있어 당일 캐시는 너무 길다 → 30분 버킷.
-    // key = "버킷번호|days|code". 버킷번호 = epoch-ms / 1,800,000 (30분마다 자동 무효화).
+    // 공시 30분 캐시(인메모리). 공시는 장중 언제든 올라올 수 있어 당일 캐시는 너무 길다 → 30분 버킷.
+    // key = "YYYY-MM-DD|버킷번호|days|code". 버킷번호 = epoch-ms / 1,800,000 (30분마다 자동 무효화).
     private val disclosureCache = ConcurrentHashMap<String, List<DartDisclosure>>()
+
+    // 공시 파일 캐시(GCS 영속). 콜드 스타트 시 인메모리 캐시는 날아가지만 같은 30분 버킷이면 파일에서 재사용.
+    // FileCache는 키에 오늘 날짜가 있어야 stale 판정을 통과한다 → 키 맨 앞에 YYYY-MM-DD 포함.
+    // 버킷이 바뀌면 키(=파일명)가 달라져 자동으로 새로 조회된다(이전 버킷 파일은 그대로 남지만 무시됨).
+    private val disclosureFileCache =
+        FileCache("dart-disclosure", ListSerializer(DartDisclosure.serializer()))
 
     /**
      * 종목코드 기준 최근 [days]일 공시 목록. 30분 캐시 적용.
@@ -54,8 +65,10 @@ class DartClient(private val apiKey: String) {
     suspend fun getDisclosures(stockCode: String, days: Int = 7): List<DartDisclosure> {
         if (apiKey.isBlank()) throw DartException("DART_API_KEY가 설정되지 않았습니다 (.env 확인)")
 
-        val cacheKey = "${System.currentTimeMillis() / 1_800_000}|$days|$stockCode"
+        val cacheKey = "${LocalDate.now()}|${System.currentTimeMillis() / 1_800_000}|$days|$stockCode"
         disclosureCache[cacheKey]?.let { return it }
+        // 콜드 스타트 직후: 같은 30분 버킷이면 GCS 파일에서 재사용(인메모리에도 올림).
+        disclosureFileCache.get(cacheKey)?.let { disclosureCache[cacheKey] = it; return it }
 
         ensureCorpCodeMap()
         val corpCode = corpCodeMap?.get(stockCode)
@@ -89,6 +102,7 @@ class DartClient(private val apiKey: String) {
                 )
             }
         disclosureCache[cacheKey] = disclosures
+        disclosureFileCache.put(cacheKey, disclosures) // 콜드 스타트 재사용용 GCS 영속
         return disclosures
     }
 
@@ -336,12 +350,41 @@ class DartClient(private val apiKey: String) {
     /** 서버 시작 시 미리 호출해 첫 번째 /dart 요청의 ZIP 다운로드 지연을 없앤다. */
     suspend fun warmup() { ensureCorpCodeMap() }
 
-    // corpCode 맵을 최초 1회만 다운로드·파싱한다(Mutex로 중복 다운로드 방지).
+    // corpCode 맵 파일 캐시. 3.5MB ZIP 다운로드 + 30MB XML SAX 파싱은 콜드 스타트마다 ~2-4초가 든다.
+    // 파싱 결과(stock_code→corp_code, ~90KB JSON)를 GCS 마운트(CACHE_DIR)에 저장해 콜드 스타트에 재사용한다.
+    // corp_code는 기존 상장사면 거의 안 바뀌고 신규 상장만 추가됨 → 7일마다만 갱신(아래 mtime 체크).
+    private val corpCodeFile =
+        File("${System.getenv("CACHE_DIR") ?: ".cache"}/corpcode/map.json").also { it.parentFile?.mkdirs() }
+    private val corpCodeMapJson = Json { ignoreUnknownKeys = true }
+    private val CORP_CODE_TTL_MS = 7L * 24 * 60 * 60 * 1000 // 7일
+
+    // corpCode 맵을 최초 1회만 로드한다(Mutex로 중복 작업 방지).
+    // 우선순위: 인메모리 → 파일(7일 이내) → DART 다운로드·파싱(후 파일 저장).
     private suspend fun ensureCorpCodeMap() {
         if (corpCodeMap != null) return
         mapMutex.withLock {
             if (corpCodeMap != null) return
-            corpCodeMap = downloadAndParseCorpCodeMap()
+            loadCorpCodeFromFile()?.let { corpCodeMap = it; return }
+            corpCodeMap = downloadAndParseCorpCodeMap().also { saveCorpCodeToFile(it) }
+        }
+    }
+
+    /** 파일 캐시가 7일 이내면 맵을 반환, 아니면 null(다운로드 유도). 파싱 실패도 null. */
+    private fun loadCorpCodeFromFile(): Map<String, String>? = try {
+        if (!corpCodeFile.exists()) null
+        else if (System.currentTimeMillis() - corpCodeFile.lastModified() > CORP_CODE_TTL_MS) null // 오래됨 → 재다운로드
+        else corpCodeMapJson.decodeFromString<Map<String, String>>(corpCodeFile.readText())
+            .takeIf { it.isNotEmpty() }
+    } catch (_: Exception) {
+        null // 손상 등은 무시하고 새로 다운로드
+    }
+
+    /** 파싱한 맵을 파일에 저장(다음 콜드 스타트 재사용). 실패해도 동작엔 지장 없음. */
+    private fun saveCorpCodeToFile(map: Map<String, String>) {
+        try {
+            corpCodeFile.writeText(corpCodeMapJson.encodeToString(map))
+        } catch (_: Exception) {
+            // 저장 실패 시 다음 콜드 스타트에 재다운로드될 뿐
         }
     }
 
