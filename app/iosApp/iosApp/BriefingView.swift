@@ -146,15 +146,17 @@ struct BriefingView: View {
                 }
             }
             // 탭 선택기 — 섹션 구분선 없이 세그먼트 컨트롤만 노출
-            Picker("", selection: $selectedTab) {
-                ForEach(BriefingTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            // Picker + 데이터 기준일 배너(footer). footer로 붙여 별도 빈 행이 생기지 않게 한다.
+            Section {
+                Picker("", selection: $selectedTab) {
+                    ForEach(BriefingTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .listRowBackground(Color(.systemGroupedBackground))
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+            } footer: {
+                dataFreshnessBanner
             }
-            .pickerStyle(.segmented)
-            .listRowBackground(Color(.systemGroupedBackground))
-            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
-
-            // 데이터 기준일 배너 — 지금 보는 시세·지표가 언제 것인지(장중 실시간 / 직전 거래일 종가).
-            dataFreshnessBanner
 
             if selectedTab == .myStocks {
                 highlightSection
@@ -870,7 +872,7 @@ struct BriefingView: View {
         return outF.string(from: d)
     }
 
-    // 데이터 기준일 배너 (양 탭 공통, 세그먼트 picker 바로 아래).
+    // 데이터 기준일 배너 (양 탭 공통). Picker 섹션의 footer로 붙여 빈 행 없이 picker 바로 아래 표시.
     private var dataFreshnessBanner: some View {
         let fr = freshness
         return HStack(spacing: 5) {
@@ -879,8 +881,6 @@ struct BriefingView: View {
             Text(fr.bannerText).font(.caption2)
         }
         .foregroundColor(.secondary)
-        .listRowBackground(Color(.systemGroupedBackground))
-        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 6, trailing: 16))
     }
 
     private func aiCommentToggle(
