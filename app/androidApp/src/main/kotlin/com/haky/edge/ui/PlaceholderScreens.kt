@@ -12,8 +12,6 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,28 +23,6 @@ import androidx.compose.ui.unit.dp
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.ActionLogRepository
 import com.haky.edge.db.WatchlistRepository
-
-// ──── 내 자산 탭 스텁 (Batch E에서 구현) ───────────────────────────────────
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun PortfolioScreen(
-    watchlistRepo: WatchlistRepository,
-    api: EdgeApi,
-) {
-    Scaffold(
-        topBar = {
-            CompactHeader(title = "내 자산")
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("내 자산 — Batch E에서 구현", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
 
 // ──── 브리핑 탭 스텁 (Batch D에서 구현) ────────────────────────────────────
 
