@@ -27,9 +27,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -358,18 +355,13 @@ fun BriefingScreen(
                     // 탭 선택기 + 데이터 기준일 배너
                     item {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                                BriefTab.entries.forEachIndexed { i, t ->
-                                    SegmentedButton(
-                                        selected = selectedTab == t,
-                                        onClick = { onSelectTab(t) },
-                                        shape = SegmentedButtonDefaults.itemShape(index = i, count = BriefTab.entries.size),
-                                        icon = {},
-                                        label = { Text(t.label, maxLines = 1) },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-                            }
+                            EdgeSegmentedButtonRow(
+                                items = BriefTab.entries.toList(),
+                                selectedIndex = BriefTab.entries.indexOf(selectedTab),
+                                onSelect = { onSelectTab(BriefTab.entries[it]) },
+                                label = { it.label },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                             FreshnessBanner(fresh)
                         }
                     }

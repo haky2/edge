@@ -310,6 +310,12 @@ struct SettingsView: View {
                         Text("🛡️ 방어적 모드는 사실과 방향만 담백하게 전달해요. 적극적인 시장 스탠스 의견을 보려면 공격으로 바꿔보세요.")
                     }
                 }
+
+                Section("앱 정보") {
+                    LabeledContent("버전", value: "1.0")
+                    LabeledContent("데이터 출처", value: "한투 API · DART · 네이버 뉴스")
+                    LabeledContent("문의", value: "haky2@naver.com")
+                }
             }
             .navigationTitle("설정")
         }
