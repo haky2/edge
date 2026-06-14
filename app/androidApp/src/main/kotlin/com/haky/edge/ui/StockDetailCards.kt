@@ -20,10 +20,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +75,7 @@ private val CardShape = RoundedCornerShape(12.dp)
 internal fun CollapsibleCard(
     title: String,
     leadingEmoji: String? = null,
+    leadingIcon: ImageVector? = null,
     initiallyExpanded: Boolean = false,
     trailing: @Composable (RowScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -88,7 +95,10 @@ internal fun CollapsibleCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            leadingEmoji?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            when {
+                leadingIcon != null -> Icon(leadingIcon, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                leadingEmoji != null -> Text(leadingEmoji, style = MaterialTheme.typography.bodyMedium)
+            }
             Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
             trailing?.invoke(this)
             Text(if (expanded) "▲" else "▼", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -421,7 +431,7 @@ internal fun EarningsCard(e: EarningsEntry) {
     val days = e.daysUntil
     CollapsibleCard(
         title = "실적 일정",
-        leadingEmoji = "📅",
+        leadingIcon = Icons.Filled.CalendarToday,
         trailing = { Text(ddayBadge(days), style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = ddayColor(days)) },
     ) {
         Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -475,7 +485,7 @@ internal fun DartDisclosureCard(list: List<DartDisclosure>) {
 internal fun MacroSignalCard(sig: StockImpact) {
     CollapsibleCard(
         title = "지표 영향",
-        leadingEmoji = "📈",
+        leadingIcon = Icons.Filled.TrendingUp,
         trailing = { if (sig.net != "-") BadgePill(sig.net, netColor(sig.net)) },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
@@ -700,7 +710,7 @@ internal fun AICommentCard(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("✨", style = MaterialTheme.typography.bodyMedium)
+            Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp), tint = PurpleAccent)
             Text("AI 종합 코멘트", style = MaterialTheme.typography.titleSmall)
             if (aggressive) BadgePill("⚔️ 공격적 모드", OrangeAccent)
             Spacer(modifier = Modifier.weight(1f))

@@ -22,6 +22,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.TrendingDown
+import androidx.compose.material.icons.filled.TrendingFlat
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -348,9 +351,11 @@ private fun WatchlistRow(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.padding(end = 8.dp),
             ) {
-                Text(
-                    text = if (isUp) "📈" else if (isDown) "📉" else "➡️",
-                    fontSize = 15.sp,
+                Icon(
+                    imageVector = if (isUp) Icons.Filled.TrendingUp else if (isDown) Icons.Filled.TrendingDown else Icons.Filled.TrendingFlat,
+                    contentDescription = null,
+                    tint = if (isUp) ChangeUp else if (isDown) ChangeDown else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
                 )
                 if (isUp || isDown) {
                     Text(

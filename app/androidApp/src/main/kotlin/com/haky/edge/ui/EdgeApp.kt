@@ -9,10 +9,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
@@ -46,9 +46,9 @@ sealed class AppDestination {
 
 enum class AppTab(val label: String, val icon: ImageVector) {
     Watchlist("관심종목", Icons.Filled.Star),
-    Portfolio("내 자산", Icons.Filled.Home),
-    Briefing("브리핑", Icons.Filled.Menu),
-    Stats("내 패턴", Icons.Filled.Person),
+    Portfolio("내 자산", Icons.Filled.AccountBalanceWallet),
+    Briefing("브리핑", Icons.Filled.Article),
+    Stats("내 패턴", Icons.Filled.Insights),
     Settings("설정", Icons.Filled.Settings),
 }
 

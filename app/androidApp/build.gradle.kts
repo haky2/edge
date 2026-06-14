@@ -23,7 +23,7 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.compose.ui)
-    implementation("androidx.compose.material:material-icons-core:1.7.8")
+    implementation("androidx.compose.material:material-icons-extended:1.7.8")
     implementation(libs.androidx.lifecycle.viewmodelCompose)
     implementation(libs.compose.uiToolingPreview)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")

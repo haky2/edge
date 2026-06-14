@@ -34,7 +34,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -953,7 +956,7 @@ private fun AIBriefingCard(
 @Composable
 private fun AITitleRow(title: String, aggressive: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("✨", style = MaterialTheme.typography.bodyMedium)
+        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp), tint = PurpleAccent)
         Text(title, style = MaterialTheme.typography.titleSmall)
         if (aggressive) Pill("⚔️ 공격적 모드", OrangeAccent)
     }
@@ -981,7 +984,7 @@ private fun AICommentBlock(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            Text("✨", style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyMedium, color = PurpleAccent)
+            Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(if (compact) 14.dp else 18.dp), tint = PurpleAccent)
             Text(title, style = if (compact) MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium) else MaterialTheme.typography.titleSmall)
             if (aggressive) Pill("⚔️ 공격적 모드", OrangeAccent)
             Spacer(Modifier.weight(1f))
@@ -1124,7 +1127,7 @@ private data class Freshness(val isLive: Boolean, val isSundayReuse: Boolean, va
 @Composable
 private fun FreshnessBanner(f: Freshness) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(if (f.isLive) "📡" else "📅", style = MaterialTheme.typography.labelSmall)
+        Icon(if (f.isLive) Icons.Filled.Sensors else Icons.Filled.CalendarToday, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(f.bannerText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
