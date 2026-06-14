@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -409,7 +410,9 @@ private fun PnlContributionView(rows: List<HoldingRow>) {
                 Text("$sign${fmt.format(row.pnl.toLong())}",
                     style = MaterialTheme.typography.labelSmall,
                     color = if (row.pnl >= 0) ChangeUp else ChangeDown,
-                    modifier = Modifier.width(64.dp),
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.widthIn(min = 64.dp),
                     textAlign = androidx.compose.ui.text.style.TextAlign.End,
                 )
             }

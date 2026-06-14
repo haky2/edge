@@ -78,8 +78,6 @@ struct PortfolioView: View {
             Section {
                 summaryCard
             }
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(Color.clear)
 
             Section("보유 종목 \(rows.count)개") {
                 ForEach(rows, id: \.item.code) { row in
@@ -180,10 +178,6 @@ struct PortfolioView: View {
                 sectorWeightView(totalEval: evaluated)
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(12)
-        .padding(.horizontal)
         .padding(.vertical, 4)
     }
 
@@ -236,7 +230,9 @@ struct PortfolioView: View {
                     Text("\(sign)\(Int(row.pnl).formatted())")
                         .font(.caption2.monospacedDigit())
                         .foregroundColor(row.pnl >= 0 ? .red : .blue)
-                        .frame(width: 64, alignment: .trailing)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(minWidth: 64, alignment: .trailing)
                 }
             }
         }
@@ -294,6 +290,8 @@ struct PortfolioView: View {
                 Text("한 섹터 비중이 40%를 초과하면 특정 업황·지표에 포트폴리오 전체가 흔들릴 수 있어요.")
                     .font(.caption2)
                     .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }

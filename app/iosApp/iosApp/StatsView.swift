@@ -637,15 +637,20 @@ struct StatsView: View {
         nameMap = resolved
         positionMap = Dictionary(uniqueKeysWithValues: watchItems.map { ($0.code, $0) })
         Task { await loadMissed() }
-        // 3) 여전히 모르는 코드는 검색 API로 순차 조회
+        // 3) 여전히 모르는 코드는 검색 API로 조회 → 메인 스레드에서 일괄 반영
         let unknownCodes = Set(entries.map { $0.code }).subtracting(resolved.keys)
         if !unknownCodes.isEmpty {
             Task {
+                var found: [String: String] = [:]
                 for code in unknownCodes {
                     guard let results = try? await api.search(query: code) else { continue }
-                    for r in results where r.code == code {
-                        nameMap[code] = r.name
-                        break
+                    if let match = results.first(where: { $0.code == code }) {
+                        found[code] = match.name
+                    }
+                }
+                if !found.isEmpty {
+                    await MainActor.run {
+                        nameMap.merge(found) { _, new in new }
                     }
                 }
             }
