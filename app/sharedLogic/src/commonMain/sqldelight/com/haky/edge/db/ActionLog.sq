@@ -5,6 +5,7 @@
 CREATE TABLE action_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     code        TEXT NOT NULL,
+    name        TEXT,                  -- 종목명. 구버전 DB 행은 NULL → nameMap 폴백.
     action      TEXT NOT NULL,
     reason      TEXT,
     price       INTEGER,               -- 기록 시점 현재가 (원). 없으면 NULL.
@@ -12,23 +13,23 @@ CREATE TABLE action_log (
 );
 
 insert:
-INSERT INTO action_log(code, action, reason, price, created_at)
-VALUES (?, ?, ?, ?, ?);
+INSERT INTO action_log(code, name, action, reason, price, created_at)
+VALUES (?, ?, ?, ?, ?, ?);
 
 selectByCode:
-SELECT id, code, action, reason, price, created_at
+SELECT id, code, name, action, reason, price, created_at
 FROM action_log
 WHERE code = ?
 ORDER BY created_at DESC;
 
 selectRecent:
-SELECT id, code, action, reason, price, created_at
+SELECT id, code, name, action, reason, price, created_at
 FROM action_log
 ORDER BY created_at DESC
 LIMIT ?;
 
 selectAll:
-SELECT id, code, action, reason, price, created_at
+SELECT id, code, name, action, reason, price, created_at
 FROM action_log
 ORDER BY created_at DESC;
 

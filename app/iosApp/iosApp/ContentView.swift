@@ -154,6 +154,7 @@ struct WatchlistView: View {
                         .font(.caption)
                         .foregroundColor(chgColor)
                 }
+                .frame(minWidth: 72, alignment: .trailing)
             } else {
                 Text("—").foregroundColor(.secondary)
             }

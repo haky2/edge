@@ -269,6 +269,7 @@ fun StockDetailScreen(
     if (showLogSheet) {
         ActionLogSheet(
             code = watchItem.code,
+            name = watchItem.name,
             currentPrice = quote?.price ?: 0L,
             logRepo = actionLogRepo,
             onDismiss = { showLogSheet = false },
@@ -1169,6 +1170,7 @@ private fun shortTs(millis: Long): String =
 @Composable
 private fun ActionLogSheet(
     code: String,
+    name: String?,
     currentPrice: Long,
     logRepo: ActionLogRepository,
     onDismiss: () -> Unit,
@@ -1224,6 +1226,7 @@ private fun ActionLogSheet(
                 Button(onClick = {
                     logRepo.insert(
                         code = code,
+                        name = name,
                         action = selectedAction,
                         reason = reason.ifBlank { null },
                         price = currentPrice,

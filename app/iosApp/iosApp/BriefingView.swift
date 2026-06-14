@@ -33,6 +33,7 @@ struct BriefingView: View {
     @State private var impactWatch: [StockImpact] = []
     @State private var impactGeneratedAt = ""      // 캐시 최초 생성 시각 HH:mm
     @State private var impactDate = ""             // 생성 기준일 YYYY-MM-DD
+    @State private var watchlistIsEmpty = false    // 관심종목 0개 여부 (로드 후 확정)
 
     @State private var topGainers: [QuoteRow] = []
     @State private var topLosers: [QuoteRow] = []
@@ -469,7 +470,7 @@ struct BriefingView: View {
 
     @ViewBuilder
     private var sectorSection: some View {
-        let filtered = sectorItems.filter { isRelevant($0) }
+        let filtered = watchlistIsEmpty ? [] : sectorItems.filter { isRelevant($0) }
         Section {
             Button { withAnimation { sectorExpanded.toggle() } } label: {
                 HStack {
@@ -480,10 +481,12 @@ struct BriefingView: View {
                 }
             }
             .foregroundColor(.primary)
-            if sectorLoading {
-                HStack { ProgressView().scaleEffect(0.8); Text("확인 중…").font(.footnote).foregroundColor(.secondary) }
-            } else if sectorExpanded {
-                if filtered.isEmpty {
+            if sectorExpanded {
+                if watchlistIsEmpty {
+                    Text("관심종목을 추가하면 내 종목 관련 섹터를 볼 수 있어요").font(.footnote).foregroundColor(.secondary)
+                } else if sectorLoading {
+                    HStack { ProgressView().scaleEffect(0.8); Text("확인 중…").font(.footnote).foregroundColor(.secondary) }
+                } else if filtered.isEmpty {
                     Text("관련 섹터가 없어요").font(.footnote).foregroundColor(.secondary)
                 } else {
                     ForEach(filtered, id: \.key) { sectorRow($0) }
@@ -523,10 +526,11 @@ struct BriefingView: View {
                         Text("AI가 분석 중…").font(.footnote).foregroundColor(.secondary)
                     }
                 }
-            } else if sectorBriefingComment.isEmpty {
+            } else if watchlistIsEmpty || sectorBriefingComment.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     aiSectionTitle("섹터 분석")
-                    Text("장 시작 전이거나 섹터 데이터가 없어요").font(.footnote).foregroundColor(.secondary)
+                    Text(watchlistIsEmpty ? "관심종목을 추가하면 섹터 분석을 볼 수 있어요" : "장 시작 전이거나 섹터 데이터가 없어요")
+                        .font(.footnote).foregroundColor(.secondary)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 4) {
@@ -759,6 +763,8 @@ struct BriefingView: View {
             if impactSectionExpanded {
                 if impactLoading {
                     HStack { ProgressView().scaleEffect(0.8); Text("AI가 해석 중…").font(.footnote).foregroundColor(.secondary) }
+                } else if watchlistIsEmpty {
+                    Text("관심종목을 추가하면 내 종목 기준 영향 분석을 볼 수 있어요").font(.footnote).foregroundColor(.secondary)
                 } else if impactComment.isEmpty && impactHoldings.isEmpty && impactWatch.isEmpty {
                     Text("불러오지 못했어요").font(.footnote).foregroundColor(.secondary)
                 } else {
@@ -911,7 +917,7 @@ struct BriefingView: View {
             HStack {
                 if weekendReuse {
                     // 일요일: 백엔드가 토요일 분석을 재사용(데이터 동일) → 안내만, 재생성 잠금.
-                    Text("주말엔 시세가 그대로라 직전 분석을 보여드려요")
+                    Text("주말 휴장이라 직전 영업일 기준 분석이에요")
                         .font(.caption2).foregroundColor(.secondary)
                     Spacer()
                 } else {
@@ -1272,6 +1278,7 @@ struct BriefingView: View {
         sectorBriefingGeneratedAt = ""
 
         let allItems = Db.watchlist.all()
+        watchlistIsEmpty = allItems.isEmpty
         let codes = allItems.map { $0.code }
 
         // 시장 지표·분위기·섹터·실적일정·매크로 영향·섹터 브리핑은 quotes와 독립 병렬.

@@ -127,7 +127,7 @@ struct StockDetailView: View {
             PositionEditView(item: item) { updated in item = updated }
         }
         .sheet(isPresented: $showLogSheet, onDismiss: loadLogs) {
-            ActionLogSheetView(code: item.code, logRepo: logRepo, currentPrice: quote?.price ?? 0)
+            ActionLogSheetView(code: item.code, name: item.name, logRepo: logRepo, currentPrice: quote?.price ?? 0)
         }
         .sheet(isPresented: $showComparePicker) {
             ComparePickerView(
@@ -2002,6 +2002,7 @@ private extension View {
 // 행동 기록 입력 시트. action(관심/매수/매도) 선택 + 사유(선택) 입력 후 저장.
 struct ActionLogSheetView: View {
     let code: String
+    let name: String?
     let logRepo: ActionLogRepository
     let currentPrice: Int64        // 기록 시점 현재가. 0 = 미기록.
     @Environment(\.dismiss) private var dismiss
@@ -2042,6 +2043,7 @@ struct ActionLogSheetView: View {
                     Button("저장") {
                         logRepo.insert(
                             code: code,
+                            name: name,
                             action: selectedAction,
                             reason: reason.isEmpty ? nil : reason,
                             price: currentPrice

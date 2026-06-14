@@ -298,7 +298,7 @@ private fun SummaryCard(rows: List<HoldingRow>, sectorRows: List<Pair<String, Do
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
                     DonutChart(rows = rows, modifier = Modifier.size(100.dp))
                     Column(

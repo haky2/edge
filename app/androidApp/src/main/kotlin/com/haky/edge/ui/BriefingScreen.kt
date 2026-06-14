@@ -137,6 +137,7 @@ fun BriefingScreen(
     var impactWatch by remember { mutableStateOf<List<StockImpact>>(emptyList()) }
     var impactGeneratedAt by remember { mutableStateOf("") }
     var impactDate by remember { mutableStateOf("") }
+    var watchlistIsEmpty by remember { mutableStateOf(false) }
 
     var macroLoading by remember { mutableStateOf(false) }
     var macroItems by remember { mutableStateOf<List<MacroIndicator>>(emptyList()) }
@@ -265,6 +266,7 @@ fun BriefingScreen(
         sectorBriefingComment = ""; sectorSpotlight = emptyList(); sectorBriefingGeneratedAt = ""
 
         val allItems = watchlistRepo.all()
+        watchlistIsEmpty = allItems.isEmpty()
         val codes = allItems.map { it.code }
 
         coroutineScope {
@@ -437,7 +439,8 @@ fun BriefingScreen(
                             ImpactCard(
                                 aggressive = aggressive,
                                 loading = impactLoading,
-                                comment = impactComment,
+                                noWatchlist = watchlistIsEmpty,
+                                comment = if (watchlistIsEmpty) "" else impactComment,
                                 dateLabel = mdLabel(impactDate),
                                 generatedAt = impactGeneratedAt,
                                 weekendReuse = fresh.isSundayReuse,
@@ -460,10 +463,11 @@ fun BriefingScreen(
                         }
                         // ── 섹터 동향 (내 종목 관련) ──
                         item {
-                            val userSectors = userSectorLabels(impactHoldings, impactWatch)
-                            val filtered = sectorItems.filter { isRelevant(it, userSectors) }
+                            val userSectors = if (!watchlistIsEmpty) userSectorLabels(impactHoldings, impactWatch) else emptySet()
+                            val filtered = if (!watchlistIsEmpty) sectorItems.filter { isRelevant(it, userSectors) } else emptyList()
                             CollapsibleCard(title = "섹터 동향 (내 종목 관련)") {
-                                if (sectorLoading) LoadingRow("확인 중…")
+                                if (watchlistIsEmpty) EmptyRow("관심종목을 추가하면 내 종목 관련 섹터를 볼 수 있어요")
+                                else if (sectorLoading) LoadingRow("확인 중…")
                                 else if (filtered.isEmpty()) EmptyRow("관련 섹터가 없어요")
                                 else filtered.forEachIndexed { i, s ->
                                     SectorRowView(s)
@@ -477,7 +481,7 @@ fun BriefingScreen(
                                 title = "섹터 분석",
                                 aggressive = false,
                                 loading = sectorBriefingLoading,
-                                comment = sectorBriefingComment,
+                                comment = if (watchlistIsEmpty) "" else sectorBriefingComment,
                                 dateLabel = mdLabel(sectorBriefingDate),
                                 generatedAt = sectorBriefingGeneratedAt,
                                 weekendReuse = fresh.isSundayReuse,
@@ -486,7 +490,7 @@ fun BriefingScreen(
                                 onRegen = {
                                     scope.launch { buildSectorBriefing(allItemsLoaded.map { it.code }, force = true) }
                                 },
-                                emptyText = "장 시작 전이거나 섹터 데이터가 없어요",
+                                emptyText = if (watchlistIsEmpty) "관심종목을 추가하면 섹터 분석을 볼 수 있어요" else "장 시작 전이거나 섹터 데이터가 없어요",
                             ) {
                                 if (sectorSpotlight.isNotEmpty()) {
                                     Spacer(Modifier.height(4.dp))
@@ -814,6 +818,7 @@ private fun EventLegendRow(label: String, color: Color, desc: String) {
 private fun ImpactCard(
     aggressive: Boolean,
     loading: Boolean,
+    noWatchlist: Boolean,
     comment: String,
     dateLabel: String,
     generatedAt: String,
@@ -828,6 +833,8 @@ private fun ImpactCard(
     ) {
         if (loading) {
             LoadingRow("AI가 해석 중…")
+        } else if (noWatchlist) {
+            EmptyRow("관심종목을 추가하면 내 종목 기준 영향 분석을 볼 수 있어요")
         } else if (comment.isEmpty() && holdings.isEmpty() && watch.isEmpty()) {
             EmptyRow("불러오지 못했어요")
         } else {
@@ -993,7 +1000,7 @@ private fun AICommentBlock(
         // 메타 행
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (weekendReuse) {
-                Text("주말엔 시세가 그대로라 직전 분석을 보여드려요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("주말 휴장이라 직전 영업일 기준 분석이에요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 val meta = if (generatedAt.isNotEmpty()) {
                     if (dateLabel.isEmpty()) "오늘 $generatedAt 생성" else "$dateLabel $generatedAt 생성"

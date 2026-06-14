@@ -1,0 +1,2 @@
+-- v3 → v4: action_log에 종목명(name) 추가. 기존 행은 NULL로 보존 → nameMap 폴백.
+ALTER TABLE action_log ADD COLUMN name TEXT;
