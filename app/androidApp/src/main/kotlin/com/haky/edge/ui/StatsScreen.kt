@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -184,10 +185,15 @@ fun StatsScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(innerPadding).padding(top = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(bottom = 80.dp),
         ) {
             // ── 요약 ──
             item {
-                SectionCard(header = "전체 ${entries.size}건", footer = "종목 상세 화면에서 관심·매수·매도를 기록할 때마다 쌓여요.") {
+                val oldestDate = entries.minOfOrNull { it.createdAt }
+            SectionCard(
+                header = if (oldestDate != null) "전체 ${entries.size}건 · ${shortDate(oldestDate)}부터" else "전체 ${entries.size}건",
+                footer = "종목 상세 화면에서 관심·매수·매도를 기록할 때마다 쌓여요.",
+            ) {
                     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
                         SummaryCell(entries.count { it.action == "buy" }, "매수", ChangeUp, Modifier.weight(1f))
                         VerticalDivider()
@@ -203,6 +209,7 @@ fun StatsScreen(
                 val dRows = disciplineRows
                 val violations = dRows.filter { it.status == DisciplineStatus.StopViolated }
                 val targets = dRows.filter { it.status == DisciplineStatus.TargetReached }
+                var showAllDiscipline by remember { mutableStateOf(false) }
                 SectionCard(
                     header = if (dRows.isEmpty()) "손절/익절 규율" else "손절/익절 규율 (${dRows.size}쌍)",
                     footer = "종목 상세에서 설정한 손절가·목표가 기준으로 실제 매도가 규율을 지켰는지 확인해요.",
@@ -211,7 +218,7 @@ fun StatsScreen(
                         Text("기준가(목표가·손절가)가 설정된\n매수→매도 쌍이 필요해요",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 4.dp))
+                            modifier = Modifier.padding(vertical = 8.dp))
                     } else {
                         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
                             DiscCell(violations.size, "손절 어김", ChangeDown, Modifier.weight(1f))
@@ -233,9 +240,23 @@ fun StatsScreen(
                                 }
                             }
                         }
-                        dRows.forEach { row ->
+                        val displayRows = if (showAllDiscipline || dRows.size <= 5) dRows else dRows.take(5)
+                        displayRows.forEach { row ->
                             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                             DisciplineRowItem(row, nameMap)
+                        }
+                        if (dRows.size > 5) {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                            Text(
+                                if (showAllDiscipline) "접기 ↑" else "${dRows.size - 5}건 더 보기 ↓",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = PurpleAccent,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showAllDiscipline = !showAllDiscipline }
+                                    .padding(vertical = 6.dp),
+                            )
                         }
                     }
                 }
@@ -253,7 +274,7 @@ fun StatsScreen(
                         Text("아직 계산할 수 없어요\n(가격이 기록된 매수→매도 쌍이 필요해요)",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 4.dp))
+                            modifier = Modifier.padding(vertical = 8.dp))
                     } else {
                         wRows.forEachIndexed { i, row ->
                             if (i > 0) HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -313,7 +334,8 @@ fun StatsScreen(
                                 Spacer(Modifier.width(6.dp))
                                 Canvas(modifier = Modifier.width(60.dp).height(6.dp)) {
                                     val barW = size.width * (count.toFloat() / maxCount)
-                                    drawRoundRect(PurpleAccent.copy(alpha = 0.5f), size = Size(barW, size.height),
+                                    val rankAlpha = (0.85f - i * 0.07f).coerceIn(0.25f, 0.9f)
+                                    drawRoundRect(PurpleAccent.copy(alpha = rankAlpha), size = Size(barW, size.height),
                                         cornerRadius = CornerRadius(2f))
                                 }
                             }
@@ -332,7 +354,10 @@ fun StatsScreen(
                     footer = "가장 최근 기록 20건. 상세 화면에서 관심·매수·매도 버튼을 누를 때마다 쌓여요.",
                 ) {
                     entries.take(20).forEachIndexed { i, e ->
-                        if (i > 0) HorizontalDivider(modifier = Modifier.padding(vertical = 3.dp))
+                        if (i > 0) HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 3.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+                        )
                         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -677,7 +702,7 @@ private fun MissedRowItem(row: MissedRow) {
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically) {
-            Text(row.name, style = MaterialTheme.typography.bodyMedium)
+            Text(row.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
             row.hypotheticalReturn?.let { ret ->
                 val sign = if (ret >= 0) "+" else ""
                 Text("$sign${String.format("%.1f%%", ret)}",

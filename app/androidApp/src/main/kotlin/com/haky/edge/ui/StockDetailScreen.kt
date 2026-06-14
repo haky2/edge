@@ -20,7 +20,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.List
@@ -41,6 +40,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import com.haky.edge.model.ActionLogEntry
 import java.text.SimpleDateFormat
 import androidx.compose.runtime.Composable
@@ -1057,6 +1059,7 @@ private fun FlowBars(flows: List<com.haky.edge.model.InvestorFlow>, modifier: Mo
 
 // ─── 행동 기록 카드 ───────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LogCard(
     entries: List<ActionLogEntry>,
@@ -1071,46 +1074,68 @@ private fun LogCard(
     ) {
         Text("행동 기록", style = MaterialTheme.typography.titleSmall)
         entries.forEachIndexed { index, entry ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+            val dismissState = rememberSwipeToDismissBoxState(
+                confirmValueChange = { value ->
+                    if (value == SwipeToDismissBoxValue.EndToStart) {
+                        onDelete(entry.id)
+                        true
+                    } else false
+                },
+            )
+            SwipeToDismissBox(
+                state = dismissState,
+                enableDismissFromStartToEnd = false,
+                backgroundContent = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFFFF3B30).copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                            .padding(end = 12.dp),
+                        contentAlignment = Alignment.CenterEnd,
+                    ) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = "삭제",
+                            tint = Color(0xFFFF3B30),
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                },
             ) {
-                ActionBadge(entry.action)
-                Spacer(modifier = Modifier.width(8.dp))
-                val entryReason = entry.reason
-                if (entryReason != null) {
-                    Text(
-                        entryReason,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                    )
-                } else {
-                    Spacer(modifier = Modifier.weight(1f))
-                }
-                val entryPrice = entry.price
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        shortTs(entry.createdAt),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (entryPrice != null && entryPrice > 0) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ActionBadge(entry.action)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    val entryReason = entry.reason
+                    if (entryReason != null) {
                         Text(
-                            "${entryPrice.fmt()}원",
+                            entryReason,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                    val entryPrice = entry.price
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            shortTs(entry.createdAt),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (entryPrice != null && entryPrice > 0) {
+                            Text(
+                                "${entryPrice.fmt()}원",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
-                }
-                Spacer(modifier = Modifier.width(4.dp))
-                IconButton(onClick = { onDelete(entry.id) }, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Filled.Close,
-                        contentDescription = "삭제",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
             }
             if (index < entries.lastIndex) HorizontalDivider()
