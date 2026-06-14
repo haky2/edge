@@ -94,15 +94,15 @@ struct StockDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showComparePicker = true } label: { Image(systemName: "rectangle.split.2x1") }
+                Button { showComparePicker = true } label: { Image(systemName: "arrow.left.arrow.right") }
                     .help("다른 종목과 비교")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showLogSheet = true } label: { Image(systemName: "note.text.badge.plus") }
+                Button { showLogSheet = true } label: { Image(systemName: "flag") }
                     .help("매매 기록")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showEdit = true } label: { Image(systemName: "slider.horizontal.3") }
+                Button { showEdit = true } label: { Image(systemName: "pencil.and.list.clipboard") }
                     .help("평단·목표가 수정")
             }
             ToolbarItem(placement: .topBarTrailing) {

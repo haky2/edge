@@ -22,8 +22,8 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -188,10 +188,10 @@ fun StockDetailScreen(
                         }
                     }
                     IconButton(onClick = { showLogSheet = true }) {
-                        Icon(Icons.Filled.EditNote, contentDescription = "매매 기록")
+                        Icon(Icons.Filled.Flag, contentDescription = "매매 기록")
                     }
                     IconButton(onClick = { showPositionSheet = true }) {
-                        Icon(Icons.Filled.Tune, contentDescription = "포지션 입력")
+                        Icon(Icons.Filled.EditNote, contentDescription = "포지션 입력")
                     }
                     IconButton(onClick = { refresh() }) {
                         if (loading) {
