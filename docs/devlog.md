@@ -6,6 +6,23 @@
 
 ---
 
+## 2026-06-15 — iOS 내비게이션 타이틀·바디 상단 여백 제거 (Sonnet)
+
+**한 일**
+- 5개 탭 전체(관심종목·내 자산·브리핑·내 패턴·설정)에 inline 타이틀 적용 + 설정 "문의" 행 iOS·Android 제거 (커밋 9f05d86).
+- inline 전환 후 타이틀 바와 리스트 사이 회색 여백이 남는 문제 수정 (커밋 fd88bd5).
+  - 원인: iOS 16+에서 SwiftUI `List`는 `UICollectionView` 기반 → `UITableView.appearance().sectionHeaderTopPadding` 완전 무효.
+  - 수정: 5개 뷰의 `List`/`Form`에 `.contentMargins(.top, 0, for: .scrollContent)` (iOS 17+) 추가. iOSApp.swift UITableView hack 제거.
+
+**배운 것**
+- iOS 16+에서 SwiftUI List = UICollectionView. UITableView appearance proxy는 효과 없음.
+- 내비 바-리스트 상단 여백 제거는 `.contentMargins(.top, 0, for: .scrollContent)` (iOS 17+)가 정석.
+
+**다음 할 일**
+- 백로그 슬라이스 C(완전 자동 스케줄러) 또는 슬라이스 7(푸시 알림)
+
+---
+
 ## 2026-06-15 — 코스피 선행신호 주말 버그 3종 수정 (Sonnet)
 
 **한 일**
