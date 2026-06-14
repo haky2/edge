@@ -234,7 +234,6 @@ private fun HoldingsList(rows: List<HoldingRow>, sectorMap: Map<String, String>)
                     .fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 1.dp,
             ) {
                 Column {
                     Text(
@@ -272,7 +271,7 @@ private fun SummaryCard(rows: List<HoldingRow>, sectorRows: List<Pair<String, Do
     Surface(
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        color = MaterialTheme.colorScheme.surface,
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
             // 숫자 요약

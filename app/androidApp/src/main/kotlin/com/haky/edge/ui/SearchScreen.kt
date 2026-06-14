@@ -84,7 +84,7 @@ fun SearchScreen(
             TopAppBar(
                 title = { Text("종목 검색") },
                 windowInsets = WindowInsets(0),
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "뒤로")

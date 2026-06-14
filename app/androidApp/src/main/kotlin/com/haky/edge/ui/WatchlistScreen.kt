@@ -197,7 +197,6 @@ fun WatchlistScreen(
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = MaterialTheme.colorScheme.surface,
-                            tonalElevation = 1.dp,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Column {

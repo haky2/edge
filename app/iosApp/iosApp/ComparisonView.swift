@@ -43,6 +43,7 @@ struct ComparisonView: View {
             }
             .padding()
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("종목 비교")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -114,7 +115,7 @@ struct ComparisonView: View {
                           rightColor: yoyColor(c.b.quarterlyYoy?.doubleValue))
             }
         }
-        .background(Color(.secondarySystemBackground))
+        .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
@@ -174,7 +175,7 @@ struct ComparisonView: View {
             proseBlock(c.comment)
         }
         .padding()
-        .background(Color(.secondarySystemBackground))
+        .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
