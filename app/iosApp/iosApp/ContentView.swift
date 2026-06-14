@@ -52,6 +52,7 @@ struct WatchlistView: View {
                         }
                         .onDelete(perform: delete)   // 1.3c — 스와이프 삭제 → DB에서 제거
                     }
+                    .contentMargins(.top, 0, for: .scrollContent)
                 }
             }
             .navigationTitle("관심종목")
@@ -317,6 +318,7 @@ struct SettingsView: View {
                     LabeledContent("데이터 출처", value: "한투 API · DART · 네이버 뉴스")
                 }
             }
+            .contentMargins(.top, 0, for: .scrollContent)
             .navigationTitle("설정")
             .navigationBarTitleDisplayMode(.inline)
         }

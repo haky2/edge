@@ -90,6 +90,7 @@ struct PortfolioView: View {
                 }
             }
         }
+        .contentMargins(.top, 0, for: .scrollContent)
     }
 
     // 총 투자금·평가금액·손익·수익률 집계 카드 + 도넛 + 손익 기여도 + 섹터 비중

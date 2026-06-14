@@ -176,6 +176,7 @@ struct BriefingView: View {
                 earningsSection
             }
         }
+        .contentMargins(.top, 0, for: .scrollContent)
     }
 
     // MARK: - 섹션: 오늘 시장 분위기 (Claude)

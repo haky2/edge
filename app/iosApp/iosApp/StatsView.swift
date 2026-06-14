@@ -37,6 +37,7 @@ struct StatsView: View {
                     if avgHoldDays != nil || !pairRows.isEmpty { holdSection }
                 }
             }
+            .contentMargins(.top, 0, for: .scrollContent)
             .navigationTitle("내 패턴")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear { reload() }
