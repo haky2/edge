@@ -52,6 +52,14 @@ enum class AppTab(val label: String, val icon: ImageVector) {
     Settings("설정", Icons.Filled.Settings),
 }
 
+private fun tabDestination(tab: AppTab): AppDestination = when (tab) {
+    AppTab.Watchlist -> AppDestination.Watchlist
+    AppTab.Portfolio -> AppDestination.Portfolio
+    AppTab.Briefing -> AppDestination.Briefing
+    AppTab.Stats -> AppDestination.Stats
+    AppTab.Settings -> AppDestination.Settings
+}
+
 @Composable
 fun EdgeApp(
     watchlistRepo: WatchlistRepository,
@@ -60,6 +68,8 @@ fun EdgeApp(
 ) {
     var destination by remember { mutableStateOf<AppDestination>(AppDestination.Watchlist) }
     var activeTab by remember { mutableStateOf(AppTab.Watchlist) }
+    // 브리핑 하위탭(내 종목/시장) 선택을 EdgeApp 레벨에 보관 → 다른 탭 갔다 와도 유지.
+    var briefingTab by remember { mutableStateOf(BriefTab.MyStocks) }
 
     // 상세/검색/비교 화면에서 뒤로가기 → 이전 탭으로
     val isDetailScreen = destination is AppDestination.StockDetail
@@ -70,13 +80,7 @@ fun EdgeApp(
             is AppDestination.Comparison -> AppDestination.StockDetail(
                 (destination as AppDestination.Comparison).itemA, null
             )
-            else -> when (activeTab) {
-                AppTab.Watchlist -> AppDestination.Watchlist
-                AppTab.Portfolio -> AppDestination.Portfolio
-                AppTab.Briefing -> AppDestination.Briefing
-                AppTab.Stats -> AppDestination.Stats
-                AppTab.Settings -> AppDestination.Settings
-            }
+            else -> tabDestination(activeTab)
         }
     }
 
@@ -89,13 +93,7 @@ fun EdgeApp(
                             selected = activeTab == tab,
                             onClick = {
                                 activeTab = tab
-                                destination = when (tab) {
-                                    AppTab.Watchlist -> AppDestination.Watchlist
-                                    AppTab.Portfolio -> AppDestination.Portfolio
-                                    AppTab.Briefing -> AppDestination.Briefing
-                                    AppTab.Stats -> AppDestination.Stats
-                                    AppTab.Settings -> AppDestination.Settings
-                                }
+                                destination = tabDestination(tab)
                             },
                             icon = { Icon(tab.icon, contentDescription = tab.label) },
                             label = { Text(tab.label) },
@@ -130,7 +128,7 @@ fun EdgeApp(
                         watchlistRepo = watchlistRepo,
                         actionLogRepo = actionLogRepo,
                         api = api,
-                        onBack = { destination = AppDestination.Watchlist },
+                        onBack = { destination = tabDestination(activeTab) },
                         onCompare = { itemB ->
                             destination = AppDestination.Comparison(dest.item, itemB)
                         },
@@ -144,7 +142,15 @@ fun EdgeApp(
                         watchlistRepo = watchlistRepo,
                         api = api,
                     )
-                    is AppDestination.Briefing -> BriefingScreen(api = api, watchlistRepo = watchlistRepo)
+                    is AppDestination.Briefing -> BriefingScreen(
+                        api = api,
+                        watchlistRepo = watchlistRepo,
+                        selectedTab = briefingTab,
+                        onSelectTab = { briefingTab = it },
+                        onStockClick = { item, quote ->
+                            destination = AppDestination.StockDetail(item, quote)
+                        },
+                    )
                     is AppDestination.Stats -> StatsScreen(watchlistRepo = watchlistRepo, actionLogRepo = actionLogRepo, api = api)
                     is AppDestination.Settings -> SettingsScreen()
                     is AppDestination.Comparison -> ComparisonScreen(

@@ -1,7 +1,6 @@
 package com.haky.edge.ui
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,34 +20,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.haky.edge.api.EdgeApi
-import com.haky.edge.db.WatchlistRepository
-
-// ──── 브리핑 탭 스텁 (Batch D에서 구현) ────────────────────────────────────
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun BriefingScreen(
-    api: EdgeApi,
-    watchlistRepo: WatchlistRepository,
-) {
-    Scaffold(
-        topBar = {
-            CompactHeader(title = "브리핑")
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("브리핑 — Batch D에서 구현", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
 
 // ──── 설정 탭 (분석 모드 토글 + 앱 정보 footer) ───────────────────────────
 
