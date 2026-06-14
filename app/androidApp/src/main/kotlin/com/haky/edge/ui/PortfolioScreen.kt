@@ -275,9 +275,9 @@ private fun SummaryCard(rows: List<HoldingRow>, sectorRows: List<Pair<String, Do
 
             // 도넛 + 레전드
             if (rows.size > 1) {
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(24.dp))
                 HorizontalDivider()
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(24.dp))
                 val colorByName = rows.mapIndexed { i, row -> row.item.name to sliceColor(i) }.toMap()
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -313,17 +313,17 @@ private fun SummaryCard(rows: List<HoldingRow>, sectorRows: List<Pair<String, Do
             // 손익 기여도 발산 막대
             val hasPnl = rows.any { it.pnl != 0.0 }
             if (rows.isNotEmpty() && hasPnl) {
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(24.dp))
                 HorizontalDivider()
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(24.dp))
                 PnlContributionView(rows)
             }
 
             // 섹터 비중 + 집중도 경고
             if (sectorRows.isNotEmpty()) {
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(24.dp))
                 HorizontalDivider()
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(24.dp))
                 SectorWeightView(sectorRows)
             }
         }

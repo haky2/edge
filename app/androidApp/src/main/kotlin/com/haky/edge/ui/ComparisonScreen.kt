@@ -90,7 +90,7 @@ fun ComparisonScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("종목 비교", style = MaterialTheme.typography.titleMedium) },
+                title = { Text("종목 비교") },
                 windowInsets = WindowInsets(0),
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
                 navigationIcon = {

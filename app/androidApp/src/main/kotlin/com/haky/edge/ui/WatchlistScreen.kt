@@ -14,7 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material3.Surface
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -37,6 +38,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -164,15 +166,17 @@ fun WatchlistScreen(
             onRefresh = { refresh() },
             modifier = Modifier.padding(innerPadding),
         ) {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                item { HorizontalDivider() }
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            ) {
                 error?.let { msg ->
                     item {
                         Text(
                             text = msg,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            modifier = Modifier.padding(bottom = 8.dp),
                         )
                     }
                 }
@@ -184,22 +188,39 @@ fun WatchlistScreen(
                         )
                     }
                 }
-                items(items, key = { it.code }) { item ->
-                    SwipeToDeleteRow(
-                        onDelete = {
-                            watchlistRepo.remove(item.code)
-                            items = items.filter { it.code != item.code }
+                if (items.isNotEmpty()) {
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            tonalElevation = 1.dp,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column {
+                                items.forEachIndexed { index, watchItem ->
+                                    key(watchItem.code) {
+                                        SwipeToDeleteRow(
+                                            onDelete = {
+                                                watchlistRepo.remove(watchItem.code)
+                                                items = items.filter { it.code != watchItem.code }
+                                            }
+                                        ) {
+                                            WatchlistRow(
+                                                item = watchItem,
+                                                quote = quotes[watchItem.code],
+                                                sparklines = sparklines[watchItem.code] ?: emptyList(),
+                                                badges = supplyBadges[watchItem.code] ?: emptyList(),
+                                                onClick = { onStockClick(watchItem, quotes[watchItem.code]) },
+                                            )
+                                        }
+                                    }
+                                    if (index < items.size - 1) {
+                                        HorizontalDivider(modifier = Modifier.padding(start = 16.dp))
+                                    }
+                                }
+                            }
                         }
-                    ) {
-                        WatchlistRow(
-                            item = item,
-                            quote = quotes[item.code],
-                            sparklines = sparklines[item.code] ?: emptyList(),
-                            badges = supplyBadges[item.code] ?: emptyList(),
-                            onClick = { onStockClick(item, quotes[item.code]) },
-                        )
                     }
-                    HorizontalDivider(modifier = Modifier.padding(start = 16.dp))
                 }
             }
         }
