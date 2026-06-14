@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 베이스(라이트). values-night에 다크 오버라이드. EdgeTheme(Compose)가 실제 색을 그림. -->
+    <style name="Theme.Edge" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@color/window_background</item>
+        <item name="android:navigationBarColor">@color/window_background</item>
+        <!-- 라이트 배경 → 상태바 아이콘 어둡게 -->
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

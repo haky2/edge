@@ -64,6 +64,7 @@ import com.haky.edge.model.StockImpact
 import com.haky.edge.model.ValuationBand
 import com.haky.edge.ui.theme.ChangeDown
 import com.haky.edge.ui.theme.ChangeUp
+import com.haky.edge.ui.theme.EdgeTheme
 import com.haky.edge.ui.theme.OrangeAccent
 import com.haky.edge.ui.theme.PurpleAccent
 import kotlin.math.abs
@@ -201,6 +202,7 @@ internal fun ValuationBandCard(band: ValuationBand) {
     }
 }
 
+@Composable
 private fun valuationBandColor(label: String): Color = when (label) {
     "역사적 저평가" -> ChangeDown
     "역사적 고평가" -> ChangeUp
@@ -230,13 +232,14 @@ private fun ValuationBandRow(name: String, current: Double, bandMin: Double, ban
 // 범위 바: 회색 트랙 + 중앙값 눈금 + 현재값 컬러 마커.
 @Composable
 private fun RangeBar(fraction: Float, medianFraction: Float, markerColor: Color, modifier: Modifier = Modifier) {
+    val trackColor = MaterialTheme.colorScheme.onSurfaceVariant
     Canvas(modifier = modifier) {
         val trackH = 6.dp.toPx()
         val trackY = (size.height - trackH) / 2f
-        drawRoundRect(Color.Gray.copy(alpha = 0.18f), Offset(0f, trackY), Size(size.width, trackH), CornerRadius(3.dp.toPx()))
+        drawRoundRect(trackColor.copy(alpha = 0.18f), Offset(0f, trackY), Size(size.width, trackH), CornerRadius(3.dp.toPx()))
         // 중앙값 눈금
         val midX = (size.width * medianFraction).coerceIn(0f, size.width - 1.5.dp.toPx())
-        drawRect(Color.Gray.copy(alpha = 0.5f), Offset(midX, size.height / 2f - 5.dp.toPx()), Size(1.5.dp.toPx(), 10.dp.toPx()))
+        drawRect(trackColor.copy(alpha = 0.5f), Offset(midX, size.height / 2f - 5.dp.toPx()), Size(1.5.dp.toPx(), 10.dp.toPx()))
         // 현재값 마커
         val markW = 3.dp.toPx()
         val markX = (size.width - markW) * fraction
@@ -279,12 +282,12 @@ private fun BacktestRow(s: SignalResult, baseline: Int) {
             Text(s.signal, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
             Text("표본 ${s.n}일", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             if (s.confident) BadgePill("${if (edgeUp) "+" else ""}%.1f%%p".format(s.edge), accent)
-            else BadgePill("표본 부족", Color.Gray)
+            else BadgePill("표본 부족", EdgeTheme.colors.neutral)
         }
         ProbabilityBar(
             winFraction = s.winRate / 100f,
             baselineFraction = baseline / 100f,
-            color = if (s.confident) accent else Color.Gray,
+            color = if (s.confident) accent else EdgeTheme.colors.neutral,
             dimmed = !s.confident,
             baselineColor = onSurface,
             modifier = Modifier.fillMaxWidth().height(10.dp),
@@ -299,10 +302,11 @@ private fun BacktestRow(s: SignalResult, baseline: Int) {
 // 익일 상승확률 바 + 평소(baseline) 세로선.
 @Composable
 private fun ProbabilityBar(winFraction: Float, baselineFraction: Float, color: Color, dimmed: Boolean, baselineColor: Color, modifier: Modifier = Modifier) {
+    val trackColor = MaterialTheme.colorScheme.onSurfaceVariant
     Canvas(modifier = modifier) {
         val trackH = 6.dp.toPx()
         val trackY = (size.height - trackH) / 2f
-        drawRoundRect(Color.Gray.copy(alpha = 0.18f), Offset(0f, trackY), Size(size.width, trackH), CornerRadius(3.dp.toPx()))
+        drawRoundRect(trackColor.copy(alpha = 0.18f), Offset(0f, trackY), Size(size.width, trackH), CornerRadius(3.dp.toPx()))
         drawRoundRect(color.copy(alpha = if (dimmed) 0.4f else 0.7f), Offset(0f, trackY), Size(size.width * winFraction.coerceIn(0f, 1f), trackH), CornerRadius(3.dp.toPx()))
         val bx = (size.width * baselineFraction).coerceIn(0f, size.width - 1.5.dp.toPx())
         drawRect(baselineColor.copy(alpha = 0.5f), Offset(bx, size.height / 2f - 5.dp.toPx()), Size(1.5.dp.toPx(), 10.dp.toPx()))
@@ -335,7 +339,7 @@ internal fun FlowSensitivityCard(fs: FlowSensitivity) {
 private fun FlowCorrRow(fc: FlowCorrelation) {
     val absR = abs(fc.r)
     val isPositive = fc.r >= 0
-    val accent = if (absR < 0.1) Color.Gray else if (isPositive) ChangeUp else ChangeDown
+    val accent = if (absR < 0.1) EdgeTheme.colors.neutral else if (isPositive) ChangeUp else ChangeDown
     val active = fc.confident && absR >= 0.1
     val plainLabel = when {
         !fc.confident -> "표본 부족"
@@ -351,17 +355,18 @@ private fun FlowCorrRow(fc: FlowCorrelation) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(fc.investor, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
             Text("${fc.n}일", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-            BadgePill(plainLabel, if (active) accent else Color.Gray)
+            BadgePill(plainLabel, if (active) accent else EdgeTheme.colors.neutral)
         }
-        StrengthBar(absR.coerceIn(0.0, 1.0).toFloat(), if (fc.confident) accent else Color.Gray, !fc.confident, modifier = Modifier.fillMaxWidth().height(6.dp))
+        StrengthBar(absR.coerceIn(0.0, 1.0).toFloat(), if (fc.confident) accent else EdgeTheme.colors.neutral, !fc.confident, modifier = Modifier.fillMaxWidth().height(6.dp))
         desc?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 
 @Composable
 private fun StrengthBar(fraction: Float, color: Color, dimmed: Boolean, modifier: Modifier = Modifier) {
+    val trackColor = MaterialTheme.colorScheme.onSurfaceVariant
     Canvas(modifier = modifier) {
-        drawRoundRect(Color.Gray.copy(alpha = 0.18f), size = size, cornerRadius = CornerRadius(3.dp.toPx()))
+        drawRoundRect(trackColor.copy(alpha = 0.18f), size = size, cornerRadius = CornerRadius(3.dp.toPx()))
         drawRoundRect(color.copy(alpha = if (dimmed) 0.4f else 0.7f), size = Size(size.width * fraction, size.height), cornerRadius = CornerRadius(3.dp.toPx()))
     }
 }
@@ -625,13 +630,14 @@ private fun RangeGauge(pct: Double) {
         pct < 75 -> "중상단"
         else -> "고점권"
     }
+    val trackColor = MaterialTheme.colorScheme.onSurfaceVariant
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("52주 위치", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             Text("${pct.toInt()}%  $label", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium), color = color)
         }
         Canvas(modifier = Modifier.fillMaxWidth().height(5.dp)) {
-            drawRoundRect(Color.Gray.copy(alpha = 0.18f), size = size, cornerRadius = CornerRadius(size.height / 2f))
+            drawRoundRect(trackColor.copy(alpha = 0.18f), size = size, cornerRadius = CornerRadius(size.height / 2f))
             val w = (size.width * (pct / 100.0)).toFloat().coerceAtLeast(5f)
             drawRoundRect(color, size = Size(w, size.height), cornerRadius = CornerRadius(size.height / 2f))
         }
@@ -794,7 +800,7 @@ private fun FactsRichnessRow(r: FactsRichness) {
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                     color = if (on) PurpleAccent else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
-                        .background((if (on) PurpleAccent else Color.Gray).copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                        .background((if (on) PurpleAccent else MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.12f), RoundedCornerShape(6.dp))
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
             }

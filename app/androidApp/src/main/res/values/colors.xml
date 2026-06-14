@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 윈도우/시스템바 배경. Compose 그리기 전 플래시·상태바와 EdgeTheme background를 맞춤. -->
+    <!-- 라이트: iOS systemGroupedBackground 회색 -->
+    <color name="window_background">#F2F2F7</color>
+</resources>

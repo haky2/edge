@@ -55,6 +55,8 @@ import com.haky.edge.model.ComparisonDetail
 import com.haky.edge.model.WatchItem
 import com.haky.edge.ui.theme.ChangeDown
 import com.haky.edge.ui.theme.ChangeUp
+import com.haky.edge.ui.theme.EdgeTheme
+import com.haky.edge.ui.theme.OrangeAccent
 import com.haky.edge.ui.theme.PurpleAccent
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
@@ -247,9 +249,9 @@ private fun CommentCard(c: Comparison, mode: String) {
                 Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp), tint = PurpleAccent)
                 Text("비교 분석", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 if (mode == "aggressive") {
-                    Surface(shape = RoundedCornerShape(50), color = Color(0xFFFF9500).copy(alpha = 0.12f)) {
+                    Surface(shape = RoundedCornerShape(50), color = OrangeAccent.copy(alpha = 0.12f)) {
                         Text("⚔️ 공격적 모드", style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFFFF9500),
+                            color = OrangeAccent,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                     }
                 }
@@ -336,8 +338,9 @@ private fun fmtDec(v: Double): String =
     if (v == v.toLong().toDouble()) "${v.toLong()}" else String.format("%.1f", v)
 
 private fun rateText(r: Double) = "${if (r >= 0) "+" else ""}${String.format("%.2f", r)}%"
+@Composable
 private fun rateColor(r: Double) = when {
-    r > 0 -> ChangeUp; r < 0 -> ChangeDown; else -> Color.Gray
+    r > 0 -> ChangeUp; r < 0 -> ChangeDown; else -> EdgeTheme.colors.neutral
 }
 
 private fun week52Label(pct: Double) = when {
@@ -345,6 +348,7 @@ private fun week52Label(pct: Double) = when {
     pct < 80 -> "고중간"; else -> "고점권"
 }
 
+@Composable
 private fun valuationColor(label: String?) = when {
     label == null -> Color.Unspecified
     label.contains("저평가") -> ChangeDown
@@ -355,8 +359,9 @@ private fun valuationColor(label: String?) = when {
 private fun upsideText(pct: Double?) =
     if (pct == null) "-" else "${if (pct >= 0) "+" else ""}${String.format("%.1f", pct)}%"
 
+@Composable
 private fun upsideColor(pct: Double?) = when {
-    pct == null -> Color.Gray
+    pct == null -> EdgeTheme.colors.neutral
     pct >= 5 -> ChangeUp; pct <= -5 -> ChangeDown; else -> Color.Unspecified
 }
 
@@ -369,12 +374,14 @@ private fun flowText(v: Long): String {
         else -> "$sign$a"
     }
 }
-private fun flowColor(v: Long) = when { v > 0 -> ChangeUp; v < 0 -> ChangeDown; else -> Color.Gray }
+@Composable
+private fun flowColor(v: Long) = when { v > 0 -> ChangeUp; v < 0 -> ChangeDown; else -> EdgeTheme.colors.neutral }
 
 private fun yoyText(pct: Double?) =
     if (pct == null) "-" else "${if (pct >= 0) "+" else ""}${String.format("%.1f", pct)}%"
 
+@Composable
 private fun yoyColor(pct: Double?) = when {
-    pct == null -> Color.Gray
+    pct == null -> EdgeTheme.colors.neutral
     pct > 10 -> ChangeUp; pct < -10 -> ChangeDown; else -> Color.Unspecified
 }

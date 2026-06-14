@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import com.haky.edge.model.DailyBar
 import com.haky.edge.ui.theme.ChangeDown
 import com.haky.edge.ui.theme.ChangeUp
+import com.haky.edge.ui.theme.EdgeTheme
 import com.haky.edge.ui.theme.OrangeAccent
 import kotlin.math.max
 
@@ -109,6 +110,10 @@ fun PriceLineChart(
     val density = LocalDensity.current
     val onSurface = MaterialTheme.colorScheme.onSurface
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val maColor = OrangeAccent
+    val upColor = ChangeUp
+    val downColor = ChangeDown
+    val avgGreen = EdgeTheme.colors.success
 
     // pts: 최신일이 앞이라 reverse 후 displayCount 만큼 최근 구간. MA20은 전체 시계열로 계산.
     val all = bars.asReversed() // [0]=oldest
@@ -196,7 +201,7 @@ fun PriceLineChart(
         }
         if (maStarted) {
             drawPath(
-                maPath, color = OrangeAccent,
+                maPath, color = maColor,
                 style = Stroke(width = with(density) { 1.2.dp.toPx() }, pathEffect = maDash),
             )
         }
@@ -218,7 +223,6 @@ fun PriceLineChart(
         )
 
         // 내 기준선들(목표 빨강 / 평단 초록 / 손절 파랑) + 좌측 컬러 레이블.
-        val avgGreen = Color(0xFF34C759)
         val baseDash = PathEffect.dashPathEffect(floatArrayOf(3f, 2f))
         fun drawBaseline(value: Double?, color: Color, label: String) {
             val v = value ?: return
@@ -237,9 +241,9 @@ fun PriceLineChart(
             )
             drawText(txt, topLeft = Offset(0f, y - txt.size.height / 2f))
         }
-        drawBaseline(target, ChangeUp, "목표")
+        drawBaseline(target, upColor, "목표")
         drawBaseline(avg, avgGreen, "평단")
-        drawBaseline(stop, ChangeDown, "손절")
+        drawBaseline(stop, downColor, "손절")
     }
 }
 
@@ -251,6 +255,7 @@ fun VolumeBars(
     modifier: Modifier = Modifier,
 ) {
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val upColor = ChangeUp
     val all = bars.asReversed()
     if (all.isEmpty()) return
     val start = max(0, all.size - displayCount)
@@ -269,7 +274,7 @@ fun VolumeBars(
             val hot = avgVol > 0 && v >= avgVol * 2
             val x = slot * i + (slot - barW) / 2f
             drawRect(
-                color = if (hot) ChangeUp.copy(alpha = 0.6f) else secondary.copy(alpha = 0.35f),
+                color = if (hot) upColor.copy(alpha = 0.6f) else secondary.copy(alpha = 0.35f),
                 topLeft = Offset(x, size.height - h),
                 size = androidx.compose.ui.geometry.Size(barW, h),
             )

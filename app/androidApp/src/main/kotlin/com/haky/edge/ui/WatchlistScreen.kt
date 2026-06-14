@@ -287,7 +287,7 @@ private fun SwipeToDeleteRow(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xFFFF3B30))
+                    .background(ChangeUp)
                     .padding(end = 20.dp),
                 contentAlignment = Alignment.CenterEnd,
             ) {

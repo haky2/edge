@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.model.StockInfo
+import com.haky.edge.ui.theme.EdgeTheme
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -177,7 +178,7 @@ private fun SearchResultRow(
             Icon(
                 Icons.Filled.CheckCircle,
                 contentDescription = "추가됨",
-                tint = Color(0xFF34C759),
+                tint = EdgeTheme.colors.success,
             )
         } else {
             TextButton(onClick = onAdd) { Text("추가") }

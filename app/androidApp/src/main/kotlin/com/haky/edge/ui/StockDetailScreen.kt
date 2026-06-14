@@ -68,8 +68,10 @@ import com.haky.edge.db.ActionLogRepository
 import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.model.Quote
 import com.haky.edge.model.WatchItem
+import androidx.compose.runtime.ReadOnlyComposable
 import com.haky.edge.ui.theme.ChangeDown
 import com.haky.edge.ui.theme.ChangeUp
+import com.haky.edge.ui.theme.EdgeTheme
 import com.haky.edge.ui.theme.OrangeAccent
 import com.haky.edge.ui.theme.PurpleAccent
 import kotlinx.coroutines.launch
@@ -517,18 +519,20 @@ private fun TodaySummary(q: Quote, bars: List<com.haky.edge.model.DailyBar>) {
         // 장중 위치 게이지
         if (q.high > q.low) {
             val pos = (q.price - q.low).toFloat() / (q.high - q.low).toFloat()
+            val trackColor = MaterialTheme.colorScheme.onSurfaceVariant
+            val dotColor = if (priceUp) ChangeUp else ChangeDown
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Canvas(modifier = Modifier.fillMaxWidth().height(9.dp)) {
                     val trackH = 5.dp.toPx()
                     drawRoundRect(
-                        color = Color.LightGray.copy(alpha = 0.4f),
+                        color = trackColor.copy(alpha = 0.3f),
                         topLeft = Offset(0f, (size.height - trackH) / 2f),
                         size = Size(size.width, trackH),
                         cornerRadius = CornerRadius(trackH / 2f),
                     )
                     val dotR = 4.5.dp.toPx()
                     val cx = (size.width - dotR * 2) * pos.coerceIn(0f, 1f) + dotR
-                    drawCircle(if (priceUp) ChangeUp else ChangeDown, dotR, Offset(cx, size.height / 2f))
+                    drawCircle(dotColor, dotR, Offset(cx, size.height / 2f))
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("저 ${q.low.fmt()}", style = MaterialTheme.typography.labelSmall, color = ChangeDown)
@@ -700,7 +704,8 @@ private fun UpsideGauge(
     val anchor = stopPrice ?: avgPrice ?: minOf(currentPrice * 0.85, targetPrice * 0.75)
     val range = maxOf(targetPrice - anchor, 1.0)
     val progress = ((currentPrice - anchor) / range).coerceIn(0.0, 1.0).toFloat()
-    val fillColor = if (reached) Color(0xFF34C759) else OrangeAccent
+    val fillColor = if (reached) EdgeTheme.colors.success else OrangeAccent
+    val trackColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -708,7 +713,7 @@ private fun UpsideGauge(
             Text(
                 text = if (reached) "🎯 도달" else "%+.1f%%".format(upside),
                 style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                color = if (reached) Color(0xFF34C759) else if (upside < 5) OrangeAccent else Color.Unspecified,
+                color = if (reached) EdgeTheme.colors.success else if (upside < 5) OrangeAccent else Color.Unspecified,
             )
         }
         Canvas(modifier = Modifier.fillMaxWidth().height(20.dp)) {
@@ -719,7 +724,7 @@ private fun UpsideGauge(
             val radius = trackH / 2f
             val fillW = (size.width * progress).coerceAtLeast(5f)
             drawRoundRect(
-                color = Color.LightGray.copy(alpha = 0.5f),
+                color = trackColor.copy(alpha = 0.35f),
                 topLeft = Offset(0f, trackY),
                 size = Size(size.width, trackH),
                 cornerRadius = CornerRadius(radius),
@@ -837,7 +842,7 @@ private fun TrendSignal(r: com.haky.edge.analysis.TechnicalResult, price: Double
 private fun TrendDot(label: String, ma: Double?, price: Double) {
     val above = ma?.let { price >= it }
     val circleColor = when (above) {
-        null -> Color.LightGray.copy(alpha = 0.5f)
+        null -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
         true -> ChangeUp
         false -> ChangeDown
     }
@@ -865,8 +870,11 @@ private fun TrendDot(label: String, ma: Double?, price: Double) {
 // RSI 게이지: 0~100 바 + 30/70 구간 + 현재 위치 마커.
 @Composable
 private fun RsiGauge(v: Double, modifier: Modifier = Modifier) {
-    val bg = MaterialTheme.colorScheme.background
+    val bg = MaterialTheme.colorScheme.surface
     val onSurface = MaterialTheme.colorScheme.onSurface
+    val downColor = ChangeDown
+    val upColor = ChangeUp
+    val midBand = MaterialTheme.colorScheme.onSurfaceVariant
     val markerColor = if (v >= 70 || v <= 30) rsiColor(v) else onSurface
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -882,9 +890,9 @@ private fun RsiGauge(v: Double, modifier: Modifier = Modifier) {
             val w = size.width
             val radius = CornerRadius(h / 2f)
             // 3구간 배경 (clip해서 캡슐 모양)
-            drawRoundRect(ChangeDown.copy(alpha = 0.18f), Offset(0f, top), Size(w * 0.3f, h), radius)
-            drawRect(Color.LightGray.copy(alpha = 0.35f), Offset(w * 0.3f, top), Size(w * 0.4f, h))
-            drawRoundRect(ChangeUp.copy(alpha = 0.18f), Offset(w * 0.7f, top), Size(w * 0.3f, h), radius)
+            drawRoundRect(downColor.copy(alpha = 0.18f), Offset(0f, top), Size(w * 0.3f, h), radius)
+            drawRect(midBand.copy(alpha = 0.25f), Offset(w * 0.3f, top), Size(w * 0.4f, h))
+            drawRoundRect(upColor.copy(alpha = 0.18f), Offset(w * 0.7f, top), Size(w * 0.3f, h), radius)
             // 현재 위치 마커
             val markR = 5.dp.toPx()
             val cx = (w * (v / 100.0).toFloat()).coerceIn(markR, w - markR)
@@ -931,6 +939,7 @@ private fun rsiPlainLabel(v: Double): String = when {
     else -> "적당한 편이에요"
 }
 
+@Composable
 private fun rsiColor(v: Double): Color = when {
     v >= 70 -> ChangeUp
     v <= 30 -> ChangeDown
@@ -945,8 +954,10 @@ private fun rsiLabel(v: Double): String = when {
 
 // ─── 수급 카드 ───────────────────────────────────────────
 
-private val FlowForeign = Color(0xFFFF9500) // 외인 주황
-private val FlowInstitution = Color(0xFF30B0C7) // 기관 청록
+private val FlowForeign: Color // 외인 주황
+    @Composable @ReadOnlyComposable get() = EdgeTheme.colors.orange
+private val FlowInstitution: Color // 기관 청록
+    @Composable @ReadOnlyComposable get() = EdgeTheme.colors.teal
 
 @Composable
 private fun FlowCard(flows: List<com.haky.edge.model.InvestorFlow>) {
@@ -1025,6 +1036,8 @@ private fun FlowCell(n: Long, modifier: Modifier = Modifier) {
 private fun FlowBars(flows: List<com.haky.edge.model.InvestorFlow>, modifier: Modifier = Modifier) {
     val measurer = rememberTextMeasurer()
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val foreignColor = FlowForeign
+    val institutionColor = FlowInstitution
     val n = flows.size
     if (n == 0) return
     val maxAbs = flows.flatMap { listOf(abs(it.foreign), abs(it.institution)) }.maxOrNull()?.coerceAtLeast(1L) ?: 1L
@@ -1047,8 +1060,8 @@ private fun FlowBars(flows: List<com.haky.edge.model.InvestorFlow>, modifier: Mo
                     drawRect(color.copy(alpha = 0.85f), Offset(xCenter - barW / 2f, zeroY), Size(barW, h))
                 }
             }
-            bar(f.foreign, FlowForeign, center - (barW + gap) / 2f)
-            bar(f.institution, FlowInstitution, center + (barW + gap) / 2f)
+            bar(f.foreign, foreignColor, center - (barW + gap) / 2f)
+            bar(f.institution, institutionColor, center + (barW + gap) / 2f)
             // 날짜 라벨
             val txt = measurer.measure(mmdd(f.date), labelStyle)
             drawText(txt, topLeft = Offset(center - txt.size.width / 2f, plotH + (labelH - txt.size.height) / 2f))
@@ -1090,14 +1103,14 @@ private fun LogCard(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color(0xFFFF3B30).copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                            .background(ChangeUp.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
                             .padding(end = 12.dp),
                         contentAlignment = Alignment.CenterEnd,
                     ) {
                         Icon(
                             Icons.Filled.Delete,
                             contentDescription = "삭제",
-                            tint = Color(0xFFFF3B30),
+                            tint = ChangeUp,
                             modifier = Modifier.size(18.dp),
                         )
                     }
@@ -1147,9 +1160,9 @@ private fun LogCard(
 @Composable
 private fun ActionBadge(action: String) {
     val (label, color) = when (action) {
-        "buy" -> "매수" to Color(0xFFFF3B30)
-        "sell" -> "매도" to Color(0xFF007AFF)
-        else -> "관심" to Color(0xFFFF9500)
+        "buy" -> "매수" to ChangeUp
+        "sell" -> "매도" to EdgeTheme.colors.sell
+        else -> "관심" to OrangeAccent
     }
     Text(
         label,
@@ -1194,9 +1207,9 @@ private fun ActionLogSheet(
                 actions.forEach { (id, label) ->
                     val selected = selectedAction == id
                     val bgColor = if (selected) when (id) {
-                        "buy" -> Color(0xFFFF3B30)
-                        "sell" -> Color(0xFF007AFF)
-                        else -> Color(0xFFFF9500)
+                        "buy" -> ChangeUp
+                        "sell" -> EdgeTheme.colors.sell
+                        else -> OrangeAccent
                     } else MaterialTheme.colorScheme.surfaceVariant
                     val textColor = if (selected) Color.White else MaterialTheme.colorScheme.onSurface
                     Text(

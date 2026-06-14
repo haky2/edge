@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 다크: iOS dark systemGroupedBackground 검정 (카드가 검정 위에 뜸) -->
+    <color name="window_background">#000000</color>
+</resources>

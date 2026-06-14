@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +70,7 @@ import com.haky.edge.model.StockImpact
 import com.haky.edge.model.WatchItem
 import com.haky.edge.ui.theme.ChangeDown
 import com.haky.edge.ui.theme.ChangeUp
+import com.haky.edge.ui.theme.EdgeTheme
 import com.haky.edge.ui.theme.OrangeAccent
 import com.haky.edge.ui.theme.PurpleAccent
 import kotlinx.coroutines.coroutineScope
@@ -85,7 +87,8 @@ import kotlin.math.abs
 // 브리핑 탭 — iOS BriefingView 풀 포팅 (Batch D). 두 하위 탭: 내 종목 / 시장.
 // 섹션은 Android 관례에 맞춰 라운드 Surface 카드로 렌더(관심종목·내자산 화면과 동일 톤).
 
-private val Teal = Color(0xFF30B0C7)
+private val Teal: Color
+    @Composable @ReadOnlyComposable get() = EdgeTheme.colors.teal
 private val CardShape = RoundedCornerShape(12.dp)
 
 enum class BriefTab(val label: String) { MyStocks("내 종목"), Market("시장") }
@@ -779,7 +782,7 @@ private fun EventRowView(e: MarketEvent) {
     val (accent, badge) = when (e.category) {
         "호재" -> Teal to "호재"
         "주의" -> OrangeAccent to "주의"
-        else -> Color(0xFF8E8E93) to "중립"
+        else -> EdgeTheme.colors.neutral to "중립"
     }
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.width(48.dp)) {
@@ -801,7 +804,7 @@ private fun EventLegend() {
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
         EventLegendRow("호재", Teal, "결과에 따라 주가 상승 기대")
         EventLegendRow("주의", OrangeAccent, "결과에 따라 주가 크게 흔들릴 수 있음")
-        EventLegendRow("중립", Color(0xFF8E8E93), "시장 방향과 무관")
+        EventLegendRow("중립", EdgeTheme.colors.neutral, "시장 방향과 무관")
     }
 }
 
@@ -897,7 +900,7 @@ private fun ImpactRowView(s: StockImpact) {
             val netColor = when (s.net) {
                 "우호적" -> ChangeUp
                 "부담" -> ChangeDown
-                else -> Color(0xFF8E8E93)
+                else -> EdgeTheme.colors.neutral
             }
             Pill(s.net, netColor)
         }
@@ -906,7 +909,7 @@ private fun ImpactRowView(s: StockImpact) {
         } else {
             s.signals.forEach { sig ->
                 val d = sig.direction
-                val c = if (d > 0) ChangeUp else if (d < 0) ChangeDown else Color(0xFF8E8E93)
+                val c = if (d > 0) ChangeUp else if (d < 0) ChangeDown else EdgeTheme.colors.neutral
                 val lbl = if (d > 0) "우호" else if (d < 0) "부담" else "중립"
                 val signed = (if (sig.changeRate >= 0) "+" else "") + "%.2f".format(sig.changeRate)
                 Text("${sig.indicator} $signed% → $lbl", style = MaterialTheme.typography.labelSmall, color = c)
@@ -1075,7 +1078,7 @@ private fun MoodTodayCard(direction: String) {
     val (label, color) = when (direction) {
         "BULLISH" -> "강세 예상 ↑" to ChangeUp
         "BEARISH" -> "약세 예상 ↓" to ChangeDown
-        else -> "보합 예상" to Color(0xFF8E8E93)
+        else -> "보합 예상" to EdgeTheme.colors.neutral
     }
     Row(
         modifier = Modifier.fillMaxWidth().background(color.copy(alpha = 0.08f), CardShape).padding(12.dp),
@@ -1103,7 +1106,7 @@ private fun MoodHistoryRow(entry: MoodLogEntry) {
         else Text("대기", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.weight(1f))
         entry.isCorrect?.let { ok ->
-            Text(if (ok) "✓" else "✗", style = MaterialTheme.typography.bodyMedium, color = if (ok) Color(0xFF34C759) else ChangeUp)
+            Text(if (ok) "✓" else "✗", style = MaterialTheme.typography.bodyMedium, color = if (ok) EdgeTheme.colors.success else ChangeUp)
         }
         entry.kospiChange?.let { v ->
             Text("${if (v >= 0) "+" else ""}${"%.1f".format(v)}%", style = MaterialTheme.typography.labelSmall, color = if (v >= 0) ChangeUp else ChangeDown)
@@ -1116,10 +1119,10 @@ private fun MoodBadge(direction: String, actual: Boolean) {
     val (label, color) = when (direction) {
         "BULLISH" -> "강세↑" to ChangeUp
         "BEARISH" -> "약세↓" to ChangeDown
-        else -> "보합" to Color(0xFF8E8E93)
+        else -> "보합" to EdgeTheme.colors.neutral
     }
     val fg = if (actual) MaterialTheme.colorScheme.onSurface else color
-    val bg = if (actual) Color(0xFF8E8E93).copy(alpha = 0.12f) else color.copy(alpha = 0.12f)
+    val bg = if (actual) EdgeTheme.colors.neutral.copy(alpha = 0.12f) else color.copy(alpha = 0.12f)
     Text(
         label,
         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 10.sp),
@@ -1181,10 +1184,11 @@ private fun formatMacroValue(m: MacroIndicator): String = when (m.key) {
     else -> decimalFmt.format(m.value)
 }
 
+@Composable
 private fun tagColor(tag: String): Color = when {
     tag.contains("공포") -> ChangeDown
     tag.contains("탐욕") -> ChangeUp
-    else -> Color(0xFF8E8E93)
+    else -> EdgeTheme.colors.neutral
 }
 
 private fun macroDescription(key: String): String? = when (key) {
@@ -1238,11 +1242,12 @@ private fun ddayLabel(days: Int): String = when {
     else -> "D+${abs(days)}"
 }
 
+@Composable
 private fun ddayColor(days: Int): Color = when {
     days < 0 -> ChangeUp
     days < 14 -> ChangeUp
     days < 30 -> OrangeAccent
-    else -> Color(0xFF8E8E93)
+    else -> EdgeTheme.colors.neutral
 }
 
 private fun eventDateLabel(dateStr: String): String {

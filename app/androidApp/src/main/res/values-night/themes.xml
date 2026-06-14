@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 다크 오버라이드. -->
+    <style name="Theme.Edge" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@color/window_background</item>
+        <item name="android:navigationBarColor">@color/window_background</item>
+        <!-- 다크 배경 → 상태바 아이콘 밝게 -->
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

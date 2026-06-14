@@ -421,27 +421,30 @@ private fun PnlContributionView(rows: List<HoldingRow>) {
 
 @Composable
 private fun DivergingBar(pnl: Double, maxAbs: Double, modifier: Modifier = Modifier) {
+    val upColor = ChangeUp
+    val downColor = ChangeDown
+    val centerLine = MaterialTheme.colorScheme.outlineVariant
     Canvas(modifier = modifier) {
         val half = size.width / 2f
         val ratio = (abs(pnl) / maxAbs).coerceAtMost(1.0).toFloat()
         val fillW = max(2f, half * ratio)
         // 중심선
         drawLine(
-            color = Color.Gray.copy(alpha = 0.4f),
+            color = centerLine,
             start = Offset(half, 0f),
             end = Offset(half, size.height),
             strokeWidth = 1f,
         )
         if (pnl >= 0) {
             drawRoundRect(
-                color = ChangeUp.copy(alpha = 0.65f),
+                color = upColor.copy(alpha = 0.65f),
                 topLeft = Offset(half, 1f),
                 size = Size(fillW, size.height - 2f),
                 cornerRadius = CornerRadius(2f),
             )
         } else {
             drawRoundRect(
-                color = ChangeDown.copy(alpha = 0.65f),
+                color = downColor.copy(alpha = 0.65f),
                 topLeft = Offset(half - fillW, 1f),
                 size = Size(fillW, size.height - 2f),
                 cornerRadius = CornerRadius(2f),

@@ -55,6 +55,7 @@ import com.haky.edge.model.ActionLogEntry
 import com.haky.edge.model.WatchItem
 import com.haky.edge.ui.theme.ChangeDown
 import com.haky.edge.ui.theme.ChangeUp
+import com.haky.edge.ui.theme.EdgeTheme
 import com.haky.edge.ui.theme.OrangeAccent
 import com.haky.edge.ui.theme.PurpleAccent
 import java.text.DateFormat
@@ -357,10 +358,11 @@ fun StatsScreen(
                                 Text("${count}회", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.width(6.dp))
+                                val purpleAccent = PurpleAccent
                                 Canvas(modifier = Modifier.width(60.dp).height(6.dp)) {
                                     val barW = size.width * (count.toFloat() / maxCount)
                                     val rankAlpha = (0.85f - i * 0.07f).coerceIn(0.25f, 0.9f)
-                                    drawRoundRect(PurpleAccent.copy(alpha = rankAlpha), size = Size(barW, size.height),
+                                    drawRoundRect(purpleAccent.copy(alpha = rankAlpha), size = Size(barW, size.height),
                                         cornerRadius = CornerRadius(2f))
                                 }
                             }
@@ -672,6 +674,8 @@ private fun WinRateRowItem(row: WinRateRow) {
             }
         }
         // 승률 바
+        val upColor = ChangeUp
+        val downColor = ChangeDown
         Canvas(modifier = Modifier.fillMaxWidth().height(6.dp)) {
             val total = row.total.toFloat()
             if (total == 0f) return@Canvas
@@ -680,11 +684,11 @@ private fun WinRateRowItem(row: WinRateRow) {
             val winAlpha = if (row.isReliable) 0.65f else 0.25f
             val lossAlpha = if (row.isReliable) 0.4f else 0.15f
             if (row.wins > 0) {
-                drawRoundRect(ChangeUp.copy(alpha = winAlpha),
+                drawRoundRect(upColor.copy(alpha = winAlpha),
                     size = Size(winW.coerceAtLeast(0f), size.height), cornerRadius = CornerRadius(2f))
             }
             if (row.losses > 0) {
-                drawRoundRect(ChangeDown.copy(alpha = lossAlpha),
+                drawRoundRect(downColor.copy(alpha = lossAlpha),
                     topLeft = androidx.compose.ui.geometry.Offset(size.width - lossW.coerceAtLeast(0f), 0f),
                     size = Size(lossW.coerceAtLeast(0f), size.height), cornerRadius = CornerRadius(2f))
             }
@@ -696,7 +700,7 @@ private fun WinRateRowItem(row: WinRateRow) {
 private fun DisciplineRowItem(row: DisciplineRow, nameMap: Map<String, String>) {
     val (statusLabel, statusColor) = when (row.status) {
         DisciplineStatus.StopViolated  -> "손절 어김" to ChangeDown
-        DisciplineStatus.StopRespected -> "손절 지킴" to Color(0xFF009688)
+        DisciplineStatus.StopRespected -> "손절 지킴" to EdgeTheme.colors.success
         DisciplineStatus.TargetReached -> "목표 달성" to ChangeUp
         DisciplineStatus.ProfitExit    -> "수익 청산" to OrangeAccent
     }
@@ -899,6 +903,7 @@ private fun epochToYYYYMMDD(millis: Long): String {
 }
 
 private fun actionLabel(action: String) = when (action) { "buy" -> "매수"; "sell" -> "매도"; else -> "관심" }
+@Composable
 private fun actionColor(action: String) = when (action) { "buy" -> ChangeUp; "sell" -> ChangeDown; else -> OrangeAccent }
 
 private fun holdLabel(days: Double) = when {
