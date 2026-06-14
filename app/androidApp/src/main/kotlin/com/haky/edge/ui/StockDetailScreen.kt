@@ -18,22 +18,31 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
+import com.haky.edge.model.ActionLogEntry
+import java.text.SimpleDateFormat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -94,6 +103,8 @@ fun StockDetailScreen(
     var chartPeriod by remember { mutableStateOf(ChartPeriod.M3) }
     var trendHelpExpanded by remember { mutableStateOf(false) }
     var indicatorHelpExpanded by remember { mutableStateOf(false) }
+    var logEntries by remember { mutableStateOf<List<ActionLogEntry>>(emptyList()) }
+    var showLogSheet by remember { mutableStateOf(false) }
     val technical = remember(dailyBars) {
         if (dailyBars.isNotEmpty()) com.haky.edge.analysis.TechnicalIndicators.calculate(dailyBars) else null
     }
@@ -133,7 +144,10 @@ fun StockDetailScreen(
         }
     }
 
+    fun reloadLogs() { logEntries = actionLogRepo.getByCode(watchItem.code, 10) }
+
     LaunchedEffect(Unit) { refresh() }
+    LaunchedEffect(watchItem.code) { reloadLogs() }
     LaunchedEffect(watchItem.code) { loadAnalysis(false) }
     LaunchedEffect(watchItem.code) {
         try { dailyBars = api.getDaily(watchItem.code, bars = 160) } catch (_: Exception) {}
@@ -170,6 +184,9 @@ fun StockDetailScreen(
                         IconButton(onClick = { showComparePicker = true }) {
                             Icon(Icons.Filled.List, contentDescription = "종목 비교")
                         }
+                    }
+                    IconButton(onClick = { showLogSheet = true }) {
+                        Icon(Icons.Filled.Add, contentDescription = "매매 기록")
                     }
                     IconButton(onClick = { showPositionSheet = true }) {
                         Icon(Icons.Filled.Edit, contentDescription = "포지션 입력")
@@ -237,7 +254,27 @@ fun StockDetailScreen(
             if (disclosures.isNotEmpty()) DartDisclosureCard(disclosures)
             earnings?.let { EarningsCard(it) }
             stockSignal?.let { MacroSignalCard(it) }
+            if (logEntries.isNotEmpty()) LogCard(
+                entries = logEntries,
+                onDelete = { id ->
+                    actionLogRepo.delete(id)
+                    logEntries = logEntries.filter { it.id != id }
+                },
+            )
         }
+    }
+
+    if (showLogSheet) {
+        ActionLogSheet(
+            code = watchItem.code,
+            currentPrice = quote?.price ?: 0L,
+            logRepo = actionLogRepo,
+            onDismiss = { showLogSheet = false },
+            onSaved = {
+                showLogSheet = false
+                reloadLogs()
+            },
+        )
     }
 
     if (showPositionSheet) {
@@ -1015,6 +1052,161 @@ private fun FlowBars(flows: List<com.haky.edge.model.InvestorFlow>, modifier: Mo
         }
         // 0선
         drawLine(secondary.copy(alpha = 0.4f), Offset(0f, zeroY), Offset(size.width, zeroY), strokeWidth = 0.8f)
+    }
+}
+
+// ─── 행동 기록 카드 ───────────────────────────────────────────
+
+@Composable
+private fun LogCard(
+    entries: List<ActionLogEntry>,
+    onDelete: (Long) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("행동 기록", style = MaterialTheme.typography.titleSmall)
+        entries.forEachIndexed { index, entry ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ActionBadge(entry.action)
+                Spacer(modifier = Modifier.width(8.dp))
+                val entryReason = entry.reason
+                if (entryReason != null) {
+                    Text(
+                        entryReason,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                    )
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+                val entryPrice = entry.price
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        shortTs(entry.createdAt),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (entryPrice != null && entryPrice > 0) {
+                        Text(
+                            "${entryPrice.fmt()}원",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(onClick = { onDelete(entry.id) }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = "삭제",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (index < entries.lastIndex) HorizontalDivider()
+        }
+    }
+}
+
+@Composable
+private fun ActionBadge(action: String) {
+    val (label, color) = when (action) {
+        "buy" -> "매수" to Color(0xFFFF3B30)
+        "sell" -> "매도" to Color(0xFF007AFF)
+        else -> "관심" to Color(0xFFFF9500)
+    }
+    Text(
+        label,
+        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+        color = color,
+        modifier = Modifier
+            .background(color.copy(alpha = 0.15f), RoundedCornerShape(50))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
+private fun shortTs(millis: Long): String =
+    SimpleDateFormat("MM/dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(millis))
+
+// ─── 행동 기록 입력 시트 ──────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ActionLogSheet(
+    code: String,
+    currentPrice: Long,
+    logRepo: ActionLogRepository,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var selectedAction by remember { mutableStateOf("interest") }
+    var reason by remember { mutableStateOf("") }
+    val actions = listOf("interest" to "관심", "buy" to "매수", "sell" to "매도")
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("행동 기록", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                actions.forEach { (id, label) ->
+                    val selected = selectedAction == id
+                    val bgColor = if (selected) when (id) {
+                        "buy" -> Color(0xFFFF3B30)
+                        "sell" -> Color(0xFF007AFF)
+                        else -> Color(0xFFFF9500)
+                    } else MaterialTheme.colorScheme.surfaceVariant
+                    val textColor = if (selected) Color.White else MaterialTheme.colorScheme.onSurface
+                    Text(
+                        label,
+                        modifier = Modifier
+                            .background(bgColor, RoundedCornerShape(8.dp))
+                            .clickable { selectedAction = id }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        color = textColor,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                    )
+                }
+            }
+            OutlinedTextField(
+                value = reason,
+                onValueChange = { reason = it },
+                label = { Text("사유 (선택)") },
+                placeholder = { Text("왜 관심/매수/매도 하려는지 한 줄로") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            ) {
+                TextButton(onClick = onDismiss) { Text("취소") }
+                Button(onClick = {
+                    logRepo.insert(
+                        code = code,
+                        action = selectedAction,
+                        reason = reason.ifBlank { null },
+                        price = currentPrice,
+                    )
+                    onSaved()
+                }) { Text("저장") }
+            }
+        }
     }
 }
 

@@ -2,6 +2,7 @@ package com.haky.edge.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -180,13 +182,13 @@ fun StatsScreen(
             return@Scaffold
         }
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(innerPadding),
-            verticalArrangement = Arrangement.spacedBy(0.dp),
+            modifier = Modifier.fillMaxSize().padding(innerPadding).padding(top = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // ── 요약 ──
             item {
                 SectionCard(header = "전체 ${entries.size}건", footer = "종목 상세 화면에서 관심·매수·매도를 기록할 때마다 쌓여요.") {
-                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
                         SummaryCell(entries.count { it.action == "buy" }, "매수", ChangeUp, Modifier.weight(1f))
                         VerticalDivider()
                         SummaryCell(entries.count { it.action == "sell" }, "매도", ChangeDown, Modifier.weight(1f))
@@ -194,7 +196,6 @@ fun StatsScreen(
                         SummaryCell(entries.count { it.action == "interest" }, "관심", OrangeAccent, Modifier.weight(1f))
                     }
                 }
-                Spacer(Modifier.height(8.dp))
             }
 
             // ── 손절/익절 규율 ──
@@ -212,7 +213,7 @@ fun StatsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 4.dp))
                     } else {
-                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
                             DiscCell(violations.size, "손절 어김", ChangeDown, Modifier.weight(1f))
                             VerticalDivider()
                             DiscCell(targets.size, "목표 달성", ChangeUp, Modifier.weight(1f))
@@ -221,7 +222,7 @@ fun StatsScreen(
                             val overshoots = violations.mapNotNull { it.stopOvershootPct }
                             val avg = overshoots.sum() / overshoots.size
                             HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("평균 손절선 초과", style = MaterialTheme.typography.bodyMedium)
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Text(String.format("%.1f%%p", avg),
@@ -238,7 +239,6 @@ fun StatsScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
             }
 
             // ── 신호별 승률 ──
@@ -261,7 +261,6 @@ fun StatsScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
             }
 
             // ── 놓친 종목 ──
@@ -285,7 +284,6 @@ fun StatsScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
             }
 
             // ── 사유 태그 (접기) ──
@@ -322,7 +320,6 @@ fun StatsScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
             }
 
             // ── 최근 활동 (접기) ──
@@ -361,7 +358,6 @@ fun StatsScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
             }
 
             // ── 종목별 활동 (접기) ──
@@ -390,7 +386,6 @@ fun StatsScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
             }
 
             // ── 보유기간 (접기) ──
@@ -404,7 +399,8 @@ fun StatsScreen(
                         footer = "매수 기록 후 같은 종목을 매도하기까지 걸린 시간. 7일 이하는 주황색으로 강조돼요.",
                     ) {
                         avgHoldDays?.let { avg ->
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically) {
                                 Text("평균 보유기간", style = MaterialTheme.typography.bodyMedium)
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -432,7 +428,7 @@ fun StatsScreen(
                             }
                         }
                     }
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(8.dp))
                 }
             }
         }
@@ -465,22 +461,28 @@ private fun SectionCard(
     content: @Composable () -> Unit,
 ) {
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-        Text(header, style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 4.dp))
-        Surface(
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 1.dp,
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
+                .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                content()
-            }
+            Text(
+                header,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 10.dp),
+            )
+            HorizontalDivider(modifier = Modifier.padding(bottom = 12.dp))
+            content()
         }
         if (footer != null) {
-            Text(footer, style = MaterialTheme.typography.labelSmall,
+            Text(
+                footer,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp))
+                modifier = Modifier.padding(top = 5.dp, start = 4.dp, end = 4.dp),
+            )
         }
     }
 }
@@ -495,44 +497,50 @@ private fun CollapsibleSectionCard(
     content: @Composable () -> Unit,
 ) {
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-        Text(title + if (sub != null) " · $sub" else "",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 4.dp))
-        Surface(
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 1.dp,
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)),
         ) {
-            Column {
-                // 헤더 행 (탭으로 토글)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggle(!expanded) }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .clickable { onToggle(!expanded) }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                    Icon(
-                        if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                        contentDescription = if (expanded) "접기" else "펼치기",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-                AnimatedVisibility(visible = expanded) {
-                    Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
-                        HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
-                        content()
+                    Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    if (sub != null) {
+                        Text(sub, style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
+                Icon(
+                    if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = if (expanded) "접기" else "펼치기",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            AnimatedVisibility(visible = expanded) {
+                Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp)) {
+                    HorizontalDivider(modifier = Modifier.padding(bottom = 10.dp))
+                    content()
                 }
             }
         }
         if (footer != null) {
-            Text(footer, style = MaterialTheme.typography.labelSmall,
+            Text(
+                footer,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp))
+                modifier = Modifier.padding(top = 5.dp, start = 4.dp, end = 4.dp),
+            )
         }
     }
 }
