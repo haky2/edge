@@ -26,7 +26,7 @@ fun CompactHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.background)
             .heightIn(min = 52.dp)
             .padding(start = 16.dp, end = 8.dp, top = 0.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
