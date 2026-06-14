@@ -5,6 +5,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.time.DayOfWeek
+import java.time.LocalDate
 
 @Serializable
 data class MoodLogEntry(
@@ -34,6 +36,26 @@ class MarketMoodLogService {
     private val json = Json { ignoreUnknownKeys = true }
     private val listSerializer = ListSerializer(MoodLogEntry.serializer())
 
+    init {
+        cleanWeekendEntries()
+    }
+
+    /** 기존 로그에 남아있는 주말 항목을 제거한다. 배포 후 1회만 실질적으로 동작. */
+    private fun cleanWeekendEntries() {
+        val raw = runCatching {
+            if (!logFile.exists()) return
+            json.decodeFromString(listSerializer, logFile.readText())
+        }.getOrElse { return }
+        val cleaned = raw.filter { entry ->
+            val d = runCatching { LocalDate.parse(entry.date) }.getOrNull() ?: return@filter true
+            d.dayOfWeek != DayOfWeek.SATURDAY && d.dayOfWeek != DayOfWeek.SUNDAY
+        }
+        if (cleaned.size != raw.size) saveLog(cleaned)
+    }
+
+    /** /market-mood-log 조기 반환 시 오늘 예측이 이미 기록됐는지 빠르게 확인. */
+    fun hasTodayEntry(date: String): Boolean = loadLog().any { it.date == date }
+
     // 코스피 선행 지표 가중치. 음수=강달러·고환율은 코스피에 역방향.
     private val LEADING_WEIGHTS = mapOf(
         "nasdaq" to 3.0, "sp500" to 3.0, "dow" to 2.0,
@@ -62,9 +84,12 @@ class MarketMoodLogService {
     /**
      * 오늘 예측 기록. 이미 있으면 KOSPI가 채워진 경우(장 마감 후 재조회)에만 업데이트.
      * 장 전 조회: KOSPI = 0 → PENDING. 장 마감 후 재조회: 실제값으로 자동 채점.
+     * 주말(토/일)은 코스피 휴장이므로 기록 건너뜀.
      */
     @Synchronized
     fun addOrUpdateEntry(date: String, direction: String, indicators: List<MacroIndicator>) {
+        val dayOfWeek = runCatching { LocalDate.parse(date).dayOfWeek }.getOrNull()
+        if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) return
         val log = loadLog().toMutableList()
 
         val kospiChange = indicators.find { it.key == "kospi" }?.changeRate

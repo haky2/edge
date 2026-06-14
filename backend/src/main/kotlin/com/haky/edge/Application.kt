@@ -159,7 +159,7 @@ fun Application.module() {
             macroImpactRoutes(macroImpact)
             sectorClassifyRoutes(macroImpact)
             marketMoodRoutes(marketMood)
-            marketMoodLogRoutes(moodLog)
+            marketMoodLogRoutes(moodLog, marketMood)
             newsRoutes(naver)
             searchRoutes(master)
             analysisRoutes(analysis)

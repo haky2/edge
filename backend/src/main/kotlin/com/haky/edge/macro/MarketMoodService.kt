@@ -6,6 +6,7 @@ import com.haky.edge.ai.effectiveMarketDate
 import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.MacroIndicator
 import kotlinx.serialization.Serializable
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -55,10 +56,12 @@ class MarketMoodService(
 ) {
     private val cache = ConcurrentHashMap<String, MarketMood>()
     private val fileCache = FileCache("market_mood", MarketMood.serializer())
+    private val seoulZone = ZoneId.of("Asia/Seoul")
 
     suspend fun get(mode: AnalysisMode = AnalysisMode.DEFENSIVE, force: Boolean = false): MarketMood {
-        // moodLog는 실제 달력 날짜로 기록(평일 예측 추적·채점). 캐시 키/표시 기준일은 주말 통합 거래일 사용.
-        val today = LocalDate.now().toString()
+        // moodLog는 KST 날짜로 기록(서버가 UTC라 LocalDate.now()는 한국 오전엔 전날이 됨).
+        // 캐시 키/표시 기준일은 주말 통합 거래일 사용(effectiveMarketDate는 UTC 기준 유지).
+        val today = LocalDate.now(seoulZone).toString()
         val effectiveDate = effectiveMarketDate()
         val kisIndicators = kis.getMacroIndicators()
         val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get()) + yahoo.get()
@@ -93,6 +96,23 @@ class MarketMoodService(
         cache[cacheKey] = result
         fileCache.put(cacheKey, result)
         return result
+    }
+
+    /**
+     * /market-mood-log가 /market-mood보다 먼저 호출될 때 레이스 방지.
+     * 오늘(평일) 예측이 아직 기록되지 않았으면 지표를 빠르게 가져와 PENDING 상태로 기록한다.
+     * Claude 호출 없음 — 순수 지표 수집 + inferDirection만.
+     */
+    suspend fun ensureTodayEntry() {
+        val today = LocalDate.now(seoulZone)  // KST 기준
+        if (today.dayOfWeek == DayOfWeek.SATURDAY || today.dayOfWeek == DayOfWeek.SUNDAY) return
+        val todayStr = today.toString()
+        if (moodLog.hasTodayEntry(todayStr)) return
+        val kisIndicators = kis.getMacroIndicators()
+        val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get()) + yahoo.get()
+        val indicators = kisIndicators + extras
+        val direction = moodLog.inferDirection(indicators)
+        moodLog.addOrUpdateEntry(todayStr, direction, indicators)
     }
 
     private fun buildFacts(indicators: List<MacroIndicator>, eventsText: String?): String {
