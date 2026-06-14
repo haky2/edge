@@ -129,8 +129,6 @@ fun SettingsScreen() {
                     InfoRow("버전", "1.0")
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                     InfoRow("데이터 출처", "한투 API · DART · 네이버 뉴스")
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                    InfoRow("문의", "haky2@naver.com")
                 }
             }
 

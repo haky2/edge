@@ -42,6 +42,7 @@ struct PortfolioView: View {
                 }
             }
             .navigationTitle("내 자산")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     if loading {

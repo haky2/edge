@@ -55,6 +55,7 @@ struct WatchlistView: View {
                 }
             }
             .navigationTitle("관심종목")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showSearch = true } label: {
@@ -314,10 +315,10 @@ struct SettingsView: View {
                 Section("앱 정보") {
                     LabeledContent("버전", value: "1.0")
                     LabeledContent("데이터 출처", value: "한투 API · DART · 네이버 뉴스")
-                    LabeledContent("문의", value: "haky2@naver.com")
                 }
             }
             .navigationTitle("설정")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }

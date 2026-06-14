@@ -38,6 +38,7 @@ struct StatsView: View {
                 }
             }
             .navigationTitle("내 패턴")
+            .navigationBarTitleDisplayMode(.inline)
             .onAppear { reload() }
         }
     }
