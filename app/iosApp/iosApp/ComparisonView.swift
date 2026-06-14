@@ -114,11 +114,11 @@ struct ComparisonView: View {
     private func headerRow(_ nameA: String, _ nameB: String) -> some View {
         HStack {
             Text(nameA)
-                .font(.caption.weight(.semibold))
+                .font(.callout.weight(.semibold))
                 .frame(maxWidth: .infinity)
             Text("지표").font(.caption2).foregroundColor(.secondary).frame(width: 70)
             Text(nameB)
-                .font(.caption.weight(.semibold))
+                .font(.callout.weight(.semibold))
                 .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)

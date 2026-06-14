@@ -151,12 +151,12 @@ private fun MetricsTable(c: Comparison) {
         Column {
             // 헤더
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-                Text(c.a.name, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
+                Text(c.a.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
                 Text("지표", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center, modifier = Modifier.width(70.dp))
-                Text(c.b.name, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
+                Text(c.b.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
             }
             HorizontalDivider()
