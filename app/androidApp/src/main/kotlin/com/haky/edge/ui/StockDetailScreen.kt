@@ -18,12 +18,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -184,14 +184,14 @@ fun StockDetailScreen(
                 actions = {
                     if (onCompare != null) {
                         IconButton(onClick = { showComparePicker = true }) {
-                            Icon(Icons.Filled.List, contentDescription = "종목 비교")
+                            Icon(Icons.AutoMirrored.Filled.CompareArrows, contentDescription = "종목 비교")
                         }
                     }
                     IconButton(onClick = { showLogSheet = true }) {
-                        Icon(Icons.Filled.Add, contentDescription = "매매 기록")
+                        Icon(Icons.Filled.EditNote, contentDescription = "매매 기록")
                     }
                     IconButton(onClick = { showPositionSheet = true }) {
-                        Icon(Icons.Filled.Edit, contentDescription = "포지션 입력")
+                        Icon(Icons.Filled.Tune, contentDescription = "포지션 입력")
                     }
                     IconButton(onClick = { refresh() }) {
                         if (loading) {

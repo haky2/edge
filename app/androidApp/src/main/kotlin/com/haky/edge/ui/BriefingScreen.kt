@@ -388,12 +388,13 @@ fun BriefingScreen(
                             CollapsibleCard(
                                 title = "외인·기관 동향",
                                 trailing = {
-                                    if (!supplyLoading && supplyRows.isNotEmpty()) {
+                                    if (!watchlistIsEmpty && !supplyLoading && supplyRows.isNotEmpty()) {
                                         BadgeCount(supplyRows.size)
                                     }
                                 },
                             ) {
-                                if (supplyLoading) {
+                                if (watchlistIsEmpty) EmptyRow("관심종목을 추가하면 외인·기관 동향을 볼 수 있어요")
+                                else if (supplyLoading) {
                                     LoadingRow("확인 중…")
                                 } else {
                                     Text("3일 연속 순매수 · 전일 확정", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -411,7 +412,8 @@ fun BriefingScreen(
                         // ── 최근 공시 ──
                         item {
                             CollapsibleCard(title = "최근 공시 (7일)") {
-                                if (dartLoading) LoadingRow("확인 중…")
+                                if (watchlistIsEmpty) EmptyRow("관심종목을 추가하면 관심종목의 공시를 볼 수 있어요")
+                                else if (dartLoading) LoadingRow("확인 중…")
                                 else if (dartItems.isEmpty()) EmptyRow("최근 7일간 공시가 없어요")
                                 else DartList(dartItems)
                             }
