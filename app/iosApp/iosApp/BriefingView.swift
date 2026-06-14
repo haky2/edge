@@ -606,7 +606,9 @@ struct BriefingView: View {
                 }
             }
             .foregroundColor(.primary)
-            if earningsLoading {
+            if watchlistIsEmpty {
+                Text("관심종목을 추가하면 실적 일정을 볼 수 있어요").font(.footnote).foregroundColor(.secondary)
+            } else if earningsLoading {
                 HStack { ProgressView().scaleEffect(0.8); Text("확인 중…").font(.footnote).foregroundColor(.secondary) }
             } else if earningsExpanded {
                 if earningsItems.isEmpty {

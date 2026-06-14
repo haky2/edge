@@ -65,6 +65,9 @@ import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.abs
 import kotlin.math.min
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 // ── 내부 모델 ────────────────────────────────────────────────────────────────
 
@@ -168,7 +171,27 @@ fun StatsScreen(
     LaunchedEffect(Unit) {
         entries = actionLogRepo.getAll()
         val watchItems = watchlistRepo.all()
-        nameMap = watchItems.associate { it.code to it.name }
+        // 1) 관심종목에서 종목명 수집
+        val resolved = mutableMapOf<String, String>()
+        watchItems.forEach { resolved[it.code] = it.name }
+        // 2) action_log에 저장된 name 보완 (migration 3 이후 신규 기록)
+        for (e in entries) {
+            val n = e.name ?: continue
+            if (!resolved.containsKey(e.code)) resolved[e.code] = n
+        }
+        // 3) 여전히 모르는 코드는 검색 API로 병렬 조회
+        val unknownCodes = entries.map { it.code }.toSet() - resolved.keys
+        if (unknownCodes.isNotEmpty()) {
+            coroutineScope {
+                unknownCodes.map { code ->
+                    async {
+                        runCatching { api.search(code).firstOrNull { it.code == code }?.name }
+                            .getOrNull()?.let { resolved[code] = it }
+                    }
+                }.awaitAll()
+            }
+        }
+        nameMap = resolved
         positionMap = watchItems.associateBy { it.code }
 
         // 놓친 종목 비동기 로드

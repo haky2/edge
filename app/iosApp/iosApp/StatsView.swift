@@ -628,9 +628,28 @@ struct StatsView: View {
     private func reload() {
         entries = logRepo.getAll()
         let watchItems = watchRepo.all()
-        nameMap = Dictionary(uniqueKeysWithValues: watchItems.map { ($0.code, $0.name) })
+        // 1) 관심종목에서 종목명 수집
+        var resolved: [String: String] = Dictionary(uniqueKeysWithValues: watchItems.map { ($0.code, $0.name) })
+        // 2) action_log에 저장된 name 보완 (migration 3 이후 신규 기록)
+        for e in entries {
+            if let n = e.name, resolved[e.code] == nil { resolved[e.code] = n }
+        }
+        nameMap = resolved
         positionMap = Dictionary(uniqueKeysWithValues: watchItems.map { ($0.code, $0) })
         Task { await loadMissed() }
+        // 3) 여전히 모르는 코드는 검색 API로 순차 조회
+        let unknownCodes = Set(entries.map { $0.code }).subtracting(resolved.keys)
+        if !unknownCodes.isEmpty {
+            Task {
+                for code in unknownCodes {
+                    guard let results = try? await api.search(query: code) else { continue }
+                    for r in results where r.code == code {
+                        nameMap[code] = r.name
+                        break
+                    }
+                }
+            }
+        }
     }
 
     private func loadMissed() async {

@@ -227,18 +227,29 @@ private fun HoldingsList(rows: List<HoldingRow>, sectorMap: Map<String, String>)
             Spacer(Modifier.height(8.dp))
         }
         item {
-            Text(
-                "보유 종목 ${rows.size}개",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
+            Surface(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 1.dp,
+            ) {
+                Column {
+                    Text(
+                        "보유 종목 ${rows.size}개",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                    rows.forEachIndexed { i, row ->
+                        HoldingRowItem(row)
+                        if (i < rows.size - 1) HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
         }
-        items(rows, key = { it.item.code }) { row ->
-            HoldingRowItem(row)
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-        }
-        item { Spacer(Modifier.height(16.dp)) }
     }
 }
 

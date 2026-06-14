@@ -521,7 +521,8 @@ fun BriefingScreen(
                         // ── 실적 일정 (D-90 이내) ──
                         item {
                             CollapsibleCard(title = "실적 일정 (D-90 이내)") {
-                                if (earningsLoading) LoadingRow("확인 중…")
+                                if (watchlistIsEmpty) EmptyRow("관심종목을 추가하면 실적 일정을 볼 수 있어요")
+                                else if (earningsLoading) LoadingRow("확인 중…")
                                 else if (earningsItems.isEmpty()) EmptyRow("90일 이내 예정된 실적이 없어요")
                                 else earningsItems.forEachIndexed { i, e ->
                                     EarningsRowView(e)
