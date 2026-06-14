@@ -116,19 +116,6 @@ fun ComparisonScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // 헤더: 두 종목 이름
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(itemA.name, style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f))
-                Text("vs", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp))
-                Text(itemB.name, style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f))
-            }
-
             when {
                 loading -> Box(modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
                     contentAlignment = Alignment.Center) {

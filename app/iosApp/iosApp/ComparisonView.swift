@@ -23,14 +23,6 @@ struct ComparisonView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // ── 헤더: 두 종목 이름 ──
-                HStack {
-                    Text(itemA.name).font(.headline).frame(maxWidth: .infinity)
-                    Text("vs").font(.caption).foregroundColor(.secondary)
-                    Text(itemB.name).font(.headline).frame(maxWidth: .infinity)
-                }
-                .padding(.top, 8)
-
                 if loading {
                     ProgressView("비교 분석 중...")
                         .padding(.top, 40)
