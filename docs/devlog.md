@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-06-15 — 코스피 선행신호 주말 버그 3종 수정 (Sonnet)
+
+**한 일**
+- 문제 1: 토/일에 KOSPI 지표가 금요일 종가(+4.6%)를 반환해 보합 예측이 실패로 오기록됨.
+  → `addOrUpdateEntry`에 주말 체크(`DayOfWeek.SATURDAY/SUNDAY`) 추가. `init` 블록에서 기존 주말 항목 자동 정리.
+- 문제 2: Cloud Run 서버가 UTC 기준 → 한국 오전 7~9시(=UTC 일요일 밤)에 `LocalDate.now()`가 "일요일"로 인식, `addOrUpdateEntry`가 skip되어 오늘 예측 미기록.
+  → `MarketMoodService`에서 `LocalDate.now()` → `LocalDate.now(ZoneId.of("Asia/Seoul"))`로 변경.
+- 문제 3: `/market-mood`(느림·Claude 호출)와 `/market-mood-log`(빠름·파일 읽기) 동시 호출 레이스 컨디션 → 오늘 예측 카드 미표시.
+  → `MarketMoodService.ensureTodayEntry()` 추가 + `/market-mood-log` 핸들러 선두에 호출.
+
+**배운 것**
+- Cloud Run은 UTC 고정. 한국 서비스의 "오늘" 날짜 계산은 `ZoneId.of("Asia/Seoul")` 명시 필수.
+- 빠른 엔드포인트가 느린 엔드포인트의 부작용(로그 업데이트)에 의존할 때 레이스가 생김 → 빠른 쪽에서도 직접 보장해야.
+
+**다음 할 일**
+- 백로그 슬라이스 C(완전 자동 스케줄러) 또는 슬라이스 7(푸시 알림)
+
+---
+
 ## 2026-06-12 — 거시 이벤트 캘린더 슬라이스 4: 코멘트에 이벤트 녹이기 (Opus)
 
 **한 일**
