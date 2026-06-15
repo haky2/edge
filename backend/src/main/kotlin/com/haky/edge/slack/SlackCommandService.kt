@@ -51,6 +51,14 @@ class SlackCommandService(
         val priceStr = a.generatedPrice?.let { " · %,d원".format(it.toLong()) } ?: ""
         appendLine("*${a.name}* (${a.code})$priceStr")
         appendLine()
+        // 핵심 요약이 있으면 맨 위에 강조 표시 → truncate돼도 결론은 항상 보임
+        if (!a.summary.isNullOrBlank()) {
+            appendLine("*📌 핵심 요약*")
+            appendLine(a.summary)
+            appendLine()
+            appendLine("───────────────")
+            appendLine()
+        }
         val body = a.comment
             .replace("**", "*")              // mrkdwn 굵게: ** → *
             .replace(Regex("(?m)^#+\\s*"), "") // 마크다운 헤더 기호 제거

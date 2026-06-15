@@ -44,6 +44,7 @@ data class Analysis(
     val name: String,
     val date: String,       // 생성 기준일 (YYYY-MM-DD)
     val comment: String,
+    val summary: String? = null,        // 핵심 요약 2~3문장 (comment 맨 앞 ### 핵심 요약 블록 파싱)
     val generatedAt: String = "",       // 캐시 최초 생성 시각 HH:mm (KST)
     val generatedPrice: Double? = null, // 코멘트 생성 시점 현재가 — stale 감지용
     val factsRichness: FactsRichness? = null,
@@ -143,8 +144,9 @@ class AnalysisService(
             // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
             val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
             val t1 = System.currentTimeMillis()
-            val comment = claude.complete(prompt, facts, maxTokens = 3500)
+            val rawComment = claude.complete(prompt, facts, maxTokens = 3500)
             println("[Timing] $code: claude=${System.currentTimeMillis() - t1}ms  total=${System.currentTimeMillis() - t0}ms")
+            val (summary, comment) = parseSummaryFromComment(rawComment)
             // 환각 의심 수치를 로그로만 남긴다(모니터링용). UI 경고는 더 이상 띄우지 않는다 —
             // 단순 숫자 매칭이 "26만 주(2일 합산)"·"170만원대(손절 기준)" 같은 정당한
             // 가공·라운드 표현을 환각으로 오탐해 신뢰를 깎았기 때문. 일반 면책으로 충분.
@@ -162,7 +164,7 @@ class AnalysisService(
                 hasBacktest = backtest?.signals?.any { it.confident } == true,
                 hasFlowSensitivity = flowSensitivity?.items?.any { it.confident } == true,
             )
-            val analysis = Analysis(code = code, name = name, date = today, comment = comment, generatedAt = now, generatedPrice = quote.price.toDouble(), factsRichness = richness, numberWarning = false)
+            val analysis = Analysis(code = code, name = name, date = today, comment = comment, summary = summary, generatedAt = now, generatedPrice = quote.price.toDouble(), factsRichness = richness, numberWarning = false)
             cache[key] = Cached(analysis)
             fileCache.put(key, analysis)
             analysis
@@ -601,11 +603,37 @@ class AnalysisService(
             if (position == null) "$code:$today:${mode.name}"
             else "$code:$today:${mode.name}:${position.avgPrice.toLong()}:${position.qty}:${position.targetPrice.toLong()}:${position.stopPrice.toLong()}"
 
+        /**
+         * Claude 응답에서 `### 핵심 요약` 블록을 파싱해 (summary, body)로 분리.
+         * 파싱 실패 시 (null, 원본) — 폴백 안전.
+         */
+        internal fun parseSummaryFromComment(raw: String): Pair<String?, String> {
+            val headerRegex = Regex("""^\s*###\s*핵심\s*요약\s*$""", RegexOption.MULTILINE)
+            val headerMatch = headerRegex.find(raw) ?: return Pair(null, raw)
+            val afterHeader = raw.substring(headerMatch.range.last + 1).trimStart('\n')
+            val blankLineIdx = afterHeader.indexOf("\n\n")
+            return if (blankLineIdx >= 0) {
+                val summary = afterHeader.substring(0, blankLineIdx).trim()
+                val body = afterHeader.substring(blankLineIdx + 2).trim()
+                Pair(summary.ifBlank { null }, body.ifBlank { raw })
+            } else {
+                Pair(null, raw)
+            }
+        }
+
         // 방어 모드 시스템 프롬프트(캐시 대상). 사실/해석 분리·환각 가드·매매 지시 금지.
         private val DEFENSIVE_PROMPT = """
             너는 한국 주식 투자 보조 앱의 분석 어시스턴트다.
             독자는 주식에 관심이 있지만 전문 트레이더가 아닌 일반인이다. 전문 용어를 쓸 때는 괄호 안에 짧게 뜻을 달아준다.
             예) PER(주가가 1년 순이익의 몇 배인지), PBR(주가가 순자산의 몇 배인지), 수급(외국인·기관·개인 중 누가 사고 파는지), 컨센서스 목표주가(여러 증권사 애널리스트가 제시한 평균 목표값)
+
+            응답 형식(반드시):
+            맨 앞에 아래 블록을 넣어라:
+
+            ### 핵심 요약
+            (2~3문장 산문. 이 종목의 핵심 판단과 주요 수치를 포함. 불릿 없이 흐르는 문장으로.)
+
+            그 다음 빈 줄 하나 후에 소제목 단락들을 이어라.
 
             규칙(반드시 지킬 것):
             1. 아래 user 메시지의 "사실 데이터"에 있는 값만 근거로 삼는다. 거기 없는 수치를 절대 지어내지 마라.
@@ -644,6 +672,14 @@ class AnalysisService(
             에두르거나 "~수도 있다"식 양비론으로 빠지지 말고, 사실에 묶인 결론을 자신감 있게 딱 잘라 말하라.
             독자는 전문 트레이더가 아닌 일반인이다. 전문 용어를 쓸 때는 괄호 안에 짧게 뜻을 달아준다.
             예) PER(주가가 1년 순이익의 몇 배인지), PBR(주가가 순자산의 몇 배인지), 수급(외국인·기관·개인 중 누가 사고 파는지)
+
+            응답 형식(반드시):
+            맨 앞에 아래 블록을 넣어라:
+
+            ### 핵심 요약
+            (2~3문장 산문. 핵심 판단 + 주요 수치 + 권고 스탠스를 포함. 불릿 없이 흐르는 문장으로.)
+
+            그 다음 빈 줄 하나 후에 소제목 단락들을 이어라.
 
             규칙(반드시 지킬 것):
             1. 아래 user 메시지의 "사실 데이터"에 있는 값만 근거로 삼는다. 거기 없는 수치를 절대 지어내지 마라.
