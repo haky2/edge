@@ -32,7 +32,7 @@ gcloud run deploy "$SERVICE" \
   --add-volume-mount "volume=app-cache,mount-path=/mnt/cache" \
   --add-volume "name=app-data,type=cloud-storage,bucket=edge-app-data" \
   --add-volume-mount "volume=app-data,mount-path=/mnt/data" \
-  --set-env-vars "KIS_TOKEN_CACHE=/mnt/token/.kis-token.json,CACHE_DIR=/mnt/cache,DATA_DIR=/mnt/data,SLACK_OPS_CHANNEL=C0BA29NTQUF" \
+  --set-env-vars "KIS_TOKEN_CACHE=/mnt/token/.kis-token.json,CACHE_DIR=/mnt/cache,DATA_DIR=/mnt/data,SLACK_OPS_CHANNEL=C0BA29NTQUF,SLACK_BRIEFING_CHANNEL=C0BABCPKLCB" \
   --set-secrets "KIS_APP_KEY=KIS_APP_KEY:latest,KIS_APP_SECRET=KIS_APP_SECRET:latest,NAVER_CLIENT_ID=NAVER_CLIENT_ID:latest,NAVER_CLIENT_SECRET=NAVER_CLIENT_SECRET:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,DART_API_KEY=DART_API_KEY:latest,ECOS_API_KEY=ECOS_API_KEY:latest,EDGE_API_TOKEN=EDGE_API_TOKEN:latest,SLACK_BOT_TOKEN=SLACK_BOT_TOKEN:latest"
 
 URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format='value(status.url)')
@@ -77,6 +77,16 @@ scheduler_upsert events-sync \
   --message-body="{}" \
   --attempt-deadline=300s \
   --description="매주 월요일 오전 6시 KST 거시 이벤트 캘린더 자동 동기화 (Claude 웹검색, 6주치)"
+
+# slack-morning-brief: 매주 월~금 오전 8:50 KST — #아침브리핑 채널에 시장 방향 브리핑 발송
+# prewarm(08:45)이 캐시를 채운 직후 발송 → MarketMood 캐시 적중률 높음
+scheduler_upsert slack-morning-brief \
+  --schedule="50 8 * * 1-5" --time-zone="Asia/Seoul" \
+  --uri="$URL/slack/morning-brief" --http-method=POST \
+  --headers="X-Edge-Token=${EDGE_TOKEN},Content-Type=application/json" \
+  --message-body="{}" \
+  --attempt-deadline=180s \
+  --description="매주 월~금 오전 8:50 KST Slack #아침브리핑 발송 (prewarm 직후)"
 
 # prewarm: 매주 월~금 오전 8:45 KST — 관심종목 시세·수급·공시 캐시 예열(아침 첫 진입 가속)
 # 코드 목록은 CLAUDE.md 관심종목 11개. 사용자가 종목을 바꿔도 미포함분은 온디맨드로 조회됨(예열은 best-effort).

@@ -47,8 +47,10 @@ import com.haky.edge.routes.targetPriceRoutes
 import com.haky.edge.routes.valuationBandRoutes
 import com.haky.edge.routes.webSearchTestRoutes
 import com.haky.edge.routes.futuresTestRoutes
+import com.haky.edge.routes.morningBriefRoutes
 import com.haky.edge.routes.prewarmRoutes
 import com.haky.edge.routes.slackTestRoutes
+import com.haky.edge.slack.MorningBriefService
 import com.haky.edge.slack.OpsAlerter
 import com.haky.edge.slack.SlackClient
 import io.ktor.client.HttpClient
@@ -100,6 +102,7 @@ fun Application.module() {
     // StatusPages 핸들러에서 쓰므로 install 전에 생성한다. fire-and-forget 발송에 Application 스코프를 넘긴다.
     val slack = SlackClient(botToken = System.getenv("SLACK_BOT_TOKEN").orEmpty())
     val opsChannel = System.getenv("SLACK_OPS_CHANNEL").orEmpty()
+    val briefingChannel = System.getenv("SLACK_BRIEFING_CHANNEL").orEmpty()
     val opsAlerter = OpsAlerter(
         slack = slack,
         opsChannel = opsChannel,
@@ -163,6 +166,7 @@ fun Application.module() {
     val moodLog = MarketMoodLogService()
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, moodLog, eventSync)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
+    val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
 
     // 서버 시작 직후 백그라운드로 KIS 토큰 + DART corpCode 맵을 미리 로드한다.
     // 첫 번째 실제 요청이 올 때 이 두 초기화 작업(각 수 초)을 기다리지 않아도 되게 함.
@@ -201,6 +205,7 @@ fun Application.module() {
             futuresTestRoutes(kis)
             prewarmRoutes(kis, dart)
             slackTestRoutes(slack, opsChannel)
+            morningBriefRoutes(morningBrief)
         }
     }
 }
