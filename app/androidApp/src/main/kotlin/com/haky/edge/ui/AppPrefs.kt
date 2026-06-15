@@ -6,6 +6,7 @@ import android.content.Context
 object AppPrefs {
     private const val PREFS = "edge_prefs"
     private const val KEY_MODE = "analysis_mode"
+    private const val KEY_THEME = "theme"
     private const val KEY_STATS_RECENT   = "stats_recent_expanded"
     private const val KEY_STATS_CODE     = "stats_code_expanded"
     private const val KEY_STATS_HOLD     = "stats_hold_expanded"
@@ -18,6 +19,13 @@ object AppPrefs {
 
     fun setMode(ctx: Context, mode: String) {
         prefs(ctx).edit().putString(KEY_MODE, mode).apply()
+    }
+
+    fun getTheme(ctx: Context): String =
+        prefs(ctx).getString(KEY_THEME, "system") ?: "system"
+
+    fun setTheme(ctx: Context, theme: String) {
+        prefs(ctx).edit().putString(KEY_THEME, theme).apply()
     }
 
     fun getStatsExpanded(ctx: Context, key: String, default: Boolean = false): Boolean =

@@ -65,6 +65,7 @@ fun EdgeApp(
     watchlistRepo: WatchlistRepository,
     actionLogRepo: ActionLogRepository,
     api: EdgeApi,
+    onThemeChange: (String) -> Unit = {},
 ) {
     var destination by remember { mutableStateOf<AppDestination>(AppDestination.Watchlist) }
     var activeTab by remember { mutableStateOf(AppTab.Watchlist) }
@@ -152,7 +153,7 @@ fun EdgeApp(
                         },
                     )
                     is AppDestination.Stats -> StatsScreen(watchlistRepo = watchlistRepo, actionLogRepo = actionLogRepo, api = api)
-                    is AppDestination.Settings -> SettingsScreen()
+                    is AppDestination.Settings -> SettingsScreen(onThemeChange = onThemeChange)
                     is AppDestination.Comparison -> ComparisonScreen(
                         itemA = dest.itemA,
                         itemB = dest.itemB,

@@ -58,11 +58,17 @@ fun <T> EdgeSegmentedButtonRow(
 // ──── 설정 탭 ─────────────────────────────────────────────────────────────
 
 private val analysisModes = listOf("defensive" to "방어 🛡️", "aggressive" to "공격 ⚔️")
+private val themeModes = listOf("system" to "시스템", "light" to "라이트", "dark" to "다크")
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onThemeChange: (String) -> Unit = {}) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     var modeIndex by remember { mutableStateOf(if (AppPrefs.getMode(ctx) == "aggressive") 1 else 0) }
+    var themeIndex by remember {
+        mutableStateOf(when (AppPrefs.getTheme(ctx)) {
+            "light" -> 1; "dark" -> 2; else -> 0
+        })
+    }
 
     Scaffold(
         topBar = { CompactHeader(title = "설정") }
@@ -107,6 +113,37 @@ fun SettingsScreen() {
                             "🛡️ 방어적 모드는 사실과 방향만 담백하게 전달해요. 적극적인 시장 스탠스 의견을 보려면 공격으로 바꿔보세요.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            // ── 테마 카드 ──
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(
+                "테마",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 0.dp,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                ) {
+                    EdgeSegmentedButtonRow(
+                        items = themeModes,
+                        selectedIndex = themeIndex,
+                        onSelect = { i ->
+                            themeIndex = i
+                            AppPrefs.setTheme(ctx, themeModes[i].first)
+                            onThemeChange(themeModes[i].first)
+                        },
+                        label = { it.second },
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }

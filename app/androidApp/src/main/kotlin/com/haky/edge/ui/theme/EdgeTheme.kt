@@ -84,11 +84,10 @@ object EdgeTheme {
 }
 
 @Composable
-fun EdgeTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
-    CompositionLocalProvider(LocalEdgeColors provides if (dark) DarkEdgeColors else LightEdgeColors) {
+fun EdgeTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+    CompositionLocalProvider(LocalEdgeColors provides if (darkTheme) DarkEdgeColors else LightEdgeColors) {
         MaterialTheme(
-            colorScheme = if (dark) DarkColors else LightColors,
+            colorScheme = if (darkTheme) DarkColors else LightColors,
             content = content,
         )
     }

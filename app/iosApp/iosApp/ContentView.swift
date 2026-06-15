@@ -272,7 +272,30 @@ enum AnalysisMode: String, CaseIterable {
 // @AppStorage 키. SettingsView와 BriefingView가 같은 값을 공유한다.
 let analysisModeKey = "analysisMode"
 
+enum ThemeMode: String, CaseIterable {
+    case system, light, dark
+    var label: String {
+        switch self {
+        case .system: return "시스템"
+        case .light:  return "라이트"
+        case .dark:   return "다크"
+        }
+    }
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .light: return .light
+        case .dark:  return .dark
+        case .system: return nil
+        }
+    }
+}
+
+let themeModeKey = "themeMode"
+
 struct ContentView: View {
+    @AppStorage(themeModeKey) private var themeModeRaw = ThemeMode.system.rawValue
+    private var themeMode: ThemeMode { ThemeMode(rawValue: themeModeRaw) ?? .system }
+
     var body: some View {
         TabView {
             WatchlistView()
@@ -286,12 +309,14 @@ struct ContentView: View {
             SettingsView()
                 .tabItem { Label("설정", systemImage: "gearshape") }
         }
+        .preferredColorScheme(themeMode.colorScheme)
     }
 }
 
-// 설정 탭. 현재는 분석 모드 하나. 전역 @AppStorage라 어느 화면에서든 같은 값을 읽는다.
+// 설정 탭. 전역 @AppStorage라 어느 화면에서든 같은 값을 읽는다.
 struct SettingsView: View {
     @AppStorage(analysisModeKey) private var modeRaw = AnalysisMode.defensive.rawValue
+    @AppStorage(themeModeKey) private var themeModeRaw = ThemeMode.system.rawValue
 
     private var mode: AnalysisMode { AnalysisMode(rawValue: modeRaw) ?? .defensive }
 
@@ -313,6 +338,15 @@ struct SettingsView: View {
                     } else {
                         Text("🛡️ 방어적 모드는 사실과 방향만 담백하게 전달해요. 적극적인 시장 스탠스 의견을 보려면 공격으로 바꿔보세요.")
                     }
+                }
+
+                Section("테마") {
+                    Picker("테마", selection: $themeModeRaw) {
+                        ForEach(ThemeMode.allCases, id: \.rawValue) { m in
+                            Text(m.label).tag(m.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                 }
 
                 Section("앱 정보") {

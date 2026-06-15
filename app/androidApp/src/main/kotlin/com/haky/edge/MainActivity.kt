@@ -4,10 +4,16 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.ActionLogRepository
 import com.haky.edge.db.DriverFactory
 import com.haky.edge.db.WatchlistRepository
+import com.haky.edge.ui.AppPrefs
 import com.haky.edge.ui.EdgeApp
 import com.haky.edge.ui.theme.EdgeTheme
 
@@ -24,8 +30,19 @@ class MainActivity : ComponentActivity() {
         val api = EdgeApi(baseUrl = baseUrl, apiToken = BuildConfig.EDGE_API_TOKEN)
 
         setContent {
-            EdgeTheme {
-                EdgeApp(watchlistRepo = watchlistRepo, actionLogRepo = actionLogRepo, api = api)
+            var themeMode by remember { mutableStateOf(AppPrefs.getTheme(this@MainActivity)) }
+            val isDark = when (themeMode) {
+                "light" -> false
+                "dark"  -> true
+                else    -> isSystemInDarkTheme()
+            }
+            EdgeTheme(darkTheme = isDark) {
+                EdgeApp(
+                    watchlistRepo = watchlistRepo,
+                    actionLogRepo = actionLogRepo,
+                    api = api,
+                    onThemeChange = { themeMode = it },
+                )
             }
         }
     }
