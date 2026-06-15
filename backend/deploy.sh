@@ -171,7 +171,7 @@ if [ -n "$DEPLOY_NOTES" ]; then
 else
   BULLETS="• 내부 개선"
 fi
-DEPLOY_TEXT="🚀 *새 업데이트* · ${DEPLOY_TIME}\n${BULLETS}"
+DEPLOY_TEXT="$(printf '🚀 *새 업데이트* · %s\n%s' "$DEPLOY_TIME" "$BULLETS")"
 if [ -n "$SLACK_BOT_TOKEN_VAL" ] && [ -n "$SLACK_DEPLOY_CHANNEL" ]; then
   DEPLOY_TEXT_JSON=$(printf '%s' "$DEPLOY_TEXT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
   curl -s -X POST https://slack.com/api/chat.postMessage \
