@@ -6,6 +6,27 @@
 
 ---
 
+## 2026-06-15 — Slack 연동 S1: 운영 오류 알림 (#ops-오류) (Opus)
+
+**한 일**
+- 개인 Slack(무료) 연동 백로그 7슬라이스 계획 수립([[edge-slack-slices]] 메모리). 무료 푸시 대체 + 운영 모니터링. 봇토큰 1개로 채널/DM 라우팅(웹훅 채널별 분리 안 함).
+- **S1 구현**: 백엔드 오류를 `#ops-오류` 채널로 자동 알림.
+  - `slack/SlackClient.kt`: 봇토큰 `chat.postMessage` 얇은 클라이언트. **절대 예외 안 던짐**(에러 핸들러에서 호출되므로 실패는 로그만), 토큰/채널 비면 no-op.
+  - `slack/OpsAlerter.kt`: StatusPages 예외 → Slack 발송. **fire-and-forget**(scope.launch, 응답 지연 0) + **5분 쿨다운 throttle**(시그니처=상태|라우트첫세그먼트|예외종류 → KIS 세션공백류 전종목 도배 방지).
+  - `Application.kt`: StatusPages 핸들러에 `opsAlerter.alert(...)` 한 줄 추가(모든 500/502 자동 알림). 클라이언트는 install 전 생성(핸들러에서 참조), Application을 CoroutineScope로 주입.
+  - `routes/SlackTestRoutes.kt`: 검증용 `/slack-ping`(직접 발송)·`/slack-test-error`(의도적 예외).
+  - `deploy.sh`: `SLACK_BOT_TOKEN` 시크릿 + `SLACK_OPS_CHANNEL` env 추가.
+- 검증: 로컬 실호출 — ping `sent=true`(채널 C0BA29NTQUF), 에러 경로 500+Slack 알림, 쿨다운으로 2번째 억제 확인. 사용자 채널 시각 확인(메시지 2개).
+
+**배운 것**
+- 에러 알림 경로에서 호출되는 클라이언트는 절대 예외를 던지면 안 됨(원 요청 처리 깨짐). runCatching + 로그만.
+- 사용자별 비공개 채널은 친구 N명=채널 N개라 안 굴러감 → 개인 알림(S3·S4)은 봇 DM(Slack userID 대상)으로 갈 예정. 채널은 시장공통(공유)·운영(혼자)만.
+
+**다음 할 일**
+- S3(신호 알림 푸시, 푸시 대체 핵심) 또는 S2(아침 브리핑). 순서: S1→S3→S2→S5→S4→S6→S7→S8.
+
+---
+
 ## 2026-06-15 — iOS 내비게이션 타이틀·바디 상단 여백 제거 (Sonnet)
 
 **한 일**

@@ -48,6 +48,9 @@ import com.haky.edge.routes.valuationBandRoutes
 import com.haky.edge.routes.webSearchTestRoutes
 import com.haky.edge.routes.futuresTestRoutes
 import com.haky.edge.routes.prewarmRoutes
+import com.haky.edge.routes.slackTestRoutes
+import com.haky.edge.slack.OpsAlerter
+import com.haky.edge.slack.SlackClient
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.http.HttpStatusCode
@@ -60,6 +63,8 @@ import kotlinx.coroutines.launch
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.ratelimit.rateLimit
 import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.request.httpMethod
+import io.ktor.server.request.path
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
@@ -90,6 +95,17 @@ fun Application.module() {
     }
     // 배포 보안 게이트(1.0c-a): 공유 토큰 인증 + IP별 레이트리밋. 로컬은 토큰 비면 인증 생략.
     configureSecurity()
+
+    // Slack 운영 알림(S1): 백엔드 오류를 #ops-오류 채널로 흘린다. 토큰/채널 비면 no-op(로컬 무해).
+    // StatusPages 핸들러에서 쓰므로 install 전에 생성한다. fire-and-forget 발송에 Application 스코프를 넘긴다.
+    val slack = SlackClient(botToken = System.getenv("SLACK_BOT_TOKEN").orEmpty())
+    val opsChannel = System.getenv("SLACK_OPS_CHANNEL").orEmpty()
+    val opsAlerter = OpsAlerter(
+        slack = slack,
+        opsChannel = opsChannel,
+        scope = this,
+    )
+
     install(StatusPages) {
         // 예외를 한 곳에서 잡아 일관된 에러 JSON으로 변환한다(각 라우트에서 try/catch 반복 안 함).
         exception<Throwable> { call, cause ->
@@ -100,6 +116,14 @@ fun Application.module() {
                 is DartException -> HttpStatusCode.BadGateway
                 else -> HttpStatusCode.InternalServerError
             }
+            // 조용히 실패하던 오류(KIS 세션 공백 등)를 Slack으로 가시화. 쿨다운으로 도배 방지, 응답 지연 없음.
+            opsAlerter.alert(
+                method = call.request.httpMethod.value,
+                path = call.request.path(),
+                status = status.value,
+                errorClass = cause::class.simpleName ?: "Throwable",
+                message = cause.message ?: cause.toString(),
+            )
             call.respond(status, ErrorResponse(cause.message ?: cause.toString()))
         }
     }
@@ -176,6 +200,7 @@ fun Application.module() {
             webSearchTestRoutes(claude)
             futuresTestRoutes(kis)
             prewarmRoutes(kis, dart)
+            slackTestRoutes(slack, opsChannel)
         }
     }
 }
