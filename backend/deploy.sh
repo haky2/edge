@@ -15,6 +15,24 @@ fi
 
 echo "→ 배포: service=$SERVICE project=$PROJECT region=$REGION (max-instances=1)"
 
+# ── Cloud Tasks: Slack 슬래시 명령 비동기 워커용 큐 ──────────────────────────
+# Cloud Run은 HTTP 응답 후 CPU를 끊으므로(스로틀링) 3초 ack 뒤 인프로세스 백그라운드 분석이
+# 외부 API 읽기 도중 잘린다. 분석을 Cloud Tasks로 별도 인바운드 요청(/slack/analyze-task)으로
+# 띄워 그 요청 동안 CPU를 받게 한다. min-instances=0(무료 티어) 유지.
+TASKS_QUEUE="edge-slack"
+echo "→ Cloud Tasks API 활성화 + 큐 동기화($TASKS_QUEUE)..."
+gcloud services enable cloudtasks.googleapis.com --project="$PROJECT" >/dev/null
+gcloud tasks queues describe "$TASKS_QUEUE" --project="$PROJECT" --location="$REGION" >/dev/null 2>&1 \
+  || gcloud tasks queues create "$TASKS_QUEUE" --project="$PROJECT" --location="$REGION"
+
+# 런타임 서비스계정(기본 Compute SA)에 enqueue 권한 부여
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')
+RUNTIME_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+gcloud projects add-iam-policy-binding "$PROJECT" \
+  --member="serviceAccount:${RUNTIME_SA}" \
+  --role="roles/cloudtasks.enqueuer" --condition=None >/dev/null
+
+
 # GCS 볼륨 마운트:
 #   edge-kis-token  → /mnt/token  : KIS OAuth 토큰 (재발급 방지)
 #   edge-app-cache  → /mnt/cache  : FileCache 당일 Claude/KIS 결과 (콜드 스타트 재호출 방지)
@@ -32,7 +50,7 @@ gcloud run deploy "$SERVICE" \
   --add-volume-mount "volume=app-cache,mount-path=/mnt/cache" \
   --add-volume "name=app-data,type=cloud-storage,bucket=edge-app-data" \
   --add-volume-mount "volume=app-data,mount-path=/mnt/data" \
-  --set-env-vars "KIS_TOKEN_CACHE=/mnt/token/.kis-token.json,CACHE_DIR=/mnt/cache,DATA_DIR=/mnt/data,SLACK_OPS_CHANNEL=C0BA29NTQUF,SLACK_BRIEFING_CHANNEL=C0BABCPKLCB" \
+  --set-env-vars "KIS_TOKEN_CACHE=/mnt/token/.kis-token.json,CACHE_DIR=/mnt/cache,DATA_DIR=/mnt/data,SLACK_OPS_CHANNEL=C0BA29NTQUF,SLACK_BRIEFING_CHANNEL=C0BABCPKLCB,GCP_PROJECT_ID=$PROJECT,TASKS_LOCATION=$REGION,TASKS_QUEUE=$TASKS_QUEUE" \
   --set-secrets "KIS_APP_KEY=KIS_APP_KEY:latest,KIS_APP_SECRET=KIS_APP_SECRET:latest,NAVER_CLIENT_ID=NAVER_CLIENT_ID:latest,NAVER_CLIENT_SECRET=NAVER_CLIENT_SECRET:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,DART_API_KEY=DART_API_KEY:latest,ECOS_API_KEY=ECOS_API_KEY:latest,EDGE_API_TOKEN=EDGE_API_TOKEN:latest,SLACK_BOT_TOKEN=SLACK_BOT_TOKEN:latest,SLACK_SIGNING_SECRET=SLACK_SIGNING_SECRET:latest"
 
 URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format='value(status.url)')

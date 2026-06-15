@@ -56,6 +56,7 @@ import com.haky.edge.slack.OpsAlerter
 import com.haky.edge.slack.SlackClient
 import com.haky.edge.slack.SlackCommandService
 import com.haky.edge.slack.SlackSignatureVerifier
+import com.haky.edge.tasks.CloudTasksClient
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.http.HttpStatusCode
@@ -173,6 +174,13 @@ fun Application.module() {
     // S7 양방향 조회: /edge 종목명 슬래시 명령. 서명검증 + AnalysisService 코멘트 요약.
     val slackVerifier = SlackSignatureVerifier(System.getenv("SLACK_SIGNING_SECRET").orEmpty())
     val slackCommand = SlackCommandService(analysis, master, slack)
+    // Slack 분석은 Cloud Tasks 워커(POST /slack/analyze-task)로 돌려 Cloud Run CPU 스로틀링을 피한다.
+    // 큐 미설정(로컬)이면 enabled=false → 라우트가 인프로세스 폴백으로 동작.
+    val cloudTasks = CloudTasksClient(
+        projectId = System.getenv("GCP_PROJECT_ID").orEmpty(),
+        location = System.getenv("TASKS_LOCATION") ?: "asia-northeast3",
+        queue = System.getenv("TASKS_QUEUE").orEmpty(),
+    )
 
     // 서버 시작 직후 백그라운드로 KIS 토큰 + DART corpCode 맵을 미리 로드한다.
     // 첫 번째 실제 요청이 올 때 이 두 초기화 작업(각 수 초)을 기다리지 않아도 되게 함.
@@ -212,7 +220,7 @@ fun Application.module() {
             prewarmRoutes(kis, dart)
             slackTestRoutes(slack, opsChannel)
             morningBriefRoutes(morningBrief)
-            slackCommandRoutes(slackVerifier, slackCommand)
+            slackCommandRoutes(slackVerifier, slackCommand, cloudTasks)
         }
     }
 }

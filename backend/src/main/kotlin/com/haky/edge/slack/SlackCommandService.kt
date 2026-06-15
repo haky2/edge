@@ -48,7 +48,7 @@ class SlackCommandService(
 
     /** Analysis → Slack mrkdwn. **굵게(이중별표)**를 Slack용 *단일별표*로 변환하고 길이를 자른다. */
     private fun format(a: com.haky.edge.ai.Analysis): String = buildString {
-        val priceStr = a.generatedPrice?.let { " · ${it.toLong()}원" } ?: ""
+        val priceStr = a.generatedPrice?.let { " · %,d원".format(it.toLong()) } ?: ""
         appendLine("*${a.name}* (${a.code})$priceStr")
         appendLine()
         val body = a.comment

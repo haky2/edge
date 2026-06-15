@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-06-15 — /edge 슬래시 명령 오류 수정: Cloud Run CPU 스로틀링 → Cloud Tasks 워커
+
+**한 일**
+- `/edge 삼성전자`가 "분석 중 오류" 반환. 원인: `/slack/command`가 3초 ack 후 분석을 `application.launch{}` 인프로세스 백그라운드로 돌리는데, **Cloud Run은 HTTP 응답을 보내고 나면 CPU 할당을 끊어**(기본 스로틀링) 외부 API 읽기가 도중에 잘림 → Ktor CIO `Not enough data available`. (`/analysis`는 요청이 열려 있어 CPU 유지 → 정상이라 대비됨.)
+- 수정: 분석을 **Cloud Tasks 워커**(`POST /slack/analyze-task`)로 별도 인바운드 요청으로 띄움 → 그 요청 처리 동안 CPU 할당 유지. `/slack/command`는 enqueue 후 즉시 ack만.
+  - `tasks/CloudTasksClient.kt`(SDK 없이 REST, 메타데이터 SA 토큰 Bearer), `SlackCommandRoutes`에 워커 라우트 추가 + enqueue 분기(큐 미설정 로컬은 인프로세스 폴백), `Application.kt` 배선.
+  - `deploy.sh`: cloudtasks API enable + 큐 `edge-slack` 생성 + 런타임 SA에 `roles/cloudtasks.enqueuer` + env(`GCP_PROJECT_ID`/`TASKS_LOCATION`/`TASKS_QUEUE`).
+- **배포·검증**: 서명한 `/slack/command` → enqueue 성공(실패 로그 없음) → Cloud Tasks 디스패치 → 워커 200. 워커는 인바운드 요청이라 `/analysis`와 동일하게 풀 분석 완주.
+
+**막힌 점 / 배운 것**
+- Cloud Run 기본 스로틀링에선 **응답 후 백그라운드 작업이 CPU를 못 받는다.** fire-and-forget으로 외부 호출하면 조용히 잘림. always-on CPU(`--no-cpu-throttling`)는 idle 과금이라, 무료 티어 유지하려면 작업을 별도 인바운드 요청(Cloud Tasks)으로 돌리는 게 정석.
+- min-instances=0(scale-to-zero) 유지 → 비용은 활성 시간에만. enqueue는 ack 처리 중(CPU 있음)에 끝나므로 3초 제약 안전.
+
+**다음 할 일**
+- 사용자: Slack에서 실제 `/edge 삼성전자` 한 번 확인(콜드 스타트 시 첫 분석 ~13초).
+- (선택) MorningBrief/MoodLog 등 다른 백그라운드 발송도 같은 함정 점검 — 현재는 스케줄러가 요청을 열어 두고 호출해 안전.
+
+---
+
 ## 2026-06-15 — Slack S7: 양방향 조회 /edge 종목명 (Opus)
 
 **한 일**
