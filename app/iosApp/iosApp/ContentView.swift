@@ -135,28 +135,30 @@ struct WatchlistView: View {
                 }
             }
             Spacer()
-            if let pts = sparklines[item.code], pts.count >= 2,
-               let q = quotes[item.code] {
-                let isUp = q.changeRate > 0; let isDown = q.changeRate < 0
-                let streak = (isUp || isDown) ? consecutiveStreak(closes: pts, todayUp: isUp) : 0
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text(isUp ? "📈" : (isDown ? "📉" : "➡️")).font(.system(size: 15))
-                    Text(isUp || isDown ? "\(streak)일째 \(isUp ? "상승" : "하락")" : "보합")
-                        .font(.system(size: 10))
-                        .foregroundColor(isUp ? .red : (isDown ? .blue : .secondary))
-                }
-                .padding(.trailing, 8)
-            }
             if let q = quotes[item.code] {
-                let chgColor: Color = q.changeRate > 0 ? .red : q.changeRate < 0 ? .blue : .secondary
-                let symbol = q.changeRate > 0 ? "▲" : q.changeRate < 0 ? "▼" : "—"
+                let isUp = q.changeRate > 0; let isDown = q.changeRate < 0
+                let chgColor: Color = isUp ? .red : isDown ? .blue : .secondary
+                let symbol = isUp ? "▲" : isDown ? "▼" : "—"
+                let pts = sparklines[item.code]
+                let hasStreak = (isUp || isDown) && pts != nil && pts!.count >= 2
+                let streak = hasStreak ? consecutiveStreak(closes: pts!, todayUp: isUp) : 0
+                // 이모지 열(고정 너비) + 가격 열(고정 너비) — 너비 고정이어야 행마다 위치가 동일.
+                if hasStreak {
+                    VStack(alignment: .center, spacing: 2) {
+                        Text(isUp ? "📈" : "📉").font(.system(size: 14))
+                        Text("\(streak)일째 \(isUp ? "상승" : "하락")")
+                            .font(.system(size: 10))
+                            .foregroundColor(chgColor)
+                    }
+                    .frame(width: 62)
+                }
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(q.price.formatted()).font(.body.weight(.semibold))
                     Text("\(symbol) \(String(format: "%.2f", abs(q.changeRate)))%")
                         .font(.caption)
                         .foregroundColor(chgColor)
                 }
-                .frame(minWidth: 72, alignment: .trailing)
+                .frame(width: 90, alignment: .trailing)
             } else {
                 Text("—").foregroundColor(.secondary)
             }
