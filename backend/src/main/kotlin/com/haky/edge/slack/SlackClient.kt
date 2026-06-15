@@ -42,7 +42,7 @@ class SlackClient(private val botToken: String) {
             val resp: PostMessageResponse = http.post("https://slack.com/api/chat.postMessage") {
                 header(HttpHeaders.Authorization, "Bearer $botToken")
                 contentType(ContentType.Application.Json)
-                setBody(PostMessageRequest(channel = channel, text = text))
+                setBody(PostMessageRequest(channel = channel, text = SlackFormat.sanitize(text)))
             }.body()
             if (!resp.ok) {
                 // Slack은 HTTP 200 + {ok:false, error:"channel_not_found"|"not_in_channel"|...} 로 실패를 알린다.
@@ -72,7 +72,7 @@ class SlackClient(private val botToken: String) {
             http.post(responseUrl) {
                 contentType(ContentType.Application.Json)
                 setBody(ResponseUrlPayload(
-                    text = text,
+                    text = SlackFormat.sanitize(text),
                     responseType = if (inChannel) "in_channel" else "ephemeral",
                     replaceOriginal = replaceOriginal,
                 ))

@@ -46,25 +46,23 @@ class SlackCommandService(
         return runCatching { master.search(text, limit = 1) }.getOrNull()?.firstOrNull()?.code
     }
 
-    /** Analysis → Slack mrkdwn. **굵게(이중별표)**를 Slack용 *단일별표*로 변환. 잘림 없이 전체 출력. */
+    /**
+     * Analysis → Slack 메시지. 마크다운 정규화(**·# 제거)는 SlackClient.sanitize가 일괄 처리하므로
+     * 여기선 구조만 만든다. 우리가 쓰는 헤더의 *단일별표*는 sanitize가 건드리지 않아 그대로 볼드 렌더된다.
+     * 잘림 없이 전체 코멘트를 보낸다.
+     */
     private fun format(a: com.haky.edge.ai.Analysis): String = buildString {
         val priceStr = a.generatedPrice?.let { " · %,d원".format(it.toLong()) } ?: ""
         appendLine("*${a.name}* (${a.code})$priceStr")
         appendLine()
         if (!a.summary.isNullOrBlank()) {
             appendLine("*📌 핵심 요약*")
-            appendLine(toMrkdwn(a.summary))
+            appendLine(a.summary.trim())
             appendLine()
             appendLine("───────────────")
             appendLine()
         }
-        append(toMrkdwn(a.comment))
+        append(a.comment.trim())
         append("\n\n_${a.generatedAt.ifBlank { a.date }} 기준 · 참고용_")
     }
-
-    /** 마크다운 → Slack mrkdwn: **bold** → *bold*, # 헤더 제거. */
-    private fun toMrkdwn(text: String): String = text
-        .replace("**", "*")
-        .replace(Regex("(?m)^#+\\s*"), "")
-        .trim()
 }
