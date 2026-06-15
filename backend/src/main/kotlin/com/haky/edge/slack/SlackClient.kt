@@ -54,6 +54,35 @@ class SlackClient(private val botToken: String) {
             false
         }
     }
+
+    /**
+     * 슬래시 명령의 response_url 로 후속 메시지를 보낸다(봇 토큰 불필요 — URL 자체가 비밀).
+     * 즉시 ack(3초 제약) 이후 시간이 걸리는 결과(분석 코멘트 등)를 비동기로 전달할 때 사용.
+     * @param inChannel true면 채널 공유(in_channel), false면 본인만(ephemeral, 기본).
+     * @param replaceOriginal true면 직전 ack 메시지를 결과로 교체.
+     */
+    suspend fun postToResponseUrl(
+        responseUrl: String,
+        text: String,
+        inChannel: Boolean = false,
+        replaceOriginal: Boolean = true,
+    ): Boolean {
+        if (responseUrl.isBlank()) return false
+        return runCatching {
+            http.post(responseUrl) {
+                contentType(ContentType.Application.Json)
+                setBody(ResponseUrlPayload(
+                    text = text,
+                    responseType = if (inChannel) "in_channel" else "ephemeral",
+                    replaceOriginal = replaceOriginal,
+                ))
+            }
+            true
+        }.getOrElse { e ->
+            System.err.println("[Slack] postToResponseUrl 예외: ${e.message}")
+            false
+        }
+    }
 }
 
 @Serializable
@@ -66,4 +95,11 @@ private data class PostMessageRequest(
 private data class PostMessageResponse(
     val ok: Boolean = false,
     val error: String? = null,
+)
+
+@Serializable
+private data class ResponseUrlPayload(
+    val text: String,
+    @kotlinx.serialization.SerialName("response_type") val responseType: String,
+    @kotlinx.serialization.SerialName("replace_original") val replaceOriginal: Boolean,
 )

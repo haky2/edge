@@ -6,6 +6,29 @@
 
 ---
 
+## 2026-06-15 — Slack S7: 양방향 조회 /edge 종목명 (Opus)
+
+**한 일**
+- Slack 슬래시 명령 `/edge 종목명` → 종목 AI 코멘트 요약을 Slack으로. S2(아침브리핑)·S7 둘 다 커밋했고 **배포는 모아서 한 번에**(사용자 요청).
+  - `slack/SlackSignatureVerifier.kt`: HMAC-SHA256 서명검증(`v0:{ts}:{body}`) + 5분 리플레이 거부 + 상수시간 비교. signingSecret 비면 로컬 검증 생략(토큰 게이트와 동일 정책).
+  - `slack/SlackCommandService.kt`: 텍스트→코드 해석(6자리=코드/아니면 master.search 첫 결과) → `analysis.analyze(code)`(position=null=공개분석, 개인화 없음) → mrkdwn 포맷(`**`→`*`, 1600자 컷, footer).
+  - `slack/SlackClient.kt`: `postToResponseUrl()` 추가(봇토큰 불필요, URL 자체가 비밀, ephemeral/in_channel·replace_original).
+  - `routes/SlackCommandRoutes.kt`: POST /slack/command — 원문 본문으로 서명검증 → **즉시 200 ack**(3초 제약) → `application.launch`로 분석 비동기 → response_url 발송.
+  - `Security.kt`: 토큰 게이트에서 `/slack/command` 제외(Slack은 EDGE_API_TOKEN 못 보냄 → 서명검증으로 대신 인증).
+  - deploy.sh: SLACK_SIGNING_SECRET 시크릿 추가. .env.example 키 추가.
+- 검증(로컬, signingSecret 켠 상태): ①잘못된 서명→401 ②리플레이→401 ③올바른 서명→200+ack. nc로 response_url 수신 → 삼성전자 실분석 22초 후 포맷 메시지 전달 확인(ephemeral·replace_original·굵게변환·컷).
+
+**배운 것**
+- 서명검증은 **파싱 전 원문 본문**으로 해야 함(HMAC은 바이트 단위) → Ktor `receiveText()` 먼저, 그 다음 `parseQueryString`.
+- Slack 3초 제약 → 즉시 ack + response_url 비동기가 정석(분석은 Claude라 십수 초).
+- `postToResponseUrl`은 봇토큰 불필요(response_url 자체가 일회성 비밀).
+
+**다음 할 일 (S7 라이브 전 사용자 셋업)**
+- Slack 앱에 `commands` scope 추가 → 재설치 / `/edge` 슬래시 명령 생성(Request URL=prod /slack/command) / Signing Secret → Secret Manager(SLACK_SIGNING_SECRET) 등록. 그 후 S2+S7 묶어서 배포.
+- 이후: S8(라운지 명령어+인터랙션) 또는 S3(신호 푸시).
+
+---
+
 ## 2026-06-15 — Slack 연동 S1: 운영 오류 알림 (#ops-오류) (Opus)
 
 **한 일**

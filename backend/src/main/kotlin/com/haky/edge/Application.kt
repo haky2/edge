@@ -49,10 +49,13 @@ import com.haky.edge.routes.webSearchTestRoutes
 import com.haky.edge.routes.futuresTestRoutes
 import com.haky.edge.routes.morningBriefRoutes
 import com.haky.edge.routes.prewarmRoutes
+import com.haky.edge.routes.slackCommandRoutes
 import com.haky.edge.routes.slackTestRoutes
 import com.haky.edge.slack.MorningBriefService
 import com.haky.edge.slack.OpsAlerter
 import com.haky.edge.slack.SlackClient
+import com.haky.edge.slack.SlackCommandService
+import com.haky.edge.slack.SlackSignatureVerifier
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.http.HttpStatusCode
@@ -167,6 +170,9 @@ fun Application.module() {
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, moodLog, eventSync)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
+    // S7 양방향 조회: /edge 종목명 슬래시 명령. 서명검증 + AnalysisService 코멘트 요약.
+    val slackVerifier = SlackSignatureVerifier(System.getenv("SLACK_SIGNING_SECRET").orEmpty())
+    val slackCommand = SlackCommandService(analysis, master, slack)
 
     // 서버 시작 직후 백그라운드로 KIS 토큰 + DART corpCode 맵을 미리 로드한다.
     // 첫 번째 실제 요청이 올 때 이 두 초기화 작업(각 수 초)을 기다리지 않아도 되게 함.
@@ -206,6 +212,7 @@ fun Application.module() {
             prewarmRoutes(kis, dart)
             slackTestRoutes(slack, opsChannel)
             morningBriefRoutes(morningBrief)
+            slackCommandRoutes(slackVerifier, slackCommand)
         }
     }
 }

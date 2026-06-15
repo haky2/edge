@@ -54,6 +54,8 @@ fun Application.configureSecurity() {
     intercept(ApplicationCallPipeline.Plugins) {
         // 헬스체크는 인증 없이 통과해야 Cloud Run 기동/생존 프로브가 막히지 않는다.
         if (call.request.path() == "/health") return@intercept
+        // /slack/command 는 Slack이 EDGE_API_TOKEN을 못 보낸다 → 토큰 게이트 제외, Slack 서명검증으로 대신 인증.
+        if (call.request.path() == "/slack/command") return@intercept
         if (expectedToken.isEmpty()) return@intercept // 로컬 개발: 인증 비활성
         val provided = call.request.headers["X-Edge-Token"]
         if (provided != expectedToken) {
