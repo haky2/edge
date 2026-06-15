@@ -48,6 +48,7 @@ import com.haky.edge.routes.valuationBandRoutes
 import com.haky.edge.routes.webSearchTestRoutes
 import com.haky.edge.routes.futuresTestRoutes
 import com.haky.edge.routes.morningBriefRoutes
+import com.haky.edge.routes.signalRoutes
 import com.haky.edge.routes.prewarmRoutes
 import com.haky.edge.routes.slackCommandRoutes
 import com.haky.edge.routes.slackTestRoutes
@@ -107,6 +108,12 @@ fun Application.module() {
     val slack = SlackClient(botToken = System.getenv("SLACK_BOT_TOKEN").orEmpty())
     val opsChannel = System.getenv("SLACK_OPS_CHANNEL").orEmpty()
     val briefingChannel = System.getenv("SLACK_BRIEFING_CHANNEL").orEmpty()
+    val signalChannel = System.getenv("SLACK_SIGNAL_CHANNEL").orEmpty()
+    // 신호 평가 대상 종목 — prewarm과 같은 공통 관심종목(SIGNAL_CODES env, 없으면 CLAUDE.md 11종목 폴백).
+    // 사용자별 워치리스트 서버 등록은 후속(S3 메모리) — 그 전까진 공통 목록으로 동작.
+    val signalCodes = (System.getenv("SIGNAL_CODES")
+        ?: "018260,329180,066570,307950,000660,005930,267260,001440,062040,047810,012450")
+        .split(",").map { it.trim() }.filter { it.isNotBlank() }
     val opsAlerter = OpsAlerter(
         slack = slack,
         opsChannel = opsChannel,
@@ -171,6 +178,8 @@ fun Application.module() {
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, moodLog, eventSync)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
+    // S3a 신호 알림: 관심종목 연속 순매수 → #알림-신호 채널. 디듀프(streak 시작일)로 도배 방지.
+    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, signalChannel, signalCodes)
     // S7 양방향 조회: /edge 종목명 슬래시 명령. 서명검증 + AnalysisService 코멘트 요약.
     val slackVerifier = SlackSignatureVerifier(System.getenv("SLACK_SIGNING_SECRET").orEmpty())
     val slackCommand = SlackCommandService(analysis, master, slack)
@@ -220,6 +229,7 @@ fun Application.module() {
             prewarmRoutes(kis, dart)
             slackTestRoutes(slack, opsChannel)
             morningBriefRoutes(morningBrief)
+            signalRoutes(signalService)
             slackCommandRoutes(slackVerifier, slackCommand, cloudTasks)
         }
     }

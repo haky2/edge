@@ -7,6 +7,9 @@ cd "$(dirname "$0")"
 PROJECT="${GCP_PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${GCP_REGION:-asia-northeast3}"
 SERVICE="edge-backend"
+# S3a 신호 알림 채널 ID(#알림-신호). 사용자가 채널 생성+봇 초대 후 ID를 여기 채우거나
+# SLACK_SIGNAL_CHANNEL 환경변수로 전달. 비면 SignalService가 no-op(스캔은 돌되 발송 안 함).
+SLACK_SIGNAL_CHANNEL="${SLACK_SIGNAL_CHANNEL:-}"
 
 if [ -z "$PROJECT" ]; then
   echo "GCP 프로젝트가 설정되지 않았습니다. 'gcloud config set project <ID>' 또는 GCP_PROJECT 환경변수." >&2
@@ -50,7 +53,7 @@ gcloud run deploy "$SERVICE" \
   --add-volume-mount "volume=app-cache,mount-path=/mnt/cache" \
   --add-volume "name=app-data,type=cloud-storage,bucket=edge-app-data" \
   --add-volume-mount "volume=app-data,mount-path=/mnt/data" \
-  --set-env-vars "KIS_TOKEN_CACHE=/mnt/token/.kis-token.json,CACHE_DIR=/mnt/cache,DATA_DIR=/mnt/data,SLACK_OPS_CHANNEL=C0BA29NTQUF,SLACK_BRIEFING_CHANNEL=C0BABCPKLCB,GCP_PROJECT_ID=$PROJECT,TASKS_LOCATION=$REGION,TASKS_QUEUE=$TASKS_QUEUE" \
+  --set-env-vars "KIS_TOKEN_CACHE=/mnt/token/.kis-token.json,CACHE_DIR=/mnt/cache,DATA_DIR=/mnt/data,SLACK_OPS_CHANNEL=C0BA29NTQUF,SLACK_BRIEFING_CHANNEL=C0BABCPKLCB,SLACK_SIGNAL_CHANNEL=$SLACK_SIGNAL_CHANNEL,GCP_PROJECT_ID=$PROJECT,TASKS_LOCATION=$REGION,TASKS_QUEUE=$TASKS_QUEUE" \
   --set-secrets "KIS_APP_KEY=KIS_APP_KEY:latest,KIS_APP_SECRET=KIS_APP_SECRET:latest,NAVER_CLIENT_ID=NAVER_CLIENT_ID:latest,NAVER_CLIENT_SECRET=NAVER_CLIENT_SECRET:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,DART_API_KEY=DART_API_KEY:latest,ECOS_API_KEY=ECOS_API_KEY:latest,EDGE_API_TOKEN=EDGE_API_TOKEN:latest,SLACK_BOT_TOKEN=SLACK_BOT_TOKEN:latest,SLACK_SIGNING_SECRET=SLACK_SIGNING_SECRET:latest"
 
 URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format='value(status.url)')
@@ -105,6 +108,16 @@ scheduler_upsert slack-morning-brief \
   --message-body="{}" \
   --attempt-deadline=180s \
   --description="매주 월~금 오전 8:50 KST Slack #아침브리핑 발송 (prewarm 직후)"
+
+# signals-scan: 매주 월~금 오후 6:00 KST — 관심종목 연속 순매수 신호 스캔(장 마감 후 수급 확정 시점)
+# 디듀프(streak 시작일)로 같은 신호 반복 발화를 막으므로 매일 돌려도 도배 없음.
+scheduler_upsert signals-scan \
+  --schedule="0 18 * * 1-5" --time-zone="Asia/Seoul" \
+  --uri="$URL/slack/signals-scan" --http-method=POST \
+  --headers="X-Edge-Token=${EDGE_TOKEN},Content-Type=application/json" \
+  --message-body="{}" \
+  --attempt-deadline=180s \
+  --description="매주 월~금 오후 6시 KST 관심종목 연속 순매수 신호 스캔 → Slack #알림-신호"
 
 # prewarm: 매주 월~금 오전 8:45 KST — 관심종목 시세·수급·공시 캐시 예열(아침 첫 진입 가속)
 # 코드 목록은 CLAUDE.md 관심종목 11개. 사용자가 종목을 바꿔도 미포함분은 온디맨드로 조회됨(예열은 best-effort).
