@@ -4,6 +4,7 @@ import com.haky.edge.ai.AnalysisService
 import com.haky.edge.ai.BacktestService
 import com.haky.edge.ai.ClaudeClient
 import com.haky.edge.ai.ClaudeException
+import com.haky.edge.ai.ClaudeUsageTracker
 import com.haky.edge.ai.ComparisonService
 import com.haky.edge.ai.ValuationBandService
 import com.haky.edge.dart.DartClient
@@ -49,10 +50,12 @@ import com.haky.edge.routes.webSearchTestRoutes
 import com.haky.edge.routes.futuresTestRoutes
 import com.haky.edge.routes.morningBriefRoutes
 import com.haky.edge.routes.eventReminderRoutes
+import com.haky.edge.routes.costSummaryRoutes
 import com.haky.edge.routes.signalRoutes
 import com.haky.edge.routes.prewarmRoutes
 import com.haky.edge.routes.slackCommandRoutes
 import com.haky.edge.routes.slackTestRoutes
+import com.haky.edge.slack.CostSummaryService
 import com.haky.edge.slack.EventReminderService
 import com.haky.edge.slack.MorningBriefService
 import com.haky.edge.slack.OpsAlerter
@@ -113,6 +116,7 @@ fun Application.module() {
     val signalChannel = System.getenv("SLACK_SIGNAL_CHANNEL").orEmpty()
     val aiCommentChannel = System.getenv("SLACK_AI_COMMENT_CHANNEL").orEmpty()
     val eventChannel = System.getenv("SLACK_EVENT_CHANNEL").orEmpty()
+    val deployCostChannel = System.getenv("SLACK_DEPLOY_COST_CHANNEL").orEmpty()
     // 신호 평가 대상 종목 — prewarm과 같은 공통 관심종목(SIGNAL_CODES env, 없으면 CLAUDE.md 11종목 폴백).
     // 사용자별 워치리스트 서버 등록은 후속(S3 메모리) — 그 전까진 공통 목록으로 동작.
     val signalCodes = (System.getenv("SIGNAL_CODES")
@@ -161,9 +165,11 @@ fun Application.module() {
         clientSecret = System.getenv("NAVER_CLIENT_SECRET").orEmpty(),
     )
     // Claude 분석. 모델은 CLAUDE_MODEL 로 덮어쓸 수 있고 기본은 Sonnet 4.6(비용/속도).
+    val usageTracker = ClaudeUsageTracker(System.getenv("DATA_DIR") ?: ".data")
     val claude = ClaudeClient(
         apiKey = System.getenv("ANTHROPIC_API_KEY").orEmpty(),
         model = System.getenv("CLAUDE_MODEL") ?: "claude-sonnet-4-6",
+        usageTracker = usageTracker,
     )
     val dart = DartClient(apiKey = System.getenv("DART_API_KEY").orEmpty())
     val naverTargetPrice = NaverTargetPriceClient()
@@ -183,6 +189,7 @@ fun Application.module() {
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
+    val costSummary = CostSummaryService(slack, deployCostChannel, usageTracker)
     // S3a/b 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가 → #알림-신호 채널. 신호별 디듀프로 도배 방지.
     val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes)
     // S7 양방향 조회: /edge 종목명 슬래시 명령. 서명검증 + AnalysisService 코멘트 요약.
@@ -235,6 +242,7 @@ fun Application.module() {
             slackTestRoutes(slack, opsChannel)
             morningBriefRoutes(morningBrief)
             eventReminderRoutes(eventReminder)
+            costSummaryRoutes(costSummary)
             signalRoutes(signalService)
             slackCommandRoutes(slackVerifier, slackCommand, cloudTasks)
         }

@@ -35,6 +35,7 @@ import kotlinx.serialization.json.put
 class ClaudeClient(
     private val apiKey: String,
     private val model: String = "claude-sonnet-4-6",
+    private val usageTracker: ClaudeUsageTracker? = null,
 ) {
     private val http = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -136,6 +137,13 @@ class ClaudeClient(
 
             val body = wsJson.parseToJsonElement(resp.bodyAsText()).let { it as? JsonObject }
                 ?: throw ClaudeException("Claude web_search 응답이 JSON 객체가 아닙니다")
+            (body["usage"] as? JsonObject)?.let { u ->
+                val inTok  = (u["input_tokens"]               as? JsonPrimitive)?.content?.toIntOrNull() ?: 0
+                val outTok = (u["output_tokens"]              as? JsonPrimitive)?.content?.toIntOrNull() ?: 0
+                val crTok  = (u["cache_read_input_tokens"]    as? JsonPrimitive)?.content?.toIntOrNull() ?: 0
+                val ccTok  = (u["cache_creation_input_tokens"] as? JsonPrimitive)?.content?.toIntOrNull() ?: 0
+                runCatching { usageTracker?.record(inTok, outTok, crTok, ccTok) }
+            }
             val content = (body["content"] as? JsonArray) ?: JsonArray(emptyList())
             val stopReason = (body["stop_reason"] as? JsonPrimitive)?.content
 
@@ -207,6 +215,13 @@ class ClaudeClient(
             throw ClaudeException("Claude API ${resp.status}: ${resp.bodyAsText().take(300)}")
         }
         val body: ClaudeResponse = resp.body()
+        body.usage?.let { u ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    usageTracker?.record(u.inputTokens, u.outputTokens, u.cacheReadInputTokens, u.cacheCreationInputTokens)
+                }
+            }
+        }
         val text = body.content.firstOrNull { it.type == "text" }?.text
             ?: throw ClaudeException("Claude 응답에 text 블록이 없습니다")
         return text to body.stopReason

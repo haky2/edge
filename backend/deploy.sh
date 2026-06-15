@@ -14,6 +14,8 @@ SLACK_SIGNAL_CHANNEL="${SLACK_SIGNAL_CHANNEL:-C0BBC2EMDHN}"
 SLACK_AI_COMMENT_CHANNEL="${SLACK_AI_COMMENT_CHANNEL:-C0BAPKJMDD2}"
 # S5 이벤트 D-day 리마인더 채널 ID (#이벤트). 비면 발송 안 함(no-op).
 SLACK_EVENT_CHANNEL="${SLACK_EVENT_CHANNEL:-C0BADPG4GHZ}"
+# S6 배포 완료·Claude 비용 요약 채널 ID (#ops-배포-비용). 비면 발송 안 함(no-op).
+SLACK_DEPLOY_COST_CHANNEL="${SLACK_DEPLOY_COST_CHANNEL:-C0BAGT05U3X}"
 
 if [ -z "$PROJECT" ]; then
   echo "GCP 프로젝트가 설정되지 않았습니다. 'gcloud config set project <ID>' 또는 GCP_PROJECT 환경변수." >&2
@@ -57,7 +59,7 @@ gcloud run deploy "$SERVICE" \
   --add-volume-mount "volume=app-cache,mount-path=/mnt/cache" \
   --add-volume "name=app-data,type=cloud-storage,bucket=edge-app-data" \
   --add-volume-mount "volume=app-data,mount-path=/mnt/data" \
-  --set-env-vars "KIS_TOKEN_CACHE=/mnt/token/.kis-token.json,CACHE_DIR=/mnt/cache,DATA_DIR=/mnt/data,SLACK_OPS_CHANNEL=C0BA29NTQUF,SLACK_BRIEFING_CHANNEL=C0BABCPKLCB,SLACK_SIGNAL_CHANNEL=$SLACK_SIGNAL_CHANNEL,SLACK_AI_COMMENT_CHANNEL=$SLACK_AI_COMMENT_CHANNEL,SLACK_EVENT_CHANNEL=$SLACK_EVENT_CHANNEL,GCP_PROJECT_ID=$PROJECT,TASKS_LOCATION=$REGION,TASKS_QUEUE=$TASKS_QUEUE" \
+  --set-env-vars "KIS_TOKEN_CACHE=/mnt/token/.kis-token.json,CACHE_DIR=/mnt/cache,DATA_DIR=/mnt/data,SLACK_OPS_CHANNEL=C0BA29NTQUF,SLACK_BRIEFING_CHANNEL=C0BABCPKLCB,SLACK_SIGNAL_CHANNEL=$SLACK_SIGNAL_CHANNEL,SLACK_AI_COMMENT_CHANNEL=$SLACK_AI_COMMENT_CHANNEL,SLACK_EVENT_CHANNEL=$SLACK_EVENT_CHANNEL,SLACK_DEPLOY_COST_CHANNEL=$SLACK_DEPLOY_COST_CHANNEL,GCP_PROJECT_ID=$PROJECT,TASKS_LOCATION=$REGION,TASKS_QUEUE=$TASKS_QUEUE" \
   --set-secrets "KIS_APP_KEY=KIS_APP_KEY:latest,KIS_APP_SECRET=KIS_APP_SECRET:latest,NAVER_CLIENT_ID=NAVER_CLIENT_ID:latest,NAVER_CLIENT_SECRET=NAVER_CLIENT_SECRET:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,DART_API_KEY=DART_API_KEY:latest,ECOS_API_KEY=ECOS_API_KEY:latest,EDGE_API_TOKEN=EDGE_API_TOKEN:latest,SLACK_BOT_TOKEN=SLACK_BOT_TOKEN:latest,SLACK_SIGNING_SECRET=SLACK_SIGNING_SECRET:latest"
 
 URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format='value(status.url)')
@@ -68,6 +70,7 @@ curl -s "$URL/health" && echo
 # Cloud Scheduler 잡 동기화 (없으면 create, 있으면 update)
 echo "→ Cloud Scheduler 잡 동기화..."
 EDGE_TOKEN=$(gcloud secrets versions access latest --secret=EDGE_API_TOKEN --project="$PROJECT")
+SLACK_BOT_TOKEN_VAL=$(gcloud secrets versions access latest --secret=SLACK_BOT_TOKEN --project="$PROJECT" 2>/dev/null || echo "")
 
 scheduler_upsert() {
   local JOB=$1; shift
@@ -144,3 +147,26 @@ scheduler_upsert prewarm \
   --description="매주 월~금 오전 8:45 KST 관심종목 시세·수급·공시 캐시 예열"
 
 echo "→ Scheduler 잡 동기화 완료"
+
+# slack-cost-summary: 매주 월~금 오후 9:00 KST — 당일 Claude 토큰/요청수 비용 요약 발송
+# 0건 날은 CostSummaryService가 조용히 종료. 인스턴스 재시작 후에도 GCS(DATA_DIR) 누적값 유지.
+scheduler_upsert slack-cost-summary \
+  --schedule="0 21 * * 1-5" --time-zone="Asia/Seoul" \
+  --uri="$URL/slack/cost-summary" --http-method=POST \
+  --headers="X-Edge-Token=${EDGE_TOKEN},Content-Type=application/json" \
+  --message-body="{}" \
+  --attempt-deadline=60s \
+  --description="매주 월~금 오후 9시 KST Slack #ops-배포-비용 Claude 일일 사용량 요약"
+
+# 배포 완료 Slack 알림 (#ops-배포-비용)
+REVISION=$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" \
+  --format='value(status.latestReadyRevisionName)' 2>/dev/null || echo "unknown")
+DEPLOY_TIME=$(TZ=Asia/Seoul date "+%m/%d %H:%M KST")
+if [ -n "$SLACK_BOT_TOKEN_VAL" ] && [ -n "$SLACK_DEPLOY_COST_CHANNEL" ]; then
+  curl -s -X POST https://slack.com/api/chat.postMessage \
+    -H "Authorization: Bearer $SLACK_BOT_TOKEN_VAL" \
+    -H "Content-Type: application/json" \
+    -d "{\"channel\":\"${SLACK_DEPLOY_COST_CHANNEL}\",\"text\":\"🚀 *배포 완료* | \`${REVISION}\` | ${DEPLOY_TIME}\"}" \
+    > /dev/null
+  echo "→ Slack 배포 알림 발송 ($REVISION)"
+fi
