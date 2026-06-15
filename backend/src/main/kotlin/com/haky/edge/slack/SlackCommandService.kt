@@ -46,33 +46,25 @@ class SlackCommandService(
         return runCatching { master.search(text, limit = 1) }.getOrNull()?.firstOrNull()?.code
     }
 
-    /** Analysis → Slack mrkdwn. **굵게(이중별표)**를 Slack용 *단일별표*로 변환하고 길이를 자른다. */
+    /** Analysis → Slack mrkdwn. **굵게(이중별표)**를 Slack용 *단일별표*로 변환. 잘림 없이 전체 출력. */
     private fun format(a: com.haky.edge.ai.Analysis): String = buildString {
         val priceStr = a.generatedPrice?.let { " · %,d원".format(it.toLong()) } ?: ""
         appendLine("*${a.name}* (${a.code})$priceStr")
         appendLine()
-        // 핵심 요약이 있으면 맨 위에 강조 표시 → truncate돼도 결론은 항상 보임
         if (!a.summary.isNullOrBlank()) {
             appendLine("*📌 핵심 요약*")
-            appendLine(a.summary)
+            appendLine(toMrkdwn(a.summary))
             appendLine()
             appendLine("───────────────")
             appendLine()
         }
-        val body = a.comment
-            .replace("**", "*")              // mrkdwn 굵게: ** → *
-            .replace(Regex("(?m)^#+\\s*"), "") // 마크다운 헤더 기호 제거
-            .trim()
-        if (body.length > MAX_BODY) {
-            append(body.take(MAX_BODY).trimEnd())
-            append("…\n\n_(전체 코멘트는 앱에서 보세요)_")
-        } else {
-            append(body)
-        }
+        append(toMrkdwn(a.comment))
         append("\n\n_${a.generatedAt.ifBlank { a.date }} 기준 · 참고용_")
     }
 
-    companion object {
-        private const val MAX_BODY = 1600
-    }
+    /** 마크다운 → Slack mrkdwn: **bold** → *bold*, # 헤더 제거. */
+    private fun toMrkdwn(text: String): String = text
+        .replace("**", "*")
+        .replace(Regex("(?m)^#+\\s*"), "")
+        .trim()
 }
