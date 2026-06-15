@@ -11,7 +11,7 @@ SERVICE="edge-backend"
 # SLACK_SIGNAL_CHANNEL 환경변수로 전달. 비면 SignalService가 no-op(스캔은 돌되 발송 안 함).
 SLACK_SIGNAL_CHANNEL="${SLACK_SIGNAL_CHANNEL:-C0BBC2EMDHN}"
 # S4 AI 코멘트 아카이브 채널 ID (#ai코멘트). 비면 발송 안 함(no-op).
-SLACK_AI_COMMENT_CHANNEL="${SLACK_AI_COMMENT_CHANNEL:-}"
+SLACK_AI_COMMENT_CHANNEL="${SLACK_AI_COMMENT_CHANNEL:-C0BAPKJMDD2}"
 
 if [ -z "$PROJECT" ]; then
   echo "GCP 프로젝트가 설정되지 않았습니다. 'gcloud config set project <ID>' 또는 GCP_PROJECT 환경변수." >&2
