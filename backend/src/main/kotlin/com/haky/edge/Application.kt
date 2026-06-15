@@ -48,10 +48,12 @@ import com.haky.edge.routes.valuationBandRoutes
 import com.haky.edge.routes.webSearchTestRoutes
 import com.haky.edge.routes.futuresTestRoutes
 import com.haky.edge.routes.morningBriefRoutes
+import com.haky.edge.routes.eventReminderRoutes
 import com.haky.edge.routes.signalRoutes
 import com.haky.edge.routes.prewarmRoutes
 import com.haky.edge.routes.slackCommandRoutes
 import com.haky.edge.routes.slackTestRoutes
+import com.haky.edge.slack.EventReminderService
 import com.haky.edge.slack.MorningBriefService
 import com.haky.edge.slack.OpsAlerter
 import com.haky.edge.slack.SlackClient
@@ -110,6 +112,7 @@ fun Application.module() {
     val briefingChannel = System.getenv("SLACK_BRIEFING_CHANNEL").orEmpty()
     val signalChannel = System.getenv("SLACK_SIGNAL_CHANNEL").orEmpty()
     val aiCommentChannel = System.getenv("SLACK_AI_COMMENT_CHANNEL").orEmpty()
+    val eventChannel = System.getenv("SLACK_EVENT_CHANNEL").orEmpty()
     // 신호 평가 대상 종목 — prewarm과 같은 공통 관심종목(SIGNAL_CODES env, 없으면 CLAUDE.md 11종목 폴백).
     // 사용자별 워치리스트 서버 등록은 후속(S3 메모리) — 그 전까진 공통 목록으로 동작.
     val signalCodes = (System.getenv("SIGNAL_CODES")
@@ -179,6 +182,7 @@ fun Application.module() {
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, moodLog, eventSync)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
+    val eventReminder = EventReminderService(slack, eventChannel, eventSync)
     // S3a/b 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가 → #알림-신호 채널. 신호별 디듀프로 도배 방지.
     val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes)
     // S7 양방향 조회: /edge 종목명 슬래시 명령. 서명검증 + AnalysisService 코멘트 요약.
@@ -230,6 +234,7 @@ fun Application.module() {
             prewarmRoutes(kis, dart)
             slackTestRoutes(slack, opsChannel)
             morningBriefRoutes(morningBrief)
+            eventReminderRoutes(eventReminder)
             signalRoutes(signalService)
             slackCommandRoutes(slackVerifier, slackCommand, cloudTasks)
         }

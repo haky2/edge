@@ -12,6 +12,8 @@ SERVICE="edge-backend"
 SLACK_SIGNAL_CHANNEL="${SLACK_SIGNAL_CHANNEL:-C0BBC2EMDHN}"
 # S4 AI 코멘트 아카이브 채널 ID (#ai코멘트). 비면 발송 안 함(no-op).
 SLACK_AI_COMMENT_CHANNEL="${SLACK_AI_COMMENT_CHANNEL:-C0BAPKJMDD2}"
+# S5 이벤트 D-day 리마인더 채널 ID (#이벤트). 비면 발송 안 함(no-op).
+SLACK_EVENT_CHANNEL="${SLACK_EVENT_CHANNEL:-C0BADPG4GHZ}"
 
 if [ -z "$PROJECT" ]; then
   echo "GCP 프로젝트가 설정되지 않았습니다. 'gcloud config set project <ID>' 또는 GCP_PROJECT 환경변수." >&2
@@ -55,7 +57,7 @@ gcloud run deploy "$SERVICE" \
   --add-volume-mount "volume=app-cache,mount-path=/mnt/cache" \
   --add-volume "name=app-data,type=cloud-storage,bucket=edge-app-data" \
   --add-volume-mount "volume=app-data,mount-path=/mnt/data" \
-  --set-env-vars "KIS_TOKEN_CACHE=/mnt/token/.kis-token.json,CACHE_DIR=/mnt/cache,DATA_DIR=/mnt/data,SLACK_OPS_CHANNEL=C0BA29NTQUF,SLACK_BRIEFING_CHANNEL=C0BABCPKLCB,SLACK_SIGNAL_CHANNEL=$SLACK_SIGNAL_CHANNEL,SLACK_AI_COMMENT_CHANNEL=$SLACK_AI_COMMENT_CHANNEL,GCP_PROJECT_ID=$PROJECT,TASKS_LOCATION=$REGION,TASKS_QUEUE=$TASKS_QUEUE" \
+  --set-env-vars "KIS_TOKEN_CACHE=/mnt/token/.kis-token.json,CACHE_DIR=/mnt/cache,DATA_DIR=/mnt/data,SLACK_OPS_CHANNEL=C0BA29NTQUF,SLACK_BRIEFING_CHANNEL=C0BABCPKLCB,SLACK_SIGNAL_CHANNEL=$SLACK_SIGNAL_CHANNEL,SLACK_AI_COMMENT_CHANNEL=$SLACK_AI_COMMENT_CHANNEL,SLACK_EVENT_CHANNEL=$SLACK_EVENT_CHANNEL,GCP_PROJECT_ID=$PROJECT,TASKS_LOCATION=$REGION,TASKS_QUEUE=$TASKS_QUEUE" \
   --set-secrets "KIS_APP_KEY=KIS_APP_KEY:latest,KIS_APP_SECRET=KIS_APP_SECRET:latest,NAVER_CLIENT_ID=NAVER_CLIENT_ID:latest,NAVER_CLIENT_SECRET=NAVER_CLIENT_SECRET:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,DART_API_KEY=DART_API_KEY:latest,ECOS_API_KEY=ECOS_API_KEY:latest,EDGE_API_TOKEN=EDGE_API_TOKEN:latest,SLACK_BOT_TOKEN=SLACK_BOT_TOKEN:latest,SLACK_SIGNING_SECRET=SLACK_SIGNING_SECRET:latest"
 
 URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format='value(status.url)')
@@ -120,6 +122,16 @@ scheduler_upsert signals-scan \
   --message-body="{}" \
   --attempt-deadline=180s \
   --description="매주 월~금 오후 6시 KST 관심종목 연속 순매수 신호 스캔 → Slack #알림-신호"
+
+# slack-event-reminder: 매주 월~금 오전 8:48 KST — D-0·D-1 임박 이벤트만 #이벤트 채널에 발송
+# 이벤트가 없는 날은 조용히 종료(빈 메시지 없음). Claude 호출 0, 기존 events 캐시만 읽음.
+scheduler_upsert slack-event-reminder \
+  --schedule="48 8 * * 1-5" --time-zone="Asia/Seoul" \
+  --uri="$URL/slack/event-reminder" --http-method=POST \
+  --headers="X-Edge-Token=${EDGE_TOKEN},Content-Type=application/json" \
+  --message-body="{}" \
+  --attempt-deadline=60s \
+  --description="매주 월~금 오전 8:48 KST Slack #이벤트 D-day 리마인더 발송"
 
 # prewarm: 매주 월~금 오전 8:45 KST — 관심종목 시세·수급·공시 캐시 예열(아침 첫 진입 가속)
 # 코드 목록은 CLAUDE.md 관심종목 11개. 사용자가 종목을 바꿔도 미포함분은 온디맨드로 조회됨(예열은 best-effort).
