@@ -18,6 +18,9 @@ SLACK_EVENT_CHANNEL="${SLACK_EVENT_CHANNEL:-C0BADPG4GHZ}"
 SLACK_DEPLOY_CHANNEL="${SLACK_DEPLOY_CHANNEL:-C0BAGT05U3X}"
 # S6-cost Claude 비용 요약 채널 ID (비공개, #비용). 비면 발송 안 함(no-op).
 SLACK_COST_CHANNEL="${SLACK_COST_CHANNEL:-C0BAKAAPYDU}"
+# 배포 알림 업데이트 내역. 줄바꿈으로 구분하면 각 줄이 불릿으로 표시됨.
+# 비면 "내부 개선" 자동. 예: DEPLOY_NOTES="종목 비교 화면 추가\n차트 개선" bash deploy.sh
+DEPLOY_NOTES="${DEPLOY_NOTES:-}"
 
 if [ -z "$PROJECT" ]; then
   echo "GCP 프로젝트가 설정되지 않았습니다. 'gcloud config set project <ID>' 또는 GCP_PROJECT 환경변수." >&2
@@ -160,22 +163,21 @@ scheduler_upsert slack-cost-summary \
   --attempt-deadline=60s \
   --description="매주 월~금 오후 9시 KST Slack #비용(비공개) Claude 일일 사용량 요약"
 
-# 배포 완료 Slack 알림 (#ops-배포, 공개 채널). 최근 커밋 3줄 요약 포함.
-REVISION=$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" \
-  --format='value(status.latestReadyRevisionName)' 2>/dev/null || echo "unknown")
+# 배포 완료 Slack 알림 (#ops-배포, 공개 채널).
 DEPLOY_TIME=$(TZ=Asia/Seoul date "+%m/%d %H:%M KST")
-# 최근 커밋 3줄 (hash 7자 + subject). JSON 이스케이프: 큰따옴표·역슬래시만 처리.
-COMMIT_LOG=$(git -C "$(dirname "$0")" log --oneline -3 --no-walk=unsorted HEAD 2>/dev/null \
-  | cut -c1-80 | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{print "• " $0}' | tr '\n' '\n' || echo "")
-DEPLOY_TEXT="🚀 *배포 완료* | \`${REVISION}\` | ${DEPLOY_TIME}"
-if [ -n "$COMMIT_LOG" ]; then
-  DEPLOY_TEXT="${DEPLOY_TEXT}\n${COMMIT_LOG}"
+# DEPLOY_NOTES 줄바꿈 → 불릿 리스트. 비면 "내부 개선" 기본값.
+if [ -n "$DEPLOY_NOTES" ]; then
+  BULLETS=$(printf '%s' "$DEPLOY_NOTES" | sed 's/^/• /')
+else
+  BULLETS="• 내부 개선"
 fi
+DEPLOY_TEXT="🚀 *새 업데이트* · ${DEPLOY_TIME}\n${BULLETS}"
 if [ -n "$SLACK_BOT_TOKEN_VAL" ] && [ -n "$SLACK_DEPLOY_CHANNEL" ]; then
+  DEPLOY_TEXT_JSON=$(printf '%s' "$DEPLOY_TEXT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
   curl -s -X POST https://slack.com/api/chat.postMessage \
     -H "Authorization: Bearer $SLACK_BOT_TOKEN_VAL" \
     -H "Content-Type: application/json" \
-    -d "{\"channel\":\"${SLACK_DEPLOY_CHANNEL}\",\"text\":\"${DEPLOY_TEXT}\"}" \
+    -d "{\"channel\":\"${SLACK_DEPLOY_CHANNEL}\",\"text\":${DEPLOY_TEXT_JSON}}" \
     > /dev/null
-  echo "→ Slack 배포 알림 발송 ($REVISION)"
+  echo "→ Slack 배포 알림 발송"
 fi
