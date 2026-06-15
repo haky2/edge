@@ -178,8 +178,8 @@ fun Application.module() {
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, moodLog, eventSync)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
-    // S3a 신호 알림: 관심종목 연속 순매수 → #알림-신호 채널. 디듀프(streak 시작일)로 도배 방지.
-    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, signalChannel, signalCodes)
+    // S3a/b 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가 → #알림-신호 채널. 신호별 디듀프로 도배 방지.
+    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes)
     // S7 양방향 조회: /edge 종목명 슬래시 명령. 서명검증 + AnalysisService 코멘트 요약.
     val slackVerifier = SlackSignatureVerifier(System.getenv("SLACK_SIGNING_SECRET").orEmpty())
     val slackCommand = SlackCommandService(analysis, master, slack)
