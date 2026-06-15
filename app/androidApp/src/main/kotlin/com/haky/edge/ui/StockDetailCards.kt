@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -724,6 +725,27 @@ internal fun AICommentCard(
         }
 
         if (analysis != null) {
+            // 핵심 요약 — 풀 코멘트 위 강조 박스(보라). summary 없으면(옛 캐시) 건너뜀.
+            analysis.summary?.takeIf { it.isNotBlank() }?.let { summary ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(PurpleAccent.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Filled.PushPin, contentDescription = null, modifier = Modifier.size(14.dp), tint = PurpleAccent)
+                        Text("핵심 요약", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = PurpleAccent)
+                    }
+                    Text(
+                        parseMarkdownBold(summary.trim()),
+                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+
             val sections = remember(analysis.comment) { parseCommentSections(analysis.comment) }
             val collapsible = sections.size > 2
             var expanded by remember(analysis.comment) { mutableStateOf(false) }

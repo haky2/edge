@@ -767,6 +767,27 @@ struct StockDetailView: View {
             .padding(.top, 8)
 
             if let a = analysis {
+                // 핵심 요약 — 풀 코멘트 위에 강조 박스(보라). summary 없으면(옛 캐시) 건너뜀.
+                if let summary = a.summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "pin.fill").font(.caption2)
+                            Text("핵심 요약").font(.caption.weight(.bold))
+                        }
+                        .foregroundColor(.purple)
+                        Text(markdown(summary))
+                            .font(.callout)
+                            .lineSpacing(5)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.purple.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .padding(.bottom, 4)
+                }
+
                 let sections = parseCommentSections(a.comment)
                 let collapsible = sections.count > 2
                 let visible = (collapsible && !commentExpanded) ? Array(sections.prefix(2)) : sections
