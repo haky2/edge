@@ -192,9 +192,9 @@ fun Application.module() {
     val costSummary = CostSummaryService(slack, deployCostChannel, usageTracker)
     // S3a/b 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가 → #알림-신호 채널. 신호별 디듀프로 도배 방지.
     val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes)
-    // S7 양방향 조회: /edge 종목명 슬래시 명령. 서명검증 + AnalysisService 코멘트 요약.
+    // S7·S8 슬래시 명령 + 라운지 명령어. 서명검증 + 멀티 커맨드 라우팅.
     val slackVerifier = SlackSignatureVerifier(System.getenv("SLACK_SIGNING_SECRET").orEmpty())
-    val slackCommand = SlackCommandService(analysis, master, slack)
+    val slackCommand = SlackCommandService(analysis, master, slack, kis, marketMood, eventSync, comparison)
     // Slack 분석은 Cloud Tasks 워커(POST /slack/analyze-task)로 돌려 Cloud Run CPU 스로틀링을 피한다.
     // 큐 미설정(로컬)이면 enabled=false → 라우트가 인프로세스 폴백으로 동작.
     val cloudTasks = CloudTasksClient(

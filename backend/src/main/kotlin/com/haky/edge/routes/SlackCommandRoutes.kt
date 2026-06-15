@@ -14,83 +14,187 @@ import io.ktor.server.routing.post
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
- * Slack 슬래시 명령 수신(S7). POST /slack/command — Slack 앱의 Slash Command Request URL.
+ * Slack 슬래시 명령 + 인터랙션 라우트(S7·S8).
  *
- * 인증: Slack 서명검증(SlackSignatureVerifier). Security.kt 토큰 게이트에서 이 경로는 제외됨
- *       (Slack은 EDGE_API_TOKEN을 못 보내므로 서명으로 대신 인증).
- * 3초 제약: Slack은 3초 내 200을 요구 → 즉시 ack 응답 후 분석은 비동기로 돌려 response_url에 결과 발송.
+ * POST /slack/command     — 슬래시 명령 수신 (Slack Slash Command Request URL)
+ * POST /slack/analyze-task — Cloud Tasks 워커: 명령 처리 (X-Edge-Token 인증)
+ * POST /slack/interaction  — Block Kit 버튼 인터랙션 수신 (Slack Interactivity Request URL)
+ * POST /slack/interact-task — Cloud Tasks 워커: 인터랙션 처리 (X-Edge-Token 인증)
  *
- * **비동기 실행 경로(Cloud Run CPU 스로틀링 회피)**: ack 응답을 보내고 나면 Cloud Run은 CPU를 끊어
- * 인프로세스 백그라운드 분석이 외부 API 읽기 도중 잘린다("Not enough data available"). 그래서 배포 환경에선
- * 분석을 Cloud Tasks로 **별도 인바운드 요청**(POST /slack/analyze-task)으로 띄운다 — 그 요청이 처리되는
- * 동안엔 CPU가 할당되므로 끝까지 돈다. 로컬(큐 미설정)은 스로틀링이 없으니 기존처럼 인프로세스로 폴백.
+ * Cloud Run CPU 스로틀링 문제: HTTP 응답 후 CPU를 끊으므로, 인프로세스 백그라운드에서
+ * 외부 API(KIS·Claude)를 호출하면 잘린다. 따라서 배포 환경에서는 처리를 Cloud Tasks
+ * 워커로 위임한다(인바운드 요청이라 처리 내내 CPU가 할당됨). 로컬(큐 미설정)은 인프로세스 폴백.
  */
 fun Route.slackCommandRoutes(
     verifier: SlackSignatureVerifier,
     commandService: SlackCommandService,
     tasks: CloudTasksClient,
 ) {
+    // ── 슬래시 명령 ──────────────────────────────────────────────────────────
+
     post("/slack/command") {
-        // 서명검증은 파싱 전 **원문 본문**으로 해야 한다(HMAC은 바이트 단위).
         val rawBody = call.receiveText()
         val ts = call.request.headers["X-Slack-Request-Timestamp"]
         val sig = call.request.headers["X-Slack-Signature"]
         if (!verifier.verify(ts, sig, rawBody)) {
-            call.respond(HttpStatusCode.Unauthorized, "invalid signature")
+            call.respondText("", status = HttpStatusCode.Unauthorized)
             return@post
         }
 
         val params = parseQueryString(rawBody)
         val text = params["text"].orEmpty()
         val responseUrl = params["response_url"].orEmpty()
+        val userId = params["user_id"].orEmpty()
+        val userName = params["user_name"].orEmpty()
 
-        // 배포: Cloud Tasks로 워커 요청을 띄운다(enqueue는 빠른 호출이라 3초 ack 안에 끝남).
-        // 로컬/예외: 큐 미설정이거나 enqueue 실패 → 인프로세스 폴백.
-        val edgeToken = System.getenv("EDGE_API_TOKEN").orEmpty()
-        val enqueued = if (tasks.enabled && edgeToken.isNotEmpty()) {
-            val base = workerBaseUrl(call)
-            val payload = buildJsonObject {
-                put("text", text)
-                put("response_url", responseUrl)
-            }.toString()
-            runCatching {
-                tasks.enqueue(
-                    url = "$base/slack/analyze-task",
-                    bodyJson = payload,
-                    headers = mapOf("X-Edge-Token" to edgeToken, "Content-Type" to "application/json"),
-                )
-            }.onFailure { System.err.println("[SlackCommand] enqueue 실패 → 인프로세스 폴백: ${it.message}") }
-                .isSuccess
-        } else false
-
+        val enqueued = enqueueCommandTask(tasks, call, text, responseUrl, userId, userName)
         if (!enqueued) {
-            call.application.launch { commandService.process(text, responseUrl) }
+            call.application.launch { commandService.process(text, responseUrl, userId, userName) }
         }
 
-        val label = text.trim().ifBlank { "종목" }
-        call.respondText("🔍 ‘$label’ 분석 가져오는 중… (몇 초 걸려요)")
+        val label = when (text.trim().split(" ").firstOrNull()) {
+            "시황" -> "시황"; "이벤트" -> "이벤트"; "비교" -> "비교"; "신호" -> "신호"
+            else -> text.trim().ifBlank { "조회" }
+        }
+        call.respondText("🔍 *$label* 가져오는 중… (몇 초 걸려요)")
     }
 
-    // Cloud Tasks 워커: 실제 분석은 여기서 동기로 돈다(인바운드 요청이라 처리 내내 CPU 할당됨).
-    // 인증: Security.kt 토큰 게이트가 X-Edge-Token 검사 → Cloud Tasks가 헤더로 보낸다.
-    // process()는 내부에서 예외를 모두 잡고 response_url로 결과/오류를 발송하므로 항상 2xx 반환(재시도 방지).
+    // Cloud Tasks 워커: 슬래시 명령 처리. 인증=X-Edge-Token(Security.kt 토큰 게이트).
     post("/slack/analyze-task") {
         val obj = runCatching { Json.parseToJsonElement(call.receiveText()).jsonObject }.getOrNull()
         val text = obj?.get("text")?.jsonPrimitive?.content.orEmpty()
         val responseUrl = obj?.get("response_url")?.jsonPrimitive?.content.orEmpty()
-        commandService.process(text, responseUrl)
+        val userId = obj?.get("user_id")?.jsonPrimitive?.content.orEmpty()
+        val userName = obj?.get("user_name")?.jsonPrimitive?.content.orEmpty()
+        commandService.process(text, responseUrl, userId, userName)
+        call.respondText("OK")
+    }
+
+    // ── 인터랙션 (Block Kit 버튼 클릭) ──────────────────────────────────────
+
+    post("/slack/interaction") {
+        val rawBody = call.receiveText()
+        val ts = call.request.headers["X-Slack-Request-Timestamp"]
+        val sig = call.request.headers["X-Slack-Signature"]
+        if (!verifier.verify(ts, sig, rawBody)) {
+            call.respondText("", status = HttpStatusCode.Unauthorized)
+            return@post
+        }
+
+        // 인터랙션 페이로드는 application/x-www-form-urlencoded, payload 필드에 JSON.
+        val payloadJson = parseQueryString(rawBody)["payload"].orEmpty()
+        if (payloadJson.isBlank()) {
+            call.respondText("")
+            return@post
+        }
+
+        val payload = runCatching { Json.parseToJsonElement(payloadJson).jsonObject }.getOrNull() ?: run {
+            call.respondText("")
+            return@post
+        }
+
+        if (payload["type"]?.jsonPrimitive?.content != "block_actions") {
+            call.respondText("")
+            return@post
+        }
+
+        val action = payload["actions"]?.jsonArray?.getOrNull(0)?.jsonObject
+        val actionId = action?.get("action_id")?.jsonPrimitive?.content.orEmpty()
+        val value = action?.get("value")?.jsonPrimitive?.content.orEmpty()
+        val responseUrl = payload["response_url"]?.jsonPrimitive?.content.orEmpty()
+        val user = payload["user"]?.jsonObject
+        val userId = user?.get("id")?.jsonPrimitive?.content.orEmpty()
+        val userName = user?.get("name")?.jsonPrimitive?.content.orEmpty()
+
+        val enqueued = enqueueInteractTask(tasks, call, actionId, value, responseUrl, userId, userName)
+        if (!enqueued) {
+            call.application.launch { commandService.handleInteraction(userId, userName, actionId, value, responseUrl) }
+        }
+
+        // 빈 200 = 기존 ephemeral 메시지 그대로 유지(Slack 기본 동작).
+        call.respondText("")
+    }
+
+    // Cloud Tasks 워커: 인터랙션 처리. 인증=X-Edge-Token.
+    post("/slack/interact-task") {
+        val obj = runCatching { Json.parseToJsonElement(call.receiveText()).jsonObject }.getOrNull()
+        val actionId = obj?.get("action_id")?.jsonPrimitive?.content.orEmpty()
+        val value = obj?.get("value")?.jsonPrimitive?.content.orEmpty()
+        val responseUrl = obj?.get("response_url")?.jsonPrimitive?.content.orEmpty()
+        val userId = obj?.get("user_id")?.jsonPrimitive?.content.orEmpty()
+        val userName = obj?.get("user_name")?.jsonPrimitive?.content.orEmpty()
+        commandService.handleInteraction(userId, userName, actionId, value, responseUrl)
         call.respondText("OK")
     }
 }
 
+// ── 내부 헬퍼 ──────────────────────────────────────────────────────────────────
+
+private suspend fun enqueueCommandTask(
+    tasks: CloudTasksClient,
+    call: io.ktor.server.application.ApplicationCall,
+    text: String,
+    responseUrl: String,
+    userId: String,
+    userName: String,
+): Boolean {
+    val edgeToken = System.getenv("EDGE_API_TOKEN").orEmpty()
+    if (!tasks.enabled || edgeToken.isEmpty()) return false
+    val base = workerBaseUrl(call)
+    val payload = buildJsonObject {
+        put("text", text)
+        put("response_url", responseUrl)
+        put("user_id", userId)
+        put("user_name", userName)
+    }.toString()
+    return runCatching {
+        tasks.enqueue(
+            url = "$base/slack/analyze-task",
+            bodyJson = payload,
+            headers = mapOf("X-Edge-Token" to edgeToken, "Content-Type" to "application/json"),
+        )
+    }.onFailure { System.err.println("[SlackCommand] enqueue 실패 → 인프로세스 폴백: ${it.message}") }
+        .isSuccess
+}
+
+private suspend fun enqueueInteractTask(
+    tasks: CloudTasksClient,
+    call: io.ktor.server.application.ApplicationCall,
+    actionId: String,
+    value: String,
+    responseUrl: String,
+    userId: String,
+    userName: String,
+): Boolean {
+    val edgeToken = System.getenv("EDGE_API_TOKEN").orEmpty()
+    if (!tasks.enabled || edgeToken.isEmpty()) return false
+    val base = workerBaseUrl(call)
+    val payload = buildJsonObject {
+        put("action_id", actionId)
+        put("value", value)
+        put("response_url", responseUrl)
+        put("user_id", userId)
+        put("user_name", userName)
+    }.toString()
+    return runCatching {
+        tasks.enqueue(
+            url = "$base/slack/interact-task",
+            bodyJson = payload,
+            headers = mapOf("X-Edge-Token" to edgeToken, "Content-Type" to "application/json"),
+        )
+    }.onFailure { System.err.println("[SlackInteraction] enqueue 실패 → 인프로세스 폴백: ${it.message}") }
+        .isSuccess
+}
+
 /**
  * Cloud Tasks가 다시 호출할 워커의 공개 베이스 URL. Cloud Run은 원본 Host 헤더를 보존하므로
- * 요청이 들어온 도메인(run.app 또는 커스텀)을 그대로 쓴다. 환경변수 PUBLIC_BASE_URL이 있으면 우선.
+ * 요청이 들어온 도메인을 그대로 쓴다. 환경변수 PUBLIC_BASE_URL이 있으면 우선.
  */
 private fun workerBaseUrl(call: io.ktor.server.application.ApplicationCall): String {
     System.getenv("PUBLIC_BASE_URL")?.takeIf { it.isNotBlank() }?.let { return it.trimEnd('/') }
@@ -99,8 +203,4 @@ private fun workerBaseUrl(call: io.ktor.server.application.ApplicationCall): Str
         ?: error("Host 헤더 없음 — PUBLIC_BASE_URL 환경변수로 워커 URL을 지정하세요")
     val proto = call.request.headers["X-Forwarded-Proto"] ?: "https"
     return "$proto://$host"
-}
-
-private suspend fun io.ktor.server.application.ApplicationCall.respond(status: HttpStatusCode, text: String) {
-    respondText(text, status = status)
 }
