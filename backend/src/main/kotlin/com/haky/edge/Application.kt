@@ -109,6 +109,7 @@ fun Application.module() {
     val opsChannel = System.getenv("SLACK_OPS_CHANNEL").orEmpty()
     val briefingChannel = System.getenv("SLACK_BRIEFING_CHANNEL").orEmpty()
     val signalChannel = System.getenv("SLACK_SIGNAL_CHANNEL").orEmpty()
+    val aiCommentChannel = System.getenv("SLACK_AI_COMMENT_CHANNEL").orEmpty()
     // 신호 평가 대상 종목 — prewarm과 같은 공통 관심종목(SIGNAL_CODES env, 없으면 CLAUDE.md 11종목 폴백).
     // 사용자별 워치리스트 서버 등록은 후속(S3 메모리) — 그 전까진 공통 목록으로 동작.
     val signalCodes = (System.getenv("SIGNAL_CODES")
@@ -172,7 +173,7 @@ fun Application.module() {
     val krxShortSelling = KrxShortSellingClient()
     val valuationBand = ValuationBandService(kis, dart)
     val backtest = BacktestService(kis)
-    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling, valuationBand, backtest, eventSync)
+    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling, valuationBand, backtest, eventSync, slack, aiCommentChannel, this)
     val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand)
     val moodLog = MarketMoodLogService()
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, moodLog, eventSync)

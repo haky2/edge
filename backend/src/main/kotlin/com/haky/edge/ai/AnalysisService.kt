@@ -15,8 +15,11 @@ import com.haky.edge.master.StockMaster
 import com.haky.edge.news.NaverNewsClient
 import com.haky.edge.news.NaverTargetPriceClient
 import com.haky.edge.news.NewsItem
+import com.haky.edge.slack.SlackClient
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import java.time.DayOfWeek
 import java.time.ZoneId
@@ -81,6 +84,9 @@ class AnalysisService(
     private val valuationBandSvc: ValuationBandService,
     private val backtestSvc: BacktestService,
     private val eventSync: com.haky.edge.macro.EventSyncService,
+    private val slack: SlackClient = SlackClient(""),
+    private val aiCommentChannel: String = "",
+    private val notifyScope: CoroutineScope? = null,
 ) {
     private data class Cached(val analysis: Analysis)
     private val cache = ConcurrentHashMap<String, Cached>()
@@ -93,12 +99,14 @@ class AnalysisService(
         // 사용자별 분리 — 공격 모드의 평단 기반 매매 판단이 다른 사용자에게 새지 않게.
         // 목표가·손절가도 키에 포함: facts에 반영되는데 캐시 적중으로 옛 코멘트가 나오는 불일치 방지.
         val key = buildKey(code, today, mode, position)
+        var isRefresh = false
         if (!force) {
             val cached = cache[key]?.analysis ?: fileCache.get(key)?.also { cache[key] = Cached(it) }
             if (cached != null) {
                 if (!shouldAutoRefresh(code, cached)) return cached
                 // 가격 3% 이상 괴리 + 쿨다운 경과 → stale. 메모리 캐시 제거하고 재생성으로 진행.
                 cache.remove(key)
+                isRefresh = true
                 println("[StaleDetect] $code: generatedPrice=${cached.generatedPrice} → stale, 재생성")
             }
         }
@@ -167,6 +175,10 @@ class AnalysisService(
             val analysis = Analysis(code = code, name = name, date = today, comment = comment, summary = summary, generatedAt = now, generatedPrice = quote.price.toDouble(), factsRichness = richness, numberWarning = false)
             cache[key] = Cached(analysis)
             fileCache.put(key, analysis)
+            // S4: 공개 분석(포지션 없음)만 #ai코멘트 채널 아카이브. 포지션 포함은 개인정보라 skip.
+            if (position == null && aiCommentChannel.isNotBlank() && notifyScope != null) {
+                notifyScope.launch { slack.postMessage(aiCommentChannel, formatAiCommentMessage(analysis, mode, isRefresh)) }
+            }
             analysis
         }
     }
@@ -597,6 +609,16 @@ class AnalysisService(
     companion object {
         private const val STALE_PRICE_THRESHOLD = 0.03  // 3% 가격 괴리 시 stale
         private const val COOLDOWN_MINUTES = 30L         // 재생성 최소 간격(분)
+
+        /** S4: #ai코멘트 채널 발송용 메시지 포맷. */
+        internal fun formatAiCommentMessage(analysis: Analysis, mode: AnalysisMode, isRefresh: Boolean): String {
+            val modeLabel = if (mode == AnalysisMode.AGGRESSIVE) "⚔️ 공격 모드" else "🛡️ 방어 모드"
+            val refreshTag = if (isRefresh) " _(가격변동 재생성)_" else ""
+            val header = "*${analysis.name}* (${analysis.code}) | $modeLabel | ${analysis.generatedAt}$refreshTag"
+            val body = analysis.summary
+                ?: analysis.comment.lines().take(4).joinToString("\n").take(300)
+            return "$header\n\n📌 $body"
+        }
 
         /** 캐시 키 빌더. 포지션 없으면 전 유저 공유, 있으면 사용자별 분리. */
         internal fun buildKey(code: String, today: String, mode: AnalysisMode, position: Position?): String =

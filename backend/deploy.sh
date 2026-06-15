@@ -9,7 +9,9 @@ REGION="${GCP_REGION:-asia-northeast3}"
 SERVICE="edge-backend"
 # S3a 신호 알림 채널 ID(#알림-신호). 사용자가 채널 생성+봇 초대 후 ID를 여기 채우거나
 # SLACK_SIGNAL_CHANNEL 환경변수로 전달. 비면 SignalService가 no-op(스캔은 돌되 발송 안 함).
-SLACK_SIGNAL_CHANNEL="${SLACK_SIGNAL_CHANNEL:-}"
+SLACK_SIGNAL_CHANNEL="${SLACK_SIGNAL_CHANNEL:-C0BBC2EMDHN}"
+# S4 AI 코멘트 아카이브 채널 ID (#ai코멘트). 비면 발송 안 함(no-op).
+SLACK_AI_COMMENT_CHANNEL="${SLACK_AI_COMMENT_CHANNEL:-}"
 
 if [ -z "$PROJECT" ]; then
   echo "GCP 프로젝트가 설정되지 않았습니다. 'gcloud config set project <ID>' 또는 GCP_PROJECT 환경변수." >&2
@@ -53,7 +55,7 @@ gcloud run deploy "$SERVICE" \
   --add-volume-mount "volume=app-cache,mount-path=/mnt/cache" \
   --add-volume "name=app-data,type=cloud-storage,bucket=edge-app-data" \
   --add-volume-mount "volume=app-data,mount-path=/mnt/data" \
-  --set-env-vars "KIS_TOKEN_CACHE=/mnt/token/.kis-token.json,CACHE_DIR=/mnt/cache,DATA_DIR=/mnt/data,SLACK_OPS_CHANNEL=C0BA29NTQUF,SLACK_BRIEFING_CHANNEL=C0BABCPKLCB,SLACK_SIGNAL_CHANNEL=$SLACK_SIGNAL_CHANNEL,GCP_PROJECT_ID=$PROJECT,TASKS_LOCATION=$REGION,TASKS_QUEUE=$TASKS_QUEUE" \
+  --set-env-vars "KIS_TOKEN_CACHE=/mnt/token/.kis-token.json,CACHE_DIR=/mnt/cache,DATA_DIR=/mnt/data,SLACK_OPS_CHANNEL=C0BA29NTQUF,SLACK_BRIEFING_CHANNEL=C0BABCPKLCB,SLACK_SIGNAL_CHANNEL=$SLACK_SIGNAL_CHANNEL,SLACK_AI_COMMENT_CHANNEL=$SLACK_AI_COMMENT_CHANNEL,GCP_PROJECT_ID=$PROJECT,TASKS_LOCATION=$REGION,TASKS_QUEUE=$TASKS_QUEUE" \
   --set-secrets "KIS_APP_KEY=KIS_APP_KEY:latest,KIS_APP_SECRET=KIS_APP_SECRET:latest,NAVER_CLIENT_ID=NAVER_CLIENT_ID:latest,NAVER_CLIENT_SECRET=NAVER_CLIENT_SECRET:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,DART_API_KEY=DART_API_KEY:latest,ECOS_API_KEY=ECOS_API_KEY:latest,EDGE_API_TOKEN=EDGE_API_TOKEN:latest,SLACK_BOT_TOKEN=SLACK_BOT_TOKEN:latest,SLACK_SIGNING_SECRET=SLACK_SIGNING_SECRET:latest"
 
 URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format='value(status.url)')
