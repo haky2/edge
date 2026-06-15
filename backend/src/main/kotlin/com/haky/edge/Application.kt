@@ -116,7 +116,8 @@ fun Application.module() {
     val signalChannel = System.getenv("SLACK_SIGNAL_CHANNEL").orEmpty()
     val aiCommentChannel = System.getenv("SLACK_AI_COMMENT_CHANNEL").orEmpty()
     val eventChannel = System.getenv("SLACK_EVENT_CHANNEL").orEmpty()
-    val deployCostChannel = System.getenv("SLACK_DEPLOY_COST_CHANNEL").orEmpty()
+    val deployChannel = System.getenv("SLACK_DEPLOY_CHANNEL").orEmpty()
+    val costChannel = System.getenv("SLACK_COST_CHANNEL").orEmpty()
     // 신호 평가 대상 종목 — prewarm과 같은 공통 관심종목(SIGNAL_CODES env, 없으면 CLAUDE.md 11종목 폴백).
     // 사용자별 워치리스트 서버 등록은 후속(S3 메모리) — 그 전까진 공통 목록으로 동작.
     val signalCodes = (System.getenv("SIGNAL_CODES")
@@ -189,7 +190,7 @@ fun Application.module() {
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
-    val costSummary = CostSummaryService(slack, deployCostChannel, usageTracker)
+    val costSummary = CostSummaryService(slack, costChannel, usageTracker)
     // S3a/b 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가 → #알림-신호 채널. 신호별 디듀프로 도배 방지.
     val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes)
     // S7·S8 슬래시 명령 + 라운지 명령어. 서명검증 + 멀티 커맨드 라우팅.
