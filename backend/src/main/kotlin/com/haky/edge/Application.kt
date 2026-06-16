@@ -25,6 +25,7 @@ import com.haky.edge.macro.YahooMacroClient
 import com.haky.edge.master.StockMaster
 import com.haky.edge.news.NaverNewsClient
 import com.haky.edge.news.NaverTargetPriceClient
+import com.haky.edge.news.TargetPriceLogService
 import com.haky.edge.news.NewsException
 import com.haky.edge.routes.analysisRoutes
 import com.haky.edge.routes.backtestRoutes
@@ -182,6 +183,7 @@ fun Application.module() {
     )
     val dart = DartClient(apiKey = System.getenv("DART_API_KEY").orEmpty())
     val naverTargetPrice = NaverTargetPriceClient()
+    val targetPriceLog = TargetPriceLogService()
     val fearGreed = FearGreedClient()
     val copper = CopperClient()
     val ecos = EcosClient(apiKey = System.getenv("ECOS_API_KEY").orEmpty())
@@ -191,7 +193,7 @@ fun Application.module() {
     val krxShortSelling = KrxShortSellingClient()
     val valuationBand = ValuationBandService(kis, dart)
     val backtest = BacktestService(kis)
-    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling, valuationBand, backtest, eventSync, modelRouter, slack, aiCommentChannel, this)
+    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, targetPriceLog, macroImpact, krxShortSelling, valuationBand, backtest, eventSync, modelRouter, slack, aiCommentChannel, this)
     val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand)
     val moodLog = MarketMoodLogService()
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, modelRouter, moodLog, eventSync)

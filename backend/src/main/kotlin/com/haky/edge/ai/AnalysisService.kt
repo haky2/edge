@@ -15,6 +15,8 @@ import com.haky.edge.master.StockMaster
 import com.haky.edge.news.NaverNewsClient
 import com.haky.edge.news.NaverTargetPriceClient
 import com.haky.edge.news.NewsItem
+import com.haky.edge.news.TargetPriceLogService
+import com.haky.edge.news.TargetPriceTrend
 import com.haky.edge.slack.SlackClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
@@ -79,6 +81,7 @@ class AnalysisService(
     private val claude: ClaudeClient,
     private val dart: DartClient,
     private val naverTargetPrice: NaverTargetPriceClient,
+    private val targetPriceLog: TargetPriceLogService,
     private val macroImpact: MacroImpactService,
     private val krxShortSelling: KrxShortSellingClient,
     private val valuationBandSvc: ValuationBandService,
@@ -138,6 +141,8 @@ class AnalysisService(
             val bars            = barsD.await()
             val financials      = financialsD.await()
             val consensusTarget = consensusD.await()
+            // 오늘 목표가를 스냅샷 기록하고 과거 대비 상향/하향 추세를 산출(스냅샷 부족 시 null).
+            val targetTrend = runCatching { targetPriceLog.recordAndTrend(code, consensusTarget) }.getOrNull()
             val shortSelling    = shortSellingD.await()
             val valuationBand   = valuationBandD.await()
             val backtest        = backtestD.await()
@@ -149,7 +154,7 @@ class AnalysisService(
 
             // 임박 거시 이벤트(향후 2주) — 파일 캐시 읽기라 가벼움. 없으면 null로 건너뜀.
             val eventsText = runCatching { eventSync.upcomingFactsText() }.getOrNull()
-            val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, valuationBand, backtest, flowSensitivity, quarterlyIncome, eventsText, position)
+            val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, sectorChangeRate, shortSelling, valuationBand, backtest, flowSensitivity, quarterlyIncome, eventsText, position)
             // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
             val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
             // 모델 라우팅: force=수동 새로고침→Sonnet, isRefresh=급변 자동 재생성→Opus, 그 외=최초 생성→Opus.
@@ -200,6 +205,7 @@ class AnalysisService(
         flows: List<InvestorFlow>,
         news: List<NewsCluster>,
         consensusTarget: Long?,
+        targetTrend: TargetPriceTrend?,
         sectorChangeRate: Double?,
         shortSelling: ShortSellingSummary?,
         valuationBand: ValuationBand?,
@@ -258,6 +264,15 @@ class AnalysisService(
                 "애널리스트 컨센서스 목표주가: ${"%,d".format(consensusTarget)}원" +
                     " (현재가 대비 ${if (upside >= 0) "+" else ""}${"%.1f".format(upside)}%)"
             )
+            if (targetTrend != null) {
+                // 우리가 누적한 스냅샷 기준. 목표가가 오르는 추세면 밸류 상단권을 시장이 더 높이 본다는 신호.
+                val signed = "${if (targetTrend.changePct >= 0) "+" else ""}${"%.1f".format(targetTrend.changePct)}%"
+                sb.appendLine(
+                    "  └ 컨센서스 목표가 추세: 최근 ${targetTrend.daySpan}일 ${targetTrend.direction} " +
+                        "(${targetTrend.baselineDate} ${"%,d".format(targetTrend.baseline)}원 → 현재 ${"%,d".format(targetTrend.current)}원, " +
+                        "$signed, 스냅샷 ${targetTrend.snapshotCount}개 기준)"
+                )
+            }
         }
         if (q.high52w > q.low52w && q.high52w > 0) {
             val pos = (q.price - q.low52w).toDouble() / (q.high52w - q.low52w) * 100
@@ -695,7 +710,7 @@ class AnalysisService(
             14. 밸류에이션 해석 균형(중요): "역사적 상단권"이나 높은 PER/PBR 백분위를 그 자체로 "비싸다·매수하지 마라"로 단정하지 마라.
                 역사 밴드는 한 가지 축일 뿐이다. 반드시 아래와 함께 저울질해서 판단하라:
                 - 실적 방향: "회사 재무"·분기 실적의 매출·이익이 구조적으로 늘고 있으면, 시장이 더 높은 멀티플을 주는 리레이팅(이익은 그대로인데 주가가 앞서감)이거나, 이익이 점프해 과거 밴드 자체가 무의미해진 경우일 수 있다.
-                - 컨센서스 목표주가: 현재가 대비 상승여력이 크면 역사적 상단이어도 시장은 더 위를 본다는 뜻이다.
+                - 컨센서스 목표주가: 현재가 대비 상승여력이 크면 역사적 상단이어도 시장은 더 위를 본다는 뜻이다. "컨센서스 목표가 추세"(최근 상향/하향)가 있으면 그 방향도 함께 보라 — 목표가가 꾸준히 상향되는 중이면 상단권을 시장이 계속 높여 잡는 강한 신호이고, 하향 추세면 반대로 경계 신호다.
                 - 표본·신뢰도: 밴드에 "신뢰도 낮음/표본 적음" 표시가 있으면 밴드 결론을 약하게 다뤄라.
                 업종을 미리 단정하지 말고(반도체든 조선·방산이든) 위 사실로 판단하라. 반대로 역사적으로 싸 보여도 이익이 꺾이는 중이면 함정일 수 있다는 양방향 경계를 똑같이 적용하라.
         """.trimIndent()
@@ -745,7 +760,7 @@ class AnalysisService(
                 짚고 대응까지 못박아라(예: "D-2 FOMC 전까지 비중을 늘리지 말고 결과를 보고 대응하라"). 날짜·이벤트명은
                 사실대로, 결과 방향은 조건부로. 이 종목·업종과 무관한 일정은 억지로 엮지 말고 건너뛰어라.
             12. 밸류에이션 해석 균형(중요): "역사적 상단권"·높은 PER/PBR 백분위를 그 자체로 "비싸다·매수하지 마라"로 단정하지 마라.
-                역사 밴드는 한 축일 뿐 — 실적 방향(매출·이익이 구조적으로 늘면 리레이팅이거나 이익 점프로 과거 밴드가 무의미), 컨센서스 목표가 상승여력, 밴드 표본·신뢰도를 함께 저울질해 스탠스를 정하라.
+                역사 밴드는 한 축일 뿐 — 실적 방향(매출·이익이 구조적으로 늘면 리레이팅이거나 이익 점프로 과거 밴드가 무의미), 컨센서스 목표가 상승여력·상향/하향 추세, 밴드 표본·신뢰도를 함께 저울질해 스탠스를 정하라.
                 업종을 미리 단정하지 말고(반도체·조선·방산 불문) 사실로 판단하라. 단호한 결론을 내되, 역으로 싸 보여도 이익이 꺾이면 함정일 수 있다는 경계도 적용하라.
         """.trimIndent()
     }
