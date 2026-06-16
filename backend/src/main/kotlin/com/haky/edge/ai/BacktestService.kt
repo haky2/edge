@@ -247,31 +247,35 @@ class BacktestService(
         )
     }
 
-    private fun pearson(xs: List<Double>, ys: List<Double>): Double {
-        val n = xs.size
-        if (n < 2) return 0.0
-        val mx = xs.average()
-        val my = ys.average()
-        val num = xs.indices.sumOf { (xs[it] - mx) * (ys[it] - my) }
-        val dx = sqrt(xs.sumOf { (it - mx).pow(2) })
-        val dy = sqrt(ys.sumOf { (it - my).pow(2) })
-        val denom = dx * dy
-        return if (denom < 1e-10) 0.0 else (num / denom).coerceIn(-1.0, 1.0)
-    }
+    private fun pearson(xs: List<Double>, ys: List<Double>): Double = Companion.pearson(xs, ys)
 
-    private fun corrLabel(r: Double): String {
-        val absR = abs(r)
-        val dir = if (r >= 0) "양의" else "음의"
-        return when {
-            absR < 0.1 -> "거의 무관"
-            absR < 0.3 -> "${dir} 약한 상관"
-            absR < 0.5 -> "${dir} 중간 상관"
-            else -> "${dir} 강한 상관"
-        }
-    }
+    private fun corrLabel(r: Double): String = Companion.corrLabel(r)
 
     companion object {
         // 이 미만이면 통계적으로 신뢰 곤란 → confident=false.
         private const val MIN_SAMPLE = 8
+
+        internal fun pearson(xs: List<Double>, ys: List<Double>): Double {
+            val n = xs.size
+            if (n < 2) return 0.0
+            val mx = xs.average()
+            val my = ys.average()
+            val num = xs.indices.sumOf { (xs[it] - mx) * (ys[it] - my) }
+            val dx = sqrt(xs.sumOf { (it - mx).pow(2) })
+            val dy = sqrt(ys.sumOf { (it - my).pow(2) })
+            val denom = dx * dy
+            return if (denom < 1e-10) 0.0 else (num / denom).coerceIn(-1.0, 1.0)
+        }
+
+        internal fun corrLabel(r: Double): String {
+            val absR = abs(r)
+            val dir = if (r >= 0) "양의" else "음의"
+            return when {
+                absR < 0.1 -> "거의 무관"
+                absR < 0.3 -> "${dir} 약한 상관"
+                absR < 0.5 -> "${dir} 중간 상관"
+                else -> "${dir} 강한 상관"
+            }
+        }
     }
 }
