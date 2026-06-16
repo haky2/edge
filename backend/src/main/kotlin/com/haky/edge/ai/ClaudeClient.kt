@@ -57,7 +57,7 @@ class ClaudeClient(
      * 상한을 넉넉히 둬도 짧은 답은 그대로 짧다. 다만 상한에 걸려(stop_reason=max_tokens) 문장이 잘리면,
      * 직전까지의 응답을 assistant 턴으로 되넣어(prefill) 이어서 쓰게 한다 → 어떤 길이도 중간에 안 잘린다.
      */
-    suspend fun complete(systemPrompt: String, userFacts: String, maxTokens: Int = 1024): String {
+    suspend fun complete(systemPrompt: String, userFacts: String, maxTokens: Int = 1024, modelOverride: String? = null): String {
         if (apiKey.isBlank()) {
             throw ClaudeException("ANTHROPIC_API_KEY 가 설정되지 않았습니다 (.env 확인)")
         }
@@ -74,7 +74,7 @@ class ClaudeClient(
                     ClaudeMessage(role = "assistant", content = full.toString().trimEnd()),
                 )
             }
-            val (text, stopReason) = callOnce(system, messages, maxTokens)
+            val (text, stopReason) = callOnce(system, messages, maxTokens, modelOverride)
             full.append(text)
             if (stopReason != "max_tokens") return full.toString().trim()
         }
@@ -202,8 +202,9 @@ class ClaudeClient(
         system: List<ClaudeSystemBlock>,
         messages: List<ClaudeMessage>,
         maxTokens: Int,
+        modelOverride: String? = null,
     ): Pair<String, String?> {
-        val req = ClaudeRequest(model = model, maxTokens = maxTokens, system = system, messages = messages)
+        val req = ClaudeRequest(model = modelOverride ?: model, maxTokens = maxTokens, system = system, messages = messages)
         val resp = http.post("https://api.anthropic.com/v1/messages") {
             header("x-api-key", apiKey)
             header("anthropic-version", "2023-06-01")

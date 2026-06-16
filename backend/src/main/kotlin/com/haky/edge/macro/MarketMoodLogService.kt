@@ -7,6 +7,8 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
 
 @Serializable
 data class MoodLogEntry(
@@ -35,6 +37,8 @@ class MarketMoodLogService {
     private val logFile = File(dataDir, "market_mood_log.json")
     private val json = Json { ignoreUnknownKeys = true }
     private val listSerializer = ListSerializer(MoodLogEntry.serializer())
+    private val seoulZone = ZoneId.of("Asia/Seoul")
+    private val marketCloseKst = LocalTime.of(15, 30) // 코스피 정규장 마감
 
     init {
         cleanWeekendEntries()
@@ -83,8 +87,12 @@ class MarketMoodLogService {
 
     /**
      * 오늘 예측 기록. 이미 있으면 KOSPI가 채워진 경우(장 마감 후 재조회)에만 업데이트.
-     * 장 전 조회: KOSPI = 0 → PENDING. 장 마감 후 재조회: 실제값으로 자동 채점.
+     * 장 전/장 중: PENDING. **장 마감(15:30 KST) 후**에만 실제값으로 자동 채점.
      * 주말(토/일)은 코스피 휴장이므로 기록 건너뜀.
+     *
+     * ⚠️ 시간 게이트 필수: 장 전엔 KIS가 KOSPI에 *전일 종가* 등락률을 돌려주고(0이 아님),
+     * 장 중엔 미확정 장중값이라 — 둘 다 그대로 채점하면 오늘 예측에 어제/장중 값이 실제로 박힌다.
+     * 오늘(KST) 날짜는 마감 후에만 채점하고, 그 전엔 KOSPI 값이 있어도 PENDING으로 둔다.
      */
     @Synchronized
     fun addOrUpdateEntry(date: String, direction: String, indicators: List<MacroIndicator>) {
@@ -92,20 +100,31 @@ class MarketMoodLogService {
         if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) return
         val log = loadLog().toMutableList()
 
+        // 오늘(KST) 예측은 정규장 마감 전까지 채점 보류. 과거 날짜(백필)는 그대로 채점 허용.
+        val nowKst = LocalDate.now(seoulZone).toString()
+        val isToday = date == nowKst
+        val marketClosed = LocalTime.now(seoulZone) >= marketCloseKst
+        val canScore = !isToday || marketClosed
+
         val kospiChange = indicators.find { it.key == "kospi" }?.changeRate
-        val hasActualData = kospiChange != null && kotlin.math.abs(kospiChange) >= 0.1
+        val hasActualData = canScore && kospiChange != null && kotlin.math.abs(kospiChange) >= 0.1
         val actualDirection = if (hasActualData && kospiChange != null) classifyActual(kospiChange) else null
         val isCorrect = actualDirection?.let { it == direction }
 
         val existing = log.indexOfFirst { it.date == date }
         if (existing >= 0) {
             val prev = log[existing]
-            if (prev.isCorrect == null && isCorrect != null) {
-                log[existing] = prev.copy(
-                    actualDirection = actualDirection,
-                    isCorrect = isCorrect,
-                    kospiChange = kospiChange,
-                )
+            when {
+                // 마감 전인데 오늘 항목이 이미 채점돼 있으면(과거 버그로 전일 종가가 박힌 케이스) PENDING 복구.
+                isToday && !marketClosed && prev.isCorrect != null ->
+                    log[existing] = prev.copy(actualDirection = null, isCorrect = null, kospiChange = null)
+                // 정상 채점: 아직 PENDING이고 이제 실제값 확보(장 마감 후).
+                prev.isCorrect == null && isCorrect != null ->
+                    log[existing] = prev.copy(
+                        actualDirection = actualDirection,
+                        isCorrect = isCorrect,
+                        kospiChange = kospiChange,
+                    )
             }
         } else {
             log.add(0, MoodLogEntry(

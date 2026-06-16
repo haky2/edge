@@ -1,6 +1,7 @@
 package com.haky.edge.macro
 
 import com.haky.edge.kis.MacroIndicator
+import com.haky.edge.util.KST
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
@@ -37,7 +38,7 @@ class EcosClient(private val apiKey: String) {
         return runCatching { fetch() }.getOrNull()?.also {
             // 자정까지 캐시 (일별 금리는 장 마감 후 갱신이라 당일 중 여러번 호출 불필요)
             val nowMs = System.currentTimeMillis()
-            val midnightMs = java.time.LocalDateTime.now()
+            val midnightMs = java.time.LocalDateTime.now(KST)
                 .toLocalDate().plusDays(1)
                 .atStartOfDay()
                 .atZone(java.time.ZoneId.of("Asia/Seoul"))
@@ -48,9 +49,9 @@ class EcosClient(private val apiKey: String) {
 
     private suspend fun fetch(): MacroIndicator {
         val fmt = DateTimeFormatter.ofPattern("yyyyMMdd")
-        val today = LocalDate.now().format(fmt)
+        val today = LocalDate.now(KST).format(fmt)
         // 14일 범위를 요청해 주말·공휴일 없는 날에도 최소 2개 영업일 데이터를 확보한다.
-        val startDate = LocalDate.now().minusDays(14).format(fmt)
+        val startDate = LocalDate.now(KST).minusDays(14).format(fmt)
         // 요청 건수(1~10)를 넉넉히 10으로 설정해 14일치가 다 들어오게 한다.
         val url = "https://ecos.bok.or.kr/api/StatisticSearch/$apiKey/json/kr/1/10/817Y002/D/$startDate/$today/010300000"
 

@@ -2,6 +2,7 @@ package com.haky.edge.ai
 
 import com.haky.edge.dart.DartClient
 import com.haky.edge.kis.KisClient
+import com.haky.edge.util.KST
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
@@ -46,7 +47,8 @@ class ValuationBandService(
     private val fileCache = FileCache("valuation-band", ValuationBand.serializer())
 
     suspend fun getValuationBand(code: String): ValuationBand? {
-        val today = LocalDate.now().toString()
+        // 캐시 키는 KST 거래일 기준(effectiveMarketDate) — FileCache의 KST 검증과 통일(서버 UTC라 오전 미스 방지).
+        val today = effectiveMarketDate()
         val cacheKey = "$code:$today"
         fileCache.get(cacheKey)?.let { return it }
 
@@ -59,7 +61,7 @@ class ValuationBandService(
 
         val currentPrice = runCatching { kis.getPrice(code).price.toDouble() }.getOrNull() ?: return null
 
-        val thisYear = LocalDate.now().year
+        val thisYear = LocalDate.now(KST).year
         // 과거 5년 + 현재(가장 최근 연간보고서)
         val targetYears = ((thisYear - 1) downTo (thisYear - 5)).toList()
 

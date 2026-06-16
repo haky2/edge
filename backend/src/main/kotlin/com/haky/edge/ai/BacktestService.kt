@@ -80,7 +80,7 @@ class BacktestService(
     private val kisDataCache = ConcurrentHashMap<String, KisData>()
 
     private suspend fun fetchKisData(code: String): KisData {
-        val key = "$code:${LocalDate.now()}"
+        val key = "$code:${effectiveMarketDate()}" // KST 거래일 기준
         kisDataCache[key]?.let { return it }
         val (dailyDesc, flow) = coroutineScope {
             val d = async { runCatching { kis.getDailyChart(code, bars = 120) }.getOrElse { emptyList() } }
@@ -93,7 +93,7 @@ class BacktestService(
     }
 
     suspend fun getBacktest(code: String): Backtest? {
-        val today = LocalDate.now().toString()
+        val today = effectiveMarketDate() // KST 거래일 — FileCache KST 검증과 통일
         val cacheKey = "$code:$today"
         fileCache.get(cacheKey)?.let { return it }
 
@@ -198,7 +198,7 @@ class BacktestService(
      * 기존 일봉(120)+수급(30) 데이터를 재사용 — 새 API 호출 없음.
      */
     suspend fun getFlowSensitivity(code: String): FlowSensitivity? {
-        val today = LocalDate.now().toString()
+        val today = effectiveMarketDate() // KST 거래일 — FileCache KST 검증과 통일
         val cacheKey = "$code:$today"
         flowSensCache.get(cacheKey)?.let { return it }
 

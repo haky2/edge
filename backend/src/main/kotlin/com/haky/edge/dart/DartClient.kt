@@ -11,6 +11,8 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.haky.edge.ai.FileCache
+import com.haky.edge.ai.effectiveMarketDate
+import com.haky.edge.util.KST
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -65,7 +67,7 @@ class DartClient(private val apiKey: String) {
     suspend fun getDisclosures(stockCode: String, days: Int = 7): List<DartDisclosure> {
         if (apiKey.isBlank()) throw DartException("DART_API_KEY가 설정되지 않았습니다 (.env 확인)")
 
-        val cacheKey = "${LocalDate.now()}|${System.currentTimeMillis() / 1_800_000}|$days|$stockCode"
+        val cacheKey = "${effectiveMarketDate()}|${System.currentTimeMillis() / 1_800_000}|$days|$stockCode"
         disclosureCache[cacheKey]?.let { return it }
         // 콜드 스타트 직후: 같은 30분 버킷이면 GCS 파일에서 재사용(인메모리에도 올림).
         disclosureFileCache.get(cacheKey)?.let { disclosureCache[cacheKey] = it; return it }
@@ -74,8 +76,8 @@ class DartClient(private val apiKey: String) {
         val corpCode = corpCodeMap?.get(stockCode)
             ?: return emptyList() // 비상장·ETF 등 매핑 없는 종목
 
-        val bgn = LocalDate.now().minusDays(days.toLong()).format(DateTimeFormatter.BASIC_ISO_DATE)
-        val end = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
+        val bgn = LocalDate.now(KST).minusDays(days.toLong()).format(DateTimeFormatter.BASIC_ISO_DATE)
+        val end = LocalDate.now(KST).format(DateTimeFormatter.BASIC_ISO_DATE)
 
         val resp: DartListResponse = http.get("https://opendart.fss.or.kr/api/list.json") {
             parameter("crtfc_key", apiKey)
@@ -117,15 +119,15 @@ class DartClient(private val apiKey: String) {
      */
     suspend fun getEarningsSchedule(stockCode: String): EarningsEntry? {
         if (apiKey.isBlank()) return null
-        val today = LocalDate.now().toString()
+        val today = LocalDate.now(KST).toString()
         val cacheKey = "$today|$stockCode"
         earningsCache[cacheKey]?.let { return it }
 
         ensureCorpCodeMap()
         val corpCode = corpCodeMap?.get(stockCode) ?: return null
 
-        val bgn = LocalDate.now().minusMonths(18).format(DateTimeFormatter.BASIC_ISO_DATE)
-        val end = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
+        val bgn = LocalDate.now(KST).minusMonths(18).format(DateTimeFormatter.BASIC_ISO_DATE)
+        val end = LocalDate.now(KST).format(DateTimeFormatter.BASIC_ISO_DATE)
 
         val resp: DartListResponse = runCatching {
             http.get("https://opendart.fss.or.kr/api/list.json") {
@@ -143,7 +145,7 @@ class DartClient(private val apiKey: String) {
             .firstOrNull { isPeriodicReport(it.reportName) } ?: return null
 
         val (nextName, nextDue) = nextExpected(latest.reportName) ?: return null
-        val daysUntil = ChronoUnit.DAYS.between(LocalDate.now(), nextDue).toInt()
+        val daysUntil = ChronoUnit.DAYS.between(LocalDate.now(KST), nextDue).toInt()
 
         val entry = EarningsEntry(
             code       = stockCode,
@@ -167,13 +169,13 @@ class DartClient(private val apiKey: String) {
      */
     suspend fun getFinancials(stockCode: String): FinancialSummary? {
         if (apiKey.isBlank()) return null
-        val today = LocalDate.now().toString()
+        val today = LocalDate.now(KST).toString()
         financialsCache["$today|$stockCode"]?.let { return it }
 
         ensureCorpCodeMap()
         val corpCode = corpCodeMap?.get(stockCode) ?: return null
 
-        val thisYear = LocalDate.now().year
+        val thisYear = LocalDate.now(KST).year
         for (year in (thisYear - 1) downTo (thisYear - 3)) {
             val resp = runCatching {
                 http.get("https://opendart.fss.or.kr/api/fnlttSinglAcnt.json") {
@@ -237,7 +239,7 @@ class DartClient(private val apiKey: String) {
      */
     suspend fun getFinancialsForYear(stockCode: String, year: Int): FinancialSummary? {
         if (apiKey.isBlank()) return null
-        val today = LocalDate.now().toString()
+        val today = LocalDate.now(KST).toString()
         val cacheKey = "$today|$stockCode|$year"
         financialsByYearCache[cacheKey]?.let { return it }
 
@@ -289,7 +291,7 @@ class DartClient(private val apiKey: String) {
      */
     suspend fun getQuarterlyIncome(stockCode: String): QuarterlyIncome? {
         if (apiKey.isBlank()) return null
-        val today = LocalDate.now().toString()
+        val today = LocalDate.now(KST).toString()
         val cacheKey = "$today|$stockCode|q"
         quarterlyIncomeCache[cacheKey]?.let { return it.value }
 
@@ -297,7 +299,7 @@ class DartClient(private val apiKey: String) {
         val corpCode = corpCodeMap?.get(stockCode)
         if (corpCode == null) { quarterlyIncomeCache[cacheKey] = Optional(null); return null }
 
-        val now = LocalDate.now()
+        val now = LocalDate.now(KST)
         val year = now.year
         val month = now.monthValue
 

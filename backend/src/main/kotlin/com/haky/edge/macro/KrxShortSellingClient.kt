@@ -1,5 +1,6 @@
 package com.haky.edge.macro
 
+import com.haky.edge.util.KST
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
@@ -61,7 +62,7 @@ class KrxShortSellingClient {
     }
 
     suspend fun getShortSelling(code: String): ShortSellingSummary? {
-        val today = LocalDate.now().toString()
+        val today = LocalDate.now(KST).toString()
         dataCache["$code:$today"]?.let { return it }
 
         ensureSession(code)
@@ -114,7 +115,7 @@ class KrxShortSellingClient {
     }
 
     private suspend fun fetchEntries(isin: String, code: String): List<ShortSellingEntry> {
-        val today = LocalDate.now()
+        val today = LocalDate.now(KST)
         val start = today.minusWeeks(3).format(dtf)
         val end = today.format(dtf)
         val sess = jsessionId ?: return emptyList()

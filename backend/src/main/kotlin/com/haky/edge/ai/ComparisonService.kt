@@ -10,7 +10,6 @@ import com.haky.edge.news.NaverTargetPriceClient
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
-import java.time.LocalDate
 import java.util.concurrent.ConcurrentHashMap
 
 /** 두 종목 비교 응답. a/b 핵심 지표 + Claude 비교 코멘트. */
@@ -58,7 +57,7 @@ class ComparisonService(
         mode: AnalysisMode = AnalysisMode.DEFENSIVE,
         force: Boolean = false,
     ): Comparison {
-        val today = LocalDate.now().toString()
+        val today = effectiveMarketDate() // KST 거래일 — FileCache KST 검증과 통일(오전 캐시 미스 방지)
         val (lo, hi) = if (codeA <= codeB) codeA to codeB else codeB to codeA
         val key = "$lo:$hi:$today:${mode.name}"
 

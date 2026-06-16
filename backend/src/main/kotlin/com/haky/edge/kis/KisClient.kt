@@ -1,5 +1,6 @@
 package com.haky.edge.kis
 
+import com.haky.edge.util.KST
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
@@ -193,7 +194,7 @@ class KisClient(
      * 장후 확정 일별값(CLAUDE.md). getPrice 와 같은 동시성 제한 + rt_cd 백오프 재시도를 적용.
      */
     suspend fun getInvestorFlow(code: String, days: Int = 5): List<InvestorFlow> {
-        val today = java.time.LocalDate.now().toString()
+        val today = com.haky.edge.ai.effectiveMarketDate() // KST 거래일 — FileCache KST 검증과 통일
         val cacheKey = "$today|$code"
         investorCache[cacheKey]?.let { cached ->
             return if (days <= cached.size) cached.take(days) else cached
@@ -300,8 +301,8 @@ class KisClient(
 
     /** 월봉 HTTP 호출 1회. period_div_code=M. */
     private suspend fun requestMonthlyChart(code: String, accessToken: String, months: Int): KisDailyResponse {
-        val today = java.time.LocalDate.now().toString().replace("-", "")
-        val startDate = java.time.LocalDate.now().minusMonths(months.toLong()).toString().replace("-", "")
+        val today = java.time.LocalDate.now(KST).toString().replace("-", "")
+        val startDate = java.time.LocalDate.now(KST).minusMonths(months.toLong()).toString().replace("-", "")
         return http.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice") {
             header("authorization", "Bearer $accessToken")
             header("appkey", appKey)
@@ -321,8 +322,8 @@ class KisClient(
     private suspend fun requestDailyChart(code: String, accessToken: String): KisDailyResponse {
         // start/end: 한투는 최근일 기준으로 내려주므로 end=오늘, start=충분히 과거로 둔다.
         // 차트 기간 토글(1개월/3개월/전체)용으로 넉넉히 7개월(한투 단일 응답 최대 ~100건) 요청.
-        val today = java.time.LocalDate.now().toString().replace("-", "")
-        val startDate = java.time.LocalDate.now().minusMonths(7).toString().replace("-", "")
+        val today = java.time.LocalDate.now(KST).toString().replace("-", "")
+        val startDate = java.time.LocalDate.now(KST).minusMonths(7).toString().replace("-", "")
         return http.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice") {
             header("authorization", "Bearer $accessToken")
             header("appkey", appKey)
@@ -405,8 +406,8 @@ class KisClient(
     /** 해외 지수/환율 기간별시세 1회 호출 → 정규화 raw. output1(요약)에서 현재값을 읽는다. */
     private suspend fun requestOverseas(mrktDiv: String, iscd: String, accessToken: String): MacroRaw {
         // 해외장은 주말·휴장이 있어 end=오늘, start=10일 전으로 넉넉히 둔다(output1 요약값만 쓰므로 범위는 여유면 충분).
-        val today = java.time.LocalDate.now().toString().replace("-", "")
-        val startDate = java.time.LocalDate.now().minusDays(10).toString().replace("-", "")
+        val today = java.time.LocalDate.now(KST).toString().replace("-", "")
+        val startDate = java.time.LocalDate.now(KST).minusDays(10).toString().replace("-", "")
         val r: KisOverseasResponse =
             http.get("$baseUrl/uapi/overseas-price/v1/quotations/inquire-daily-chartprice") {
                 header("authorization", "Bearer $accessToken")
@@ -476,14 +477,14 @@ class KisClient(
     }
 
     /**
-     * 코스피200 선물 현재가 조회 (FHMIF10000000).
-     * 야간 선물 세션(18:00~05:00)에서만 output1(선물 가격)이 채워진다.
-     * 필드명 탐색용으로 raw JsonElement 그대로 반환한다.
-     * iscd: 근월물 코드 후보 — "101W2609"(YYMMformat), "101WU6"(월 letter) 등 시도.
+     * 코스피200 야간선물 현재가를 MacroIndicator 로 반환.
+     * 야간 세션(18:00~05:00) 밖이거나 가격이 0이면 null 반환 — 호출부에서 listOfNotNull 로 처리.
+     * 근월물 코드를 자동 계산한다(K200 선물 만기: 3/6/9/12월 두 번째 목요일).
      */
-    suspend fun getFuturesRaw(iscd: String): KisFuturesResponse {
+    suspend fun getK200Futures(): MacroIndicator? = runCatching {
+        val iscd = nearMonthFuturesCode()
         val accessToken = token()
-        return rateLimiter.withPermit {
+        val resp: KisFuturesResponse = rateLimiter.withPermit {
             http.get("$baseUrl/uapi/domestic-futureoption/v1/quotations/inquire-price") {
                 header("authorization", "Bearer $accessToken")
                 header("appkey", appKey)
@@ -494,6 +495,39 @@ class KisClient(
                 parameter("FID_INPUT_ISCD", iscd)
             }.body()
         }
+        if (resp.rtCd != "0") return@runCatching null
+        val o = resp.output1 ?: return@runCatching null
+        val price = o.price.toDoubleSafe()
+        if (price == 0.0) return@runCatching null  // 주간 세션 / 미개장 시
+        val mul = signMultiplier(o.sign)
+        MacroIndicator(
+            key = "k200f",
+            label = "K200 야간선물",
+            value = price,
+            change = kotlin.math.abs(o.change.toDoubleSafe()) * mul,
+            changeRate = kotlin.math.abs(o.changeRate.toDoubleSafe()) * mul,
+        )
+    }.getOrNull()
+
+    /** K200 선물 근월물 코드. 만기(3/6/9/12월 두 번째 목요일) 이후면 다음 분기로. */
+    internal fun nearMonthFuturesCode(): String {
+        val today = java.time.LocalDate.now(KST)
+        val quarterMonths = listOf(3, 6, 9, 12)
+        for (month in quarterMonths) {
+            val year = today.year
+            val expiry = secondThursdayOf(year, month)
+            if (!today.isAfter(expiry)) {
+                return "101W%02d%02d".format(year % 100, month)
+            }
+        }
+        // 12월 만기도 지났으면 다음 해 3월
+        return "101W%02d%02d".format((today.year + 1) % 100, 3)
+    }
+
+    private fun secondThursdayOf(year: Int, month: Int): java.time.LocalDate {
+        var d = java.time.LocalDate.of(year, month, 1)
+        while (d.dayOfWeek != java.time.DayOfWeek.THURSDAY) d = d.plusDays(1)
+        return d.plusDays(7)
     }
 
     companion object {

@@ -1,5 +1,6 @@
 package com.haky.edge.news
 
+import com.haky.edge.util.KST
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
@@ -20,7 +21,7 @@ class NaverTargetPriceClient {
     private val cache = ConcurrentHashMap<String, Cached>()
 
     suspend fun getTargetPrice(code: String): Long? {
-        val today = LocalDate.now().toString()
+        val today = LocalDate.now(KST).toString()
         cache[code]?.takeIf { it.date == today }?.let { return it.price }
 
         val price = runCatching { fetch(code) }.getOrNull()

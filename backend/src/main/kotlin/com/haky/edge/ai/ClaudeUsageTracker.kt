@@ -1,5 +1,6 @@
 package com.haky.edge.ai
 
+import com.haky.edge.util.KST
 import java.io.File
 import java.time.LocalDate
 import kotlinx.serialization.Serializable
@@ -25,15 +26,15 @@ class ClaudeUsageTracker(dataDir: String) {
 
     fun readToday(): DailyUsage {
         val f = file()
-        if (!f.exists()) return DailyUsage(LocalDate.now().toString())
+        if (!f.exists()) return DailyUsage(LocalDate.now(KST).toString())
         return runCatching {
             json.decodeFromString(DailyUsage.serializer(), f.readText())
-        }.getOrDefault(DailyUsage(LocalDate.now().toString()))
+        }.getOrDefault(DailyUsage(LocalDate.now(KST).toString()))
     }
 
     @Synchronized
     fun record(inputTokens: Int, outputTokens: Int, cacheRead: Int, cacheCreated: Int) {
-        val date = LocalDate.now().toString()
+        val date = LocalDate.now(KST).toString()
         val f = file(date)
         val current = if (f.exists()) {
             runCatching { json.decodeFromString(DailyUsage.serializer(), f.readText()) }
@@ -49,5 +50,5 @@ class ClaudeUsageTracker(dataDir: String) {
         f.writeText(json.encodeToString(DailyUsage.serializer(), updated))
     }
 
-    private fun file(date: String = LocalDate.now().toString()) = File(dir, "$date.json")
+    private fun file(date: String = LocalDate.now(KST).toString()) = File(dir, "$date.json")
 }

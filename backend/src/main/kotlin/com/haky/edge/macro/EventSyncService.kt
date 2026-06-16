@@ -1,6 +1,7 @@
 package com.haky.edge.macro
 
 import com.haky.edge.ai.ClaudeClient
+import com.haky.edge.util.KST
 import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -52,7 +53,7 @@ class EventSyncService(private val claude: ClaudeClient) {
     fun upcomingFactsText(days: Int = EVENT_WINDOW_DAYS): String? {
         val events = getUpcoming(days)
         if (events.isEmpty()) return null
-        val today = LocalDate.now()
+        val today = LocalDate.now(KST)
         val sb = StringBuilder()
         sb.appendLine("임박 거시 이벤트(향후 ${days}일, 날짜·이름은 확정 사실 / 영향은 조건부 해석):")
         events.forEach { e ->
@@ -75,7 +76,7 @@ class EventSyncService(private val claude: ClaudeClient) {
             json.decodeFromString(EventStore.serializer(), storeFile.readText())
         }.getOrNull() ?: return emptyList()
 
-        val today = LocalDate.now()
+        val today = LocalDate.now(KST)
         val until = today.plusDays(days.toLong())
         return store.events.filter { event ->
             runCatching {
@@ -86,7 +87,7 @@ class EventSyncService(private val claude: ClaudeClient) {
     }
 
     suspend fun sync(): EventSyncResult {
-        val today = LocalDate.now()
+        val today = LocalDate.now(KST)
         val until = today.plusWeeks(6)
 
         val ruleEvents = buildRuleEvents(today, until)
@@ -94,7 +95,7 @@ class EventSyncService(private val claude: ClaudeClient) {
             System.err.println("[EventSync] fetchFromSearch failed: ${e.message}")
         }.getOrDefault(emptyList())
         val merged = mergeEvents(ruleEvents, searchEvents)
-        val syncedAt = LocalDateTime.now().toString()
+        val syncedAt = LocalDateTime.now(KST).toString()
 
         storeFile.writeText(json.encodeToString(EventStore.serializer(), EventStore(merged, syncedAt)))
         return EventSyncResult(total = merged.size, fromSearch = searchEvents.size, fromRules = ruleEvents.size, syncedAt = syncedAt)

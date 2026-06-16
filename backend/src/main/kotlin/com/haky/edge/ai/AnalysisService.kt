@@ -84,6 +84,7 @@ class AnalysisService(
     private val valuationBandSvc: ValuationBandService,
     private val backtestSvc: BacktestService,
     private val eventSync: com.haky.edge.macro.EventSyncService,
+    private val modelRouter: ModelRouter,
     private val slack: SlackClient = SlackClient(""),
     private val aiCommentChannel: String = "",
     private val notifyScope: CoroutineScope? = null,
@@ -151,8 +152,14 @@ class AnalysisService(
             val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, sectorChangeRate, shortSelling, valuationBand, backtest, flowSensitivity, quarterlyIncome, eventsText, position)
             // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
             val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
+            // 모델 라우팅: force=수동 새로고침→Sonnet, isRefresh=급변 자동 재생성→Opus, 그 외=최초 생성→Opus.
+            val trigger = when {
+                force -> ModelRouter.ANALYSIS_MANUAL
+                isRefresh -> ModelRouter.ANALYSIS_AUTO_REFRESH
+                else -> ModelRouter.ANALYSIS_INITIAL
+            }
             val t1 = System.currentTimeMillis()
-            val rawComment = claude.complete(prompt, facts, maxTokens = 3500)
+            val rawComment = claude.complete(prompt, facts, maxTokens = 3500, modelOverride = modelRouter.modelFor(trigger))
             println("[Timing] $code: claude=${System.currentTimeMillis() - t1}ms  total=${System.currentTimeMillis() - t0}ms")
             val (summary, comment) = parseSummaryFromComment(rawComment)
             // 환각 의심 수치를 로그로만 남긴다(모니터링용). UI 경고는 더 이상 띄우지 않는다 —

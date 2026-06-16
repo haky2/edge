@@ -6,6 +6,7 @@ import com.haky.edge.ai.ClaudeClient
 import com.haky.edge.ai.ClaudeException
 import com.haky.edge.ai.ClaudeUsageTracker
 import com.haky.edge.ai.ComparisonService
+import com.haky.edge.ai.ModelRouter
 import com.haky.edge.ai.ValuationBandService
 import com.haky.edge.dart.DartClient
 import com.haky.edge.dart.DartException
@@ -172,6 +173,13 @@ fun Application.module() {
         model = System.getenv("CLAUDE_MODEL") ?: "claude-sonnet-4-6",
         usageTracker = usageTracker,
     )
+    // 트리거별 모델 라우팅: 기본은 브리핑·종목최초·급변재생성=Opus, 수동새로고침=Sonnet.
+    // 롤백/재튜닝은 env OPUS_TRIGGERS(콤마 목록)로 코드 수정 없이. (ModelRouter 주석 참고)
+    val modelRouter = ModelRouter(
+        sonnetModel = System.getenv("CLAUDE_MODEL") ?: "claude-sonnet-4-6",
+        opusModel = System.getenv("CLAUDE_OPUS_MODEL") ?: "claude-opus-4-8",
+        opusTriggers = ModelRouter.parseTriggers(System.getenv("OPUS_TRIGGERS")),
+    )
     val dart = DartClient(apiKey = System.getenv("DART_API_KEY").orEmpty())
     val naverTargetPrice = NaverTargetPriceClient()
     val fearGreed = FearGreedClient()
@@ -183,10 +191,10 @@ fun Application.module() {
     val krxShortSelling = KrxShortSellingClient()
     val valuationBand = ValuationBandService(kis, dart)
     val backtest = BacktestService(kis)
-    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling, valuationBand, backtest, eventSync, slack, aiCommentChannel, this)
+    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, macroImpact, krxShortSelling, valuationBand, backtest, eventSync, modelRouter, slack, aiCommentChannel, this)
     val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand)
     val moodLog = MarketMoodLogService()
-    val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, moodLog, eventSync)
+    val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, modelRouter, moodLog, eventSync)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)

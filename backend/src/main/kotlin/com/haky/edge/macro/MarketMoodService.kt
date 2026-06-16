@@ -51,6 +51,7 @@ class MarketMoodService(
     private val copper: CopperClient,
     private val ecos: EcosClient,
     private val yahoo: YahooMacroClient,
+    private val modelRouter: com.haky.edge.ai.ModelRouter,
     val moodLog: MarketMoodLogService = MarketMoodLogService(),
     private val eventSync: EventSyncService? = null,
 ) {
@@ -83,7 +84,8 @@ class MarketMoodService(
         val facts = buildFacts(indicators, eventsText)
         val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
         // 상한(ceiling)일 뿐 — 3문단이면 보통 그 안에서 end_turn, 길어져도 ClaudeClient가 이어써 안 잘림.
-        val comment = claude.complete(prompt, facts, maxTokens = 2000)
+        // 시장 분위기는 매일 보는 방향 판단 → 기본 Opus(briefing 트리거). env OPUS_TRIGGERS로 롤백 가능.
+        val comment = claude.complete(prompt, facts, maxTokens = 2000, modelOverride = modelRouter.modelFor(com.haky.edge.ai.ModelRouter.BRIEFING))
 
         val now = LocalTime.now(ZoneId.of("Asia/Seoul"))
             .format(DateTimeFormatter.ofPattern("HH:mm"))
