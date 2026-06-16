@@ -135,11 +135,14 @@ class ValuationBandService(
         fun median(sorted: List<Double>): Double =
             if (sorted.isEmpty()) 0.0 else sorted[sorted.size / 2]
 
+        // 판정("저평가/고평가")이 아니라 밴드 내 위치만 중립적으로 표기한다.
+        // 리레이팅(반도체·AI)·이익 점프(조선·방산) 국면에선 상단=고평가가 아니므로,
+        // 가치 판단은 Claude가 실적 방향·목표가·표본과 함께 해석하도록 facts/프롬프트에 위임.
         fun label(pct: Int): String = when {
             pct < 0  -> "계산 불가"
-            pct < 25 -> "역사적 저평가"
-            pct < 65 -> "역사적 보통 수준"
-            else     -> "역사적 고평가"
+            pct < 25 -> "역사적 하단권"
+            pct < 65 -> "역사적 중간권"
+            else     -> "역사적 상단권"
         }
 
         val perPct = percentile(perSorted, currentPer)

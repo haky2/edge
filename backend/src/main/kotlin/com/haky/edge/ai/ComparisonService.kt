@@ -23,7 +23,7 @@ data class ComparisonDetail(
     val pbr: Double,
     val week52PosPct: Double,       // 52주 범위 내 현재 위치 (0~100%)
     val upsidePct: Double?,         // 컨센서스 목표가 괴리율 (없으면 null)
-    val valuationLabel: String?,    // 역사적 저평가 / 보통 / 고평가 (없으면 null)
+    val valuationLabel: String?,    // 역사적 하단권 / 중간권 / 상단권 (없으면 null)
     val foreignNet3d: Long,         // 외인 최근 3일 순매수 합계
     val institutionNet3d: Long,     // 기관 최근 3일 순매수 합계
     val quarterlyYoy: Double?,      // 분기 실적 YoY % (없으면 null)

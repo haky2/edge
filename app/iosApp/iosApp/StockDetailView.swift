@@ -1331,9 +1331,9 @@ struct StockDetailView: View {
 
     private func valuationBandColor(_ label: String) -> Color {
         switch label {
-        case "역사적 저평가":   return .blue
-        case "역사적 고평가":   return .red
-        default:               return .orange
+        case "역사적 하단권":   return .blue
+        case "역사적 상단권":   return .red
+        default:               return .orange   // 중간권·계산 불가
         }
     }
 

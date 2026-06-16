@@ -205,9 +205,9 @@ internal fun ValuationBandCard(band: ValuationBand) {
 
 @Composable
 private fun valuationBandColor(label: String): Color = when (label) {
-    "역사적 저평가" -> ChangeDown
-    "역사적 고평가" -> ChangeUp
-    else -> OrangeAccent
+    "역사적 하단권" -> ChangeDown
+    "역사적 상단권" -> ChangeUp
+    else -> OrangeAccent  // 중간권·계산 불가
 }
 
 @Composable

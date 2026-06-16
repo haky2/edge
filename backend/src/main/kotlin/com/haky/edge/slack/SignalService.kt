@@ -169,7 +169,7 @@ class SignalService(
             appendLine()
         }
         if (vals.isNotEmpty()) {
-            appendLine("💰 *밸류에이션 — 역사적 저평가 진입*")
+            appendLine("💰 *밸류에이션 — 역사적 하단권 진입*")
             vals.forEach { v ->
                 appendLine("• *${v.name}* (${v.code}) — PER *${"%.1f".format(v.perCurrent)}배* (역사적 하위 ${v.percentile}%)")
             }
@@ -191,7 +191,7 @@ class SignalService(
 
     companion object {
         private const val FLOW_THRESHOLD = 3        // N일 연속 순매수 = 신호
-        private const val LOW_VALUE_LABEL = "역사적 저평가"
+        private const val LOW_VALUE_LABEL = "역사적 하단권"
         // 주가 트리거가 되는 중요 공시 유형(부분 일치). 단순 정정·임원변경 등 경미한 건 제외된다.
         private val IMPORTANT_KEYWORDS = listOf(
             "공급계약", "수주", "단일판매",            // 수주·계약
