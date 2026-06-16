@@ -78,7 +78,7 @@ private fun NaverNewsItem.toNewsItem() = NewsItem(
     publishedAt = pubDate,
 )
 
-private fun String.stripHtml() = replace(Regex("<[^>]+>"), "")
+internal fun String.stripHtml() = replace(Regex("<[^>]+>"), "")
     .replace("&quot;", "\"")
     .replace("&amp;", "&")
     .replace("&lt;", "<")
@@ -89,6 +89,22 @@ private fun String.stripHtml() = replace(Regex("<[^>]+>"), "")
             ?.let { String(charArrayOf(it.toChar())) } ?: m.value
     }
     .trim()
+    .fixMojibake()
+
+// UTF-8 한글 바이트가 Latin-1(ISO-8859-1)로 잘못 디코딩돼 깨진 제목(예: "4,50대인"→"4,50ë...ì¸")을 복원한다.
+// 네이버 일부 기사 제목이 드물게 이 형태로 들어온다. "UTF-8 리드바이트로 보이는 Latin-1 문자 + 연속바이트" 패턴에만 적용하고,
+// 진짜 한글/CJK가 섞였거나(>U+00FF) 복원 결과가 유효 한글이 아니면 원문을 그대로 둔다 → 정상·유럽어 제목은 절대 손대지 않음.
+private val MOJIBAKE_PATTERN =
+    Regex("[Â-ß][-¿]|[à-ï][-¿]{2}|[ð-ô][-¿]{3}")
+
+internal fun String.fixMojibake(): String {
+    if (!MOJIBAKE_PATTERN.containsMatchIn(this)) return this
+    if (any { it.code > 0xFF }) return this  // 진짜 한글/CJK가 섞이면 byte 재해석이 오히려 깨뜨림 → 손대지 않음
+    val bytes = ByteArray(length) { this[it].code.toByte() }
+    val repaired = String(bytes, Charsets.UTF_8)
+    // 복원 결과에 대체문자(U+FFFD)가 없고 한글(가~힣)이 포함될 때만 채택.
+    return if (!repaired.contains('�') && repaired.any { it in '가'..'힣' }) repaired else this
+}
 
 private fun extractSource(url: String): String = try {
     val host = java.net.URI(url).host ?: return ""
