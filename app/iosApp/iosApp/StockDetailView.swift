@@ -1348,7 +1348,7 @@ struct StockDetailView: View {
                 HStack {
                     Text("동종 상대 밸류").font(.subheadline.weight(.semibold))
                     Spacer()
-                    Text("\(pv.clusterLabel) · peer \(pv.peerCount)").font(.caption2).foregroundColor(.secondary)
+                    Text("\(pv.clusterLabel) · 경쟁사 \(pv.peerCount)곳").font(.caption2).foregroundColor(.secondary)
                     Image(systemName: peerExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption).foregroundColor(.secondary)
                 }

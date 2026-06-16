@@ -257,7 +257,7 @@ internal fun PeerValuationCard(pv: PeerValuation) {
     if (pv.per == null && pv.pbr == null) return
     CollapsibleCard(
         title = "동종 상대 밸류",
-        trailing = { Text("${pv.clusterLabel} · peer ${pv.peerCount}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        trailing = { Text("${pv.clusterLabel} · 경쟁사 ${pv.peerCount}곳", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             pv.per?.let { PeerMetricRow("PER", it) }
