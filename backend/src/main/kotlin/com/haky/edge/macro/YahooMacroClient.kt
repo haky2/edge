@@ -44,6 +44,10 @@ class YahooMacroClient {
         runCatching { fetchOne("^RUT",       "rut",    "러셀2000") }.getOrNull(),
         runCatching { fetchOne("^N225",      "nikkei", "닛케이225") }.getOrNull(),
         runCatching { fetchOne("^VIX",       "vix",    "VIX 공포지수") }.getOrNull(),
+        // 미국 지수선물 — 한국 새벽(미국 장중)에 움직여 다음날 코스피 갭 방향의 선행지표. 거의 24시간 거래.
+        runCatching { fetchOne("NQ=F",       "nqfut",  "나스닥선물") }.getOrNull(),
+        runCatching { fetchOne("ES=F",       "esfut",  "S&P500선물") }.getOrNull(),
+        runCatching { fetchOne("YM=F",       "ymfut",  "다우선물") }.getOrNull(),
     )
 
     private suspend fun fetchOne(symbol: String, key: String, label: String): MacroIndicator {
