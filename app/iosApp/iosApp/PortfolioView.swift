@@ -233,8 +233,9 @@ struct PortfolioView: View {
                         .font(.caption2.monospacedDigit())
                         .foregroundColor(row.pnl >= 0 ? .red : .blue)
                         .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .frame(minWidth: 64, alignment: .trailing)
+                        .minimumScaleFactor(0.7)
+                        // 고정 폭: 값 길이에 따라 컬럼이 달라지면 위 GeometryReader 차트 폭·중심선이 행마다 어긋난다.
+                        .frame(width: 92, alignment: .trailing)
                 }
             }
         }

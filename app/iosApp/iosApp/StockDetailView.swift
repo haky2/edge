@@ -1698,16 +1698,19 @@ struct StockDetailView: View {
             ForEach(news, id: \.url) { article in
                 Link(destination: URL(string: article.url) ?? URL(string: "https://news.naver.com")!) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(article.title)
+                        Text(article.title.trimmingCharacters(in: .whitespacesAndNewlines))
                             .font(.caption)
                             .foregroundColor(.primary)
                             .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         HStack(spacing: 6) {
                             Text(article.source).font(.caption2).foregroundColor(.secondary)
                             Text("·").foregroundColor(.secondary)
                             Text(shortDate(article.publishedAt)).font(.caption2).foregroundColor(.secondary)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 3)
                 }
                 if article.url != news.last?.url { Divider() }
