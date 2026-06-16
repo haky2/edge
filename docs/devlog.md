@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-06-16 — 밸류-C: 동종(peer) 상대 밸류에이션 (C1 백엔드 + C2 UI)
+
+**한 일**
+- 역사 밴드(자기 과거)·목표가 추세에 이어 "동종 대비 싼가/비싼가"라는 상대 축 추가. MTS의 "업종평균 vs 종목" 인사이트.
+- **핵심 비용 절감**: KIS inquire-price per/pbr이 단일 호출로 모든 종목에서 나와 **DART 팬아웃 불필요**. peer per/pbr 같은 소스라 상대 위치 일관.
+- `PeerValuationService`(ai/): 사업 단위 **수동 peer 클러스터** 6개(방산·조선·전력전선·IT서비스·인터넷플랫폼·자동차, 코드 /search 검증). peer per/pbr 유효필터(per 0.5~200·pbr 0.1~50, 적자/이상치 제외) → median 대비 ±15% 낮음/비슷/높음. 유효 peer<3이면 해당 지표 null. 클러스터 미정의·thin 군(메모리반도체 2개·두산에너빌리티 PER 이상치)은 null(정직 처리). FileCache 일캐시.
+- `GET /peer-valuation/{code}`(밸류밴드 라우트 미러). AnalysisService: 병렬 fetch → facts "동종(방산) 상대 밸류 — peer 4개 중앙값 대비: PER … vs … (−50%, 동종 대비 낮음)" 주입. 프롬프트 #14/#12에 동종 상대 활용 절.
+- **C2 UI**: SharedLogic `PeerValuation`/`PeerMetric` 모델 + `EdgeApi.getPeerValuation`. iOS `peerValuationCard`(접이식, PER/PBR range-bar+diff%+라벨칩) + Android `PeerValuationCard`(동일, RangeBar/BadgePill/CollapsibleCard 재사용). 밸류밴드 카드 패턴 그대로 미러. 색=낮음 파랑/높음 빨강/비슷 주황.
+- **검증**: 백엔드 endpoint 6클러스터 정확(방산 −50%·조선 +40%·IT −70%·인터넷 +20%·자동차 비슷·삼성전자/두산/미등록 null). 삼성SDS refresh 코멘트가 "역사 상단권인데 동종 −70% → 역사·동종 기준 엇갈림 + 목표가 −4.1% 하회 + 이익 꺾임"으로 다축 분석. SharedLogic·iOS(BUILD SUCCEEDED)·Android(BUILD SUCCESSFUL) 전부 통과.
+
+**막힌 점 / 배운 것**
+- universe에 섹터 태그가 없어 "섹터 전체 종목 리스트"를 만들 수 없음 → peer는 수동 클러스터가 정답(틀린 비교보다 null). 클러스터는 상수라 조정 쉬움.
+- iOS `generic/platform=iOS Simulator` 빌드는 KMP 프레임워크가 arm64만이라 x86_64 링크 실패 → **구체 시뮬레이터(arm64) 데스티네이션으로 빌드**해야 통과(코드 무관, 아키텍처 이슈).
+
+**다음 할 일**
+- 밸류 A·B·C 미배포 → Cloud Run 배포 시점에 함께. iOS 시뮬 시각 확인(선택).
+
+---
+
 ## 2026-06-16 — 밸류-B: 컨센서스 목표가 상향/하향 추세
 
 **한 일**

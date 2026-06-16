@@ -96,6 +96,7 @@ fun StockDetailScreen(
     var news by remember { mutableStateOf<List<com.haky.edge.model.NewsItem>>(emptyList()) }
     var shortSelling by remember { mutableStateOf<com.haky.edge.model.ShortSellingSummary?>(null) }
     var valuationBand by remember { mutableStateOf<com.haky.edge.model.ValuationBand?>(null) }
+    var peerValuation by remember { mutableStateOf<com.haky.edge.model.PeerValuation?>(null) }
     var backtest by remember { mutableStateOf<com.haky.edge.model.Backtest?>(null) }
     var flowSensitivity by remember { mutableStateOf<com.haky.edge.model.FlowSensitivity?>(null) }
     var earnings by remember { mutableStateOf<com.haky.edge.model.EarningsEntry?>(null) }
@@ -164,6 +165,7 @@ fun StockDetailScreen(
         try { news = api.getNews(watchItem.name) } catch (_: Exception) {}
         try { shortSelling = api.getShortSelling(code) } catch (_: Exception) {}
         try { valuationBand = api.getValuationBand(code) } catch (_: Exception) {}
+        try { peerValuation = api.getPeerValuation(code) } catch (_: Exception) {}
         try { backtest = api.getBacktest(code) } catch (_: Exception) {}
         try { flowSensitivity = api.getFlowSensitivity(code) } catch (_: Exception) {}
         try { earnings = api.getEarnings(listOf(code)).firstOrNull() } catch (_: Exception) {}
@@ -252,6 +254,7 @@ fun StockDetailScreen(
             if (news.isNotEmpty()) NewsCard(news)
             quote?.let { InterpretationCard(it, flows, targetPrice) }
             valuationBand?.let { ValuationBandCard(it) }
+            peerValuation?.let { PeerValuationCard(it) }
             backtest?.let { BacktestCard(it) }
             flowSensitivity?.let { FlowSensitivityCard(it) }
             shortSelling?.let { ShortSellingCard(it) }

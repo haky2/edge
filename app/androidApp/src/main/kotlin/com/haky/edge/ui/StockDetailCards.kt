@@ -60,6 +60,8 @@ import com.haky.edge.model.FlowCorrelation
 import com.haky.edge.model.FlowSensitivity
 import com.haky.edge.model.NewsItem
 import com.haky.edge.model.ShortSellingSummary
+import com.haky.edge.model.PeerMetric
+import com.haky.edge.model.PeerValuation
 import com.haky.edge.model.SignalResult
 import com.haky.edge.model.StockImpact
 import com.haky.edge.model.ValuationBand
@@ -245,6 +247,57 @@ private fun RangeBar(fraction: Float, medianFraction: Float, markerColor: Color,
         val markW = 3.dp.toPx()
         val markX = (size.width - markW) * fraction
         drawRoundRect(markerColor, Offset(markX, size.height / 2f - 7.dp.toPx()), Size(markW, 14.dp.toPx()), CornerRadius(2.dp.toPx()))
+    }
+}
+
+// ─── 동종(peer) 상대 밸류 ────────────────────────────────
+
+@Composable
+internal fun PeerValuationCard(pv: PeerValuation) {
+    if (pv.per == null && pv.pbr == null) return
+    CollapsibleCard(
+        title = "동종 상대 밸류",
+        trailing = { Text("${pv.clusterLabel} · peer ${pv.peerCount}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            pv.per?.let { PeerMetricRow("PER", it) }
+            pv.pbr?.let {
+                if (pv.per != null) HorizontalDivider()
+                PeerMetricRow("PBR", it)
+            }
+            Text("같은 사업 경쟁사 중앙값과 비교 — KIS 기준값, 상대 위치 참고용", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun peerValuationColor(label: String): Color = when (label) {
+    "동종 대비 낮음" -> ChangeDown  // 동종보다 싼 편
+    "동종 대비 높음" -> ChangeUp
+    else -> OrangeAccent           // 비슷
+}
+
+@Composable
+private fun PeerMetricRow(name: String, m: PeerMetric) {
+    val color = peerValuationColor(m.label)
+    val lo = minOf(m.peerMin, m.current)
+    val hi = maxOf(m.peerMax, m.current)
+    val frac = if (hi > lo) ((m.current - lo) / (hi - lo)).toFloat().coerceIn(0f, 1f) else 0.5f
+    val medFrac = if (hi > lo) ((m.peerMedian - lo) / (hi - lo)).toFloat().coerceIn(0f, 1f) else 0.5f
+    val diff = "%s%.0f%%".format(if (m.diffPct >= 0) "+" else "", m.diffPct)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(name, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("%.2f배".format(m.current), style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold))
+            Text("($diff)", style = MaterialTheme.typography.labelSmall, color = color, modifier = Modifier.weight(1f))
+            BadgePill(m.label, color)
+        }
+        RangeBar(frac, medFrac, color, modifier = Modifier.fillMaxWidth().height(14.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("동종 최저 %.1f".format(m.peerMin), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("중앙 %.1f배".format(m.peerMedian), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("최고 %.1f".format(m.peerMax), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

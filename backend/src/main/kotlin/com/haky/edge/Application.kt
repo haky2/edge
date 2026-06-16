@@ -7,6 +7,7 @@ import com.haky.edge.ai.ClaudeException
 import com.haky.edge.ai.ClaudeUsageTracker
 import com.haky.edge.ai.ComparisonService
 import com.haky.edge.ai.ModelRouter
+import com.haky.edge.ai.PeerValuationService
 import com.haky.edge.ai.ValuationBandService
 import com.haky.edge.dart.DartClient
 import com.haky.edge.dart.DartException
@@ -46,6 +47,7 @@ import com.haky.edge.routes.searchRoutes
 import com.haky.edge.routes.sectorBriefingRoutes
 import com.haky.edge.routes.sectorRoutes
 import com.haky.edge.routes.shortSellingRoutes
+import com.haky.edge.routes.peerValuationRoutes
 import com.haky.edge.routes.targetPriceRoutes
 import com.haky.edge.routes.valuationBandRoutes
 import com.haky.edge.routes.webSearchTestRoutes
@@ -192,8 +194,9 @@ fun Application.module() {
     val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos, naver, yahoo, eventSync)
     val krxShortSelling = KrxShortSellingClient()
     val valuationBand = ValuationBandService(kis, dart)
+    val peerValuation = PeerValuationService(kis)
     val backtest = BacktestService(kis)
-    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, targetPriceLog, macroImpact, krxShortSelling, valuationBand, backtest, eventSync, modelRouter, slack, aiCommentChannel, this)
+    val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, targetPriceLog, macroImpact, krxShortSelling, valuationBand, peerValuation, backtest, eventSync, modelRouter, slack, aiCommentChannel, this)
     val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand)
     val moodLog = MarketMoodLogService()
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, modelRouter, moodLog, eventSync)
@@ -244,6 +247,7 @@ fun Application.module() {
             shortSellingRoutes(krxShortSelling)
             targetPriceRoutes(naverTargetPrice)
             valuationBandRoutes(valuationBand)
+            peerValuationRoutes(peerValuation)
             backtestRoutes(backtest)
             comparisonRoutes(comparison)
             eventRoutes(eventSync)

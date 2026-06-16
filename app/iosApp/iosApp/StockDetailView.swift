@@ -24,6 +24,8 @@ struct StockDetailView: View {
     @State private var shortSelling: ShortSellingSummary?
     @State private var shortSellingHelpExpanded = false
     @State private var valuationBand: ValuationBand?
+    @State private var peerValuation: PeerValuation?  // 동종 상대 밸류(밸류-C)
+    @State private var peerExpanded = false
     @State private var backtest: Backtest?          // 신호별 익일 적중률(검증된 신호)
     @State private var flowSensitivity: FlowSensitivity?  // 수급-가격 민감도
     @State private var dartExpanded = false
@@ -75,6 +77,7 @@ struct StockDetailView: View {
                     // ── 심화 분석 (기본 접힘) ──
                     analysisCard(q)
                     if let band = valuationBand { valuationBandCard(band) }
+                    if let pv = peerValuation { peerValuationCard(pv) }
                     if let bt = backtest { backtestCard(bt) }
                     if let fs = flowSensitivity { flowSensitivityCard(fs) }
                     if let ss = shortSelling { shortSellingCard(ss) }
@@ -1337,6 +1340,96 @@ struct StockDetailView: View {
         }
     }
 
+    // 동종(peer) 상대 밸류 카드 — 같은 사업 경쟁사 중앙값 대비 PER/PBR 위치(밸류-C)
+    private func peerValuationCard(_ pv: PeerValuation) -> some View {
+        guard pv.per != nil || pv.pbr != nil else { return AnyView(EmptyView()) }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("동종 상대 밸류").font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text("\(pv.clusterLabel) · peer \(pv.peerCount)").font(.caption2).foregroundColor(.secondary)
+                    Image(systemName: peerExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { peerExpanded.toggle() } }
+                if peerExpanded {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let m = pv.per { peerMetricRow(name: "PER", m: m) }
+                        if let m = pv.pbr {
+                            if pv.per != nil { Divider() }
+                            peerMetricRow(name: "PBR", m: m)
+                        }
+                        Text("같은 사업 경쟁사 중앙값과 비교 — KIS 기준값, 상대 위치 참고용")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    .padding(.top, 8).padding(.bottom, 4)
+                }
+            }
+            .cardStyle()
+        )
+    }
+
+    private func peerMetricRow(name: String, m: PeerMetric) -> some View {
+        let color = peerValuationColor(m.label)
+        let lo = min(m.peerMin, m.current), hi = max(m.peerMax, m.current)
+        let frac = hi > lo ? CGFloat((m.current - lo) / (hi - lo)) : 0.5
+        let clamped = frac < 0 ? 0.0 : (frac > 1 ? 1.0 : frac)
+        let diff = String(format: "%@%.0f%%", m.diffPct >= 0 ? "+" : "", m.diffPct)
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(name).font(.caption.weight(.semibold)).foregroundColor(.secondary)
+                Text(String(format: "%.2f배", m.current)).font(.caption.weight(.bold))
+                Text("(\(diff))").font(.caption2).foregroundColor(color)
+                Spacer()
+                Text(m.label)
+                    .font(.caption2)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(color.opacity(0.15))
+                    .foregroundColor(color)
+                    .cornerRadius(8)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.gray.opacity(0.18))
+                        .frame(height: 6)
+                    if hi > lo {
+                        let midFrac = CGFloat((m.peerMedian - lo) / (hi - lo))
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.5))
+                            .frame(width: 1.5, height: 10)
+                            .offset(x: midFrac * geo.size.width - 0.75, y: -2)
+                    }
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(color)
+                        .frame(width: 3, height: 14)
+                        .offset(x: clamped * (geo.size.width - 3), y: -4)
+                }
+            }
+            .frame(height: 14)
+            HStack {
+                Text(String(format: "동종 최저 %.1f", m.peerMin)).font(.caption2).foregroundColor(.secondary)
+                Spacer()
+                Text(String(format: "중앙 %.1f배", m.peerMedian)).font(.caption2).foregroundColor(.secondary)
+                Spacer()
+                Text(String(format: "최고 %.1f", m.peerMax)).font(.caption2).foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func peerValuationColor(_ label: String) -> Color {
+        switch label {
+        case "동종 대비 낮음":   return .blue   // 동종보다 싼 편
+        case "동종 대비 높음":   return .red
+        default:               return .orange  // 비슷
+        }
+    }
+
     // 검증된 신호 카드 — 외인·기관 순매수·거래량 급증일의 익일 적중률(이 종목 실측)
     private func backtestCard(_ bt: Backtest) -> some View {
         let shown = bt.signals.filter { $0.n > 0 }
@@ -1975,6 +2068,7 @@ struct StockDetailView: View {
         async let signalTask        = api.getStockSignals(code: item.code)
         async let shortSellingTask  = api.getShortSelling(code: item.code)
         async let valuationBandTask = api.getValuationBand(code: item.code)
+        async let peerValuationTask = api.getPeerValuation(code: item.code)
         async let backtestTask          = api.getBacktest(code: item.code)
         async let flowSensitivityTask   = api.getFlowSensitivity(code: item.code)
         dartDisclosures = (try? await dartTask) ?? []
@@ -1982,6 +2076,7 @@ struct StockDetailView: View {
         stockSignal     = try? await signalTask
         shortSelling    = try? await shortSellingTask
         valuationBand   = try? await valuationBandTask
+        peerValuation   = try? await peerValuationTask
         backtest        = try? await backtestTask
         flowSensitivity = try? await flowSensitivityTask
     }

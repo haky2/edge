@@ -22,6 +22,7 @@ import com.haky.edge.model.StockInfo
 import com.haky.edge.model.TargetPriceInfo
 import com.haky.edge.model.MarketEvent
 import com.haky.edge.model.MoodAccuracyReport
+import com.haky.edge.model.PeerValuation
 import com.haky.edge.model.ValuationBand
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -302,6 +303,12 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getValuationBand(code: String): ValuationBand? = runCatching {
         client.get("$baseUrl/valuation-band/$code").body<ValuationBand>()
+    }.getOrNull()
+
+    /** 동종(peer) 상대 밸류에이션. 클러스터 미정의·peer 부족 시 null(카드 숨김). */
+    @Throws(Exception::class)
+    suspend fun getPeerValuation(code: String): PeerValuation? = runCatching {
+        client.get("$baseUrl/peer-valuation/$code").body<PeerValuation>()
     }.getOrNull()
 
     /**
