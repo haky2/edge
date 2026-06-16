@@ -348,6 +348,7 @@ $enumList
         POWER_EQUIP("전력기기",  "변압기·전력기기·중전기",              MacroGroup.POWER_EQUIP),
         CABLE("전선",            "전선·케이블",                        MacroGroup.POWER_EQUIP),
         RENEWABLE("신재생에너지","태양광·풍력·에너지 인프라",            MacroGroup.POWER_EQUIP),
+        NUCLEAR("원전·원자력",   "원자력발전·SMR·원전 기자재·발전설비",    MacroGroup.POWER_EQUIP),
         // 전자
         HOME_APPLIANCE("가전",   "생활가전·AV",                        MacroGroup.ELECTRONICS),
         DISPLAY("디스플레이",    "OLED·LCD·패널",                      MacroGroup.ELECTRONICS),
@@ -373,7 +374,8 @@ $enumList
         private const val SECTOR_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000L
 
         // Claude 자동 추론이 명확히 틀린 경우에만 여기에 추가(코드 수정 불필요가 기본).
-        private val MANUAL_OVERRIDES = mapOf<String, List<Sector>>()
+        // 두산에너빌리티: KIS 업종명이 '전기가스'라 POWER_EQUIP으로 오분류되기 쉬워 원전으로 고정.
+        private val MANUAL_OVERRIDES = mapOf("034020" to listOf(Sector.NUCLEAR))
 
         // 섹터별 매크로 민감도. note 는 근거 한 줄(앱·Claude facts에 그대로 노출).
         // 매크로 민감도는 대분류(MacroGroup) 기준. 세부 Sector는 group으로 여기에 연결된다.

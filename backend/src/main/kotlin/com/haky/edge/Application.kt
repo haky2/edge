@@ -194,7 +194,7 @@ fun Application.module() {
     val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos, naver, yahoo, eventSync)
     val krxShortSelling = KrxShortSellingClient()
     val valuationBand = ValuationBandService(kis, dart)
-    val peerValuation = PeerValuationService(kis)
+    val peerValuation = PeerValuationService(kis, master, macroImpact)
     val backtest = BacktestService(kis)
     val analysis = AnalysisService(kis, naver, master, claude, dart, naverTargetPrice, targetPriceLog, macroImpact, krxShortSelling, valuationBand, peerValuation, backtest, eventSync, modelRouter, slack, aiCommentChannel, this)
     val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand)

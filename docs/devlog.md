@@ -6,6 +6,26 @@
 
 ---
 
+## 2026-06-16 — 밸류-C2: peer 자동분류 리팩터 (수동맵 → 섹터 바스켓) + 원전 + 이상치 버그
+
+**한 일**
+- "매번 peer를 수동 클러스터로?" → 자동화. `PeerValuationService`를 종목별 하드코딩 클러스터에서 **Sector별 peer 바스켓**으로 리팩터.
+  - 종목 섹터를 `MacroImpactService.resolveStockSectors`(Claude 분류, 7일 캐시, 기존 인프라)로 자동 결정 → 그 섹터 바스켓과 비교. 멀티 섹터면 유효 비교가 나오는 첫 섹터 채택. 종목별 맵 대신 **섹터 바스켓 ~9개만 유지** → 검색으로 추가된 임의 종목도 자동 커버.
+  - `SECTOR_PEERS`: DEFENSE·SHIPBUILDING·POWER_EQUIP/CABLE(공유)·IT_SERVICE·INTERNET·AUTO_OEM/AUTO_PARTS(공유)·NUCLEAR. 바스켓 없는 섹터(MEMORY 2개·ROBOT/AI 적자초기성장)는 자연 null — 밸류 비교 성립하는 섹터만 둠(로봇·AI는 테마라 섹터브리핑/매크로영향이 다룸).
+  - PeerValuationService 생성자: (kis) → (kis, master, macroImpact).
+- **NUCLEAR 섹터 추가**(MacroImpactService.Sector, group=POWER_EQUIP) — enum에 넣으면 inferSectors 분류 프롬프트(enumList=Sector.entries)에 자동 포함. 두산에너빌리티(034020)는 KIS 업종명이 '전기가스'라 오분류 쉬워 MANUAL_OVERRIDES로 NUCLEAR 고정.
+- **이상치 버그 수정(C1부터 잠복)**: buildMetric이 peer만 유효범위 필터하고 **target 자신은 안 걸러** 두산에너빌리티 PER 782(이익≈0)가 +1609%로 나오던 것 → target도 PER_RANGE(0.5~200)/PBR_RANGE(0.1~50) 필터. 밖이면 해당 지표 null.
+- **검증**(C2 코드 재기동): 두산에너빌리티→원전·원자력 PER null+PBR "동종과 비슷"(8.5 vs 8.19), 카카오(비관심종목)→인터넷플랫폼 자동분류, 레인보우로보틱스·삼성전자 null, 기존 케이스(방산·조선·IT·자동차) 일관. DTO 모양 불변 → **앱 변경 없음**. compileKotlin 통과.
+
+**막힌 점 / 배운 것**
+- 밸류 peer는 "테마"가 아니라 "실적·사업 구조가 비슷한 군"이어야 의미. 로봇 순수주(두산로보틱스 PER −127·로보티즈 832·유진로봇 −225)는 적자·초기성장이라 밸류 비교 불가 → null이 정답. 현대차를 로봇으로 묶으면 오도(로봇은 일부 사업, 배수는 완성차끼리).
+- resolveStockSectors가 멀티 섹터 반환(예: [AI_CLOUD, IT_SERVICE]) → 바스켓 없는 AI_CLOUD 건너뛰고 IT_SERVICE로 비교. fallthrough 루프가 이걸 처리.
+
+**다음 할 일**
+- 밸류 A·B·C·C2 미배포 → Cloud Run 배포 시 함께.
+
+---
+
 ## 2026-06-16 — 밸류-C: 동종(peer) 상대 밸류에이션 (C1 백엔드 + C2 UI)
 
 **한 일**
