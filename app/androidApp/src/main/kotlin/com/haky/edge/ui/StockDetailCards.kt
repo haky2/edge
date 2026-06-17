@@ -757,8 +757,10 @@ private fun flowAbbrev(n: Long): String {
 // **굵게** + 한글 경계 버그 회피: CommonMark 파서 대신 정규식으로 직접 AnnotatedString 빌드.
 // (iOS는 NSRegularExpression 직접 파싱 — 커밋 4a6e1ea. Compose도 동일 전략.)
 internal fun parseMarkdownBold(s: String): AnnotatedString {
+    // ### 헤딩 → **bold** 변환 (AI 응답에서 hash 헤딩 쓸 때)
+    var text = Regex("^#{1,3} +(.+)$", RegexOption.MULTILINE).replace(s) { "**${it.groupValues[1]}**" }
     // ~~취소선~~ 은 내용만 남기고 제거
-    var text = Regex("~~(.+?)~~").replace(s) { it.groupValues[1] }
+    text = Regex("~~(.+?)~~").replace(text) { it.groupValues[1] }
     text = text.replace("~~", "")
     return buildAnnotatedString {
         var cursor = 0

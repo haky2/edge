@@ -43,12 +43,16 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -84,6 +88,7 @@ fun WatchlistScreen(
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val loadedAtState = remember { mutableStateOf(0L) }
 
     suspend fun loadSparklines(watchlist: List<WatchItem>) {
         val todayStr = run {
@@ -142,9 +147,23 @@ fun WatchlistScreen(
                 error = "불러오기 실패: ${e.message}"
             }
             loading = false
+            loadedAtState.value = System.currentTimeMillis()
             launch { loadSparklines(watchlist) }
             launch { loadSupplyBadges(watchlist) }
         }
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && loadedAtState.value > 0) {
+                if (System.currentTimeMillis() - loadedAtState.value > 30 * 60_000L) {
+                    refresh()
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(Unit) { refresh() }

@@ -1,8 +1,10 @@
 package com.haky.edge.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,10 +23,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -36,6 +39,7 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,10 +49,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -98,7 +106,7 @@ private data class BriefHoldingRow(val item: WatchItem, val avg: Double, val qty
 private data class SupplyRow(val item: WatchItem, val quote: Quote?, val labels: List<String>)
 private data class DartItem(val corpName: String, val reportName: String, val date: String, val url: String)
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun BriefingScreen(
     api: EdgeApi,
@@ -110,6 +118,8 @@ fun BriefingScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val aggressive = AppPrefs.getMode(context) == "aggressive"
+    var showRefreshMenu by remember { mutableStateOf(false) }
+    val loadedAtState = remember { mutableStateOf(0L) }
 
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -317,6 +327,7 @@ fun BriefingScreen(
                 launch { buildDart(codes) }
             }
         }
+        loadedAtState.value = System.currentTimeMillis()
     }
 
     fun regenAllAI() {
@@ -330,20 +341,63 @@ fun BriefingScreen(
         }
     }
 
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && loadedAtState.value > 0) {
+                if (System.currentTimeMillis() - loadedAtState.value > 30 * 60_000L) {
+                    scope.launch { load() }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     LaunchedEffect(Unit) { load() }
+
+    val RefreshButton: @Composable () -> Unit = {
+        Box {
+            if (loading) {
+                Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .combinedClickable(
+                            onClick = { scope.launch { load() } },
+                            onLongClick = { showRefreshMenu = true },
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "새로고침")
+                }
+            }
+            DropdownMenu(
+                expanded = showRefreshMenu,
+                onDismissRequest = { showRefreshMenu = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text("전체 새로고침") },
+                    leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    onClick = { showRefreshMenu = false; scope.launch { load() } },
+                )
+                DropdownMenuItem(
+                    text = { Text("AI 코멘트만 재생성") },
+                    leadingIcon = { Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    onClick = { showRefreshMenu = false; regenAllAI() },
+                )
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
             CompactHeader(title = "브리핑") {
-                if (loading) {
-                    Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    }
-                } else {
-                    IconButton(onClick = { scope.launch { load() } }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "새로고침")
-                    }
-                }
+                RefreshButton()
             }
         }
     ) { innerPadding ->
