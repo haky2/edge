@@ -613,7 +613,7 @@ internal fun InterpretationCard(
             if (hasValuation) {
                 if (ctx != null) HorizontalDivider()
                 if (quote.sectorName.isNotEmpty()) InsightRow("업종", quote.sectorName)
-                if (quote.per > 0) ValuationRow("PER", "%.2f배".format(quote.per), "내 돈을 몇 년 모으면 이 회사를 통째로 살 수 있나 — 낮을수록 이익 대비 싼 편이에요. 성장 기대가 크면 높게 매겨져요.", helpExpanded)
+                if (quote.per > 0) ValuationRow("PER", "%.2f배".format(quote.per), "이 회사가 지금처럼 벌면 몇 년 치 이익이 쌓여야 지금 주가만큼 되는지예요. 낮을수록 버는 것에 비해 주가가 싼 편이고, 성장 기대가 크면 높게 매겨져요.", helpExpanded)
                 if (quote.pbr > 0) ValuationRow("PBR", "%.2f배".format(quote.pbr), "회사가 가진 재산(장부가치) 대비 주가예요. 1배면 딱 장부가치 수준, 낮을수록 자산 대비 싼 편.", helpExpanded)
                 Text(
                     if (helpExpanded) "ⓘ 설명 접기 ▲" else "ⓘ PER·PBR이 뭐죠? ▼",

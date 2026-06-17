@@ -549,7 +549,7 @@ struct StockDetailView: View {
                         }
                         if q.per > 0 {
                             valuationRow("PER", String(format: "%.2f배", q.per),
-                                "내 돈을 몇 년 모으면 이 회사를 통째로 살 수 있나 — 낮을수록 이익 대비 싼 편이에요. 성장 기대가 크면 높게 매겨져요.",
+                                "이 회사가 지금처럼 벌면 몇 년 치 이익이 쌓여야 지금 주가만큼 되는지예요. 낮을수록 버는 것에 비해 주가가 싼 편이고, 성장 기대가 크면 높게 매겨져요.",
                                 expandable: true)
                         }
                         if q.pbr > 0 {

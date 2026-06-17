@@ -62,14 +62,16 @@ private fun String?.toCodeList(): List<String> =
         ?.distinct()
         ?: emptyList()
 
-// 시장 지표 표시 순서: 한국 → 미국 지수 → 아시아 → 금리/환율 → 원자재 → 심리.
+// 시장 지표 표시 순서 — 위에서 아래로 한 흐름으로 읽히게:
+// 우리 시장·원화 → 미국 증시(어젯밤 종가) → 미국 야간 선물(가장 최신) → 야간 한국물·아시아 → 금리·달러 → 원자재 → 심리.
 private val MACRO_DISPLAY_ORDER = listOf(
-    "kospi", "kosdaq", "usdkrw", "ewy",          // 한국
-    "nasdaq", "sox", "sp500", "dow", "rut",       // 미국 지수
-    "nikkei",                                      // 아시아
-    "tnx", "dxy", "usdjpy", "rate3y",             // 금리/환율
-    "crude", "copper",                             // 원자재
-    "vix", "fear_greed",                           // 심리
+    "kospi", "kosdaq", "usdkrw",                  // 우리 시장 + 원화
+    "nasdaq", "sox", "sp500", "dow", "rut",       // 미국 증시(어젯밤 종가)
+    "nqfut", "esfut", "ymfut",                    // 미국 야간 선물(종가 이후 최신 흐름)
+    "ewy", "nikkei",                              // 야간 한국물·아시아
+    "tnx", "rate3y", "dxy", "usdjpy",             // 금리·달러
+    "crude", "copper",                            // 원자재
+    "vix", "fear_greed",                          // 심리·변동성
 )
 
 // "code1:avg1:qty1,code2:avg2:qty2" → Map<code, HoldingPosition>
