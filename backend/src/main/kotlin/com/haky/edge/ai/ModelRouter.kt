@@ -32,9 +32,10 @@ class ModelRouter(
         const val ANALYSIS_INITIAL = "analysis_initial"
         const val ANALYSIS_AUTO_REFRESH = "analysis_auto_refresh"
         const val ANALYSIS_MANUAL = "analysis_manual"
+        const val CATALYST = "catalyst"
 
-        /** 기본 Opus 대상: 브리핑 + 종목 최초 생성 + 급변 자동 재생성 + 수동 새로고침(전부). */
-        val DEFAULT_OPUS_TRIGGERS = setOf(BRIEFING, ANALYSIS_INITIAL, ANALYSIS_AUTO_REFRESH, ANALYSIS_MANUAL)
+        /** 기본 Opus 대상: 브리핑 + 종목 최초 생성 + 급변 자동 재생성 + 수동 새로고침 + 재료 판정(전부). */
+        val DEFAULT_OPUS_TRIGGERS = setOf(BRIEFING, ANALYSIS_INITIAL, ANALYSIS_AUTO_REFRESH, ANALYSIS_MANUAL, CATALYST)
 
         /**
          * env 문자열 → 트리거 집합.

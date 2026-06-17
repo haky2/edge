@@ -1,6 +1,7 @@
 package com.haky.edge.api
 
 import com.haky.edge.model.Analysis
+import com.haky.edge.model.CatalystReport
 import com.haky.edge.model.Comparison
 import com.haky.edge.model.Backtest
 import com.haky.edge.model.FlowSensitivity
@@ -146,6 +147,17 @@ class EdgeApi(
     suspend fun getAnalysis(code: String, mode: String = "defensive", refresh: Boolean = false): Analysis =
         client.get("$baseUrl/analysis/$code") {
             if (mode != "defensive") parameter("mode", mode)
+            if (refresh) parameter("refresh", "true")
+        }.body()
+
+    /**
+     * 종목별 재료(DART 공시 + 뉴스) 구조화 판정. 각 재료를 호재/악재·강도·선반영까지 판정해 반환.
+     * 백엔드가 (날짜·30분버킷) 캐시. refresh=true: 캐시 건너뛰고 즉시 재생성.
+     */
+    @Throws(Exception::class)
+    suspend fun getCatalysts(code: String, days: Int = 7, refresh: Boolean = false): CatalystReport =
+        client.get("$baseUrl/catalysts/$code") {
+            if (days != 7) parameter("days", days)
             if (refresh) parameter("refresh", "true")
         }.body()
 

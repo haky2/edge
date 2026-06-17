@@ -2,6 +2,7 @@ package com.haky.edge
 
 import com.haky.edge.ai.AnalysisService
 import com.haky.edge.ai.BacktestService
+import com.haky.edge.ai.CatalystService
 import com.haky.edge.ai.ClaudeClient
 import com.haky.edge.ai.ClaudeException
 import com.haky.edge.ai.ClaudeUsageTracker
@@ -30,6 +31,7 @@ import com.haky.edge.news.TargetPriceLogService
 import com.haky.edge.news.NewsException
 import com.haky.edge.routes.analysisRoutes
 import com.haky.edge.routes.backtestRoutes
+import com.haky.edge.routes.catalystRoutes
 import com.haky.edge.routes.comparisonRoutes
 import com.haky.edge.routes.eventRoutes
 import com.haky.edge.routes.chartRoutes
@@ -201,6 +203,7 @@ fun Application.module() {
     val moodLog = MarketMoodLogService()
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, modelRouter, moodLog, eventSync)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
+    val catalyst = CatalystService(kis, naver, master, claude, dart, valuationBand, macroImpact, modelRouter)
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
     val costSummary = CostSummaryService(slack, costChannel, usageTracker)
@@ -240,6 +243,7 @@ fun Application.module() {
             newsRoutes(naver)
             searchRoutes(master)
             analysisRoutes(analysis)
+            catalystRoutes(catalyst)
             dartRoutes(dart)
             earningsRoutes(dart)
             sectorRoutes(kis)

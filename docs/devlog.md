@@ -6,6 +6,54 @@
 
 ---
 
+## 2026-06-17 — 재료 판정 슬라이스 2 다듬기 (제목·접기·IA 정리)
+
+**한 일** (사용자 피드백 반영)
+- 카드 제목 "오늘의 재료" → **"뉴스·공시 영향"**(📊).
+- **접이식**으로 전환(기본 접힘). 접어도 헤더 우측 **netBias 배지**로 결론은 보임. Android는 기존 `CollapsibleCard` 재사용, iOS는 chevron 토글.
+- 위치: AI 코멘트 직하 → **수급 카드 아래**(재료 묶음 흐름).
+- **IA 정리: "관련 뉴스" 카드 + "공시(30일)" 섹션 둘 다 제거** — 판정 카드가 같은 뉴스·공시를 링크까지 포함해 상위호환이라 중복. iOS `newsCard`/`dartDisclosureSection`/`dartDisclosureRow` + 관련 state·fetch 삭제, Android `NewsCard`/`DartDisclosureCard` + state·fetch 삭제.
+- 원문 섹션을 없앤 대신 **로드 실패 폴백** 추가: 판정 카드가 Claude 오류/타임아웃으로 nil이면 "불러오지 못했어요 + 다시 시도" 표시(`catalystAttempted`/`onRetry`). 빈 화면 방지.
+- 빌드: Android compileDebugKotlin + iOS(iPhone17) BUILD SUCCEEDED. 에뮬 재설치·확인.
+
+**참고**
+- 사라진 것: 30일 공시 아카이브(판정 카드는 7일만). 필요 시 슬라이스 추가로 부활 가능.
+- 검증용 임시: Android `local.properties`/iOS `Secrets.xcconfig` baseUrl을 로컬로 돌려 설치 후 prod 복원(앱 설치본만 로컬). iOS는 Secrets EDGE_BASE_URL 비운 상태(커밋 전 복원 필요). `androidApp/src/debug/AndroidManifest.xml`(cleartext 허용, debug 전용) 추가.
+
+---
+
+## 2026-06-17 — 재료 판정 슬라이스 2 (앱 "오늘의 재료" 카드, iOS+Android)
+
+**한 일**
+- 슬라이스 1 백엔드 `/catalysts`를 앱 카드로. `CatalystReport`/`CatalystItem` sharedLogic 모델 + `EdgeApi.getCatalysts(code,days,refresh)`(@Throws).
+- **iOS** `StockDetailView.swift`: `catalystCard()` — AI 코멘트 카드 바로 아래 배치. 헤더에 netBias 배지(호재우위=빨강/악재우위=파랑/혼조·중립=회색) + 종합 summary, 재료별 행 = `호재·악재 강도` 캡슐(호재 빨강/악재 파랑/중립 회색) + 카테고리 + 출처·날짜(공시=YYYYMMDD/뉴스=RFC822 분기) + 제목 링크 + 한줄이유 + ⚠️선반영(근거). 별도 `.task { loadCatalysts() }`(Claude 호출이라 느려 분리), 로딩 시 "재료 분석 중…".
+- **Android** 동시 반영([[feedback-android-sync]] 방법 A): `StockDetailCards.kt` `CatalystCard`/`CatalystRow` 동일 디자인(BadgePill·ChangeUp/Down·OrangeAccent 재사용, shortDate/formattedDate8 공용). `StockDetailScreen.kt` state+LaunchedEffect+AICommentCard 아래 배치.
+- 색: 한국 관례 호재=빨강(ChangeUp)/악재=파랑(ChangeDown).
+- **검증**: sharedLogic(iosSimulatorArm64)·androidApp(compileDebugKotlin)·iOS(iPhone17 시뮬) **BUILD SUCCEEDED**. 시뮬 시각 확인은 미실시(빌드만).
+
+**다음 할 일**
+- 시뮬/실기기에서 카드 시각 확인(레이아웃·색·선반영 표시).
+- 슬라이스 3: 관심종목 속한 섹터/테마 큰 재료를 브리핑에 한 줄.
+
+---
+
+## 2026-06-17 — 재료 판정 엔진 슬라이스 1 (백엔드 CatalystService)
+
+**한 일**
+- "수주·뉴스가 주가에 호재인지 악재인지 미리 가늠" 기능. 설계 = **2번(관심종목 코어) + 3번(테마 가볍게)**. 분석 품질은 범위가 작을수록(=종목 한정) 높음 — 앱이 그 종목의 밸류밴드·상대강도·가격흐름 같은 **선반영 판정용 맥락 데이터를 이미 들고 있어서**. 그래서 코어를 관심종목 단위로.
+- **`ai/CatalystService.kt`**: 종목별 `DART 공시(getDisclosures) + 뉴스(naver)` 수집 → 공시는 `ruleCategory()`로 1차 분류(수주·공급계약/실적/유증·CB/자사주/배당/정책/소송/지분변동/정정/기타) → Claude가 재료별 **호재·악재·중립 + 강도(상·중·하) + 한줄이유 + 선반영(preReflected+근거)** 를 **JSON으로** 판정. url·제목·날짜는 우리 materials에서 병합(환각 url 방지), Claude는 인덱스별 판정값만. 선반영 점검용 컨텍스트(현재가·52주위치·섹터RS·밸류밴드라벨·최근6거래일 누적등락) 동봉. `(today|30분버킷|days|code)` 인메모리+파일 캐시.
+- `CatalystReport`(code·name·netBias·summary·items) / `CatalystItem` DTO. `GET /catalysts/{code}?days=7&refresh=true` (`routes/CatalystRoutes.kt`).
+- 런타임 모델 **Opus 고정**: `ModelRouter.CATALYST` 트리거 추가 + `DEFAULT_OPUS_TRIGGERS`에 포함(선반영·맥락 판단 정확도 우선, 관심종목 소수+캐시라 비용 부담 작음).
+- **검증(curl 실호출)**: HD현대일렉트릭(267260) — netBias 호재우위, "최근 6거래일 +14.6%·52주 고점권" 근거로 수주 호재 다수를 preReflected=true. 한화에어로(012450) — 11재료, KAI 지분확대 공시·중동수출 분류 정확, 대전공장 사고 뉴스 악재/하. 캐시 재호출 0.012s, 잘못된 코드 400.
+
+**다음 할 일**
+- 슬라이스 2: 앱 "오늘의 재료" 카드(iOS + Android Compose 동시) — 🟢🔴⚪ 배지+강도+이유+⚠️선반영+원문링크. `CatalystReport`/`CatalystItem`을 sharedLogic 모델로 + `EdgeApi.getCatalysts()`.
+- 슬라이스 3: 관심종목 속한 섹터/테마 큰 재료를 브리핑에 한 줄.
+- (선택) 슬라이스 4: 강한 호재/악재 Slack 아침브리핑·신호알림 통합.
+- 다듬기 후보: 무관 매크로 뉴스("일본 금리 1%")가 종목 수주 맥락에 약하게 엮이는 경우 있음 — 관련성 낮으면 중립 처리 규칙 강화 검토.
+
+---
+
 ## 2026-06-16 — 밸류-C2: peer 자동분류 리팩터 (수동맵 → 섹터 바스켓) + 원전 + 이상치 버그
 
 **한 일**
