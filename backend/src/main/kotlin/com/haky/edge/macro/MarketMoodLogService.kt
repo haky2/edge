@@ -61,10 +61,13 @@ class MarketMoodLogService {
     fun hasTodayEntry(date: String): Boolean = loadLog().any { it.date == date }
 
     // 코스피 선행 지표 가중치. 음수=강달러·고환율은 코스피에 역방향.
+    // 미국 지수선물(nqfut/esfut/ymfut)은 한국 장 전 미국 야간 흐름을 반영하는 가장 신선한 선행신호 —
+    // 지수 종가(nasdaq/sp500/dow)와 상관 높지만 장 마감 후 변동까지 담아 갭 방향을 앞서 가리킨다.
     private val LEADING_WEIGHTS = mapOf(
         "nasdaq" to 3.0, "sp500" to 3.0, "dow" to 2.0,
         "ewy"    to 3.0, "sox"   to 1.0, "rut" to 1.0,
         "dxy"    to -2.0, "usdkrw" to -2.0,
+        "nqfut"  to 2.0, "esfut"  to 2.0, "ymfut" to 1.0,
     )
 
     /** 미국 지수·환율 지표로 코스피 방향 예측. */
