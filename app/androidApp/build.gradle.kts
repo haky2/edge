@@ -11,6 +11,10 @@ val localProps = Properties()
 val localPropsFile = rootProject.file("local.properties")
 if (localPropsFile.exists()) localProps.load(localPropsFile.inputStream())
 
+val keystoreProps = Properties()
+val keystorePropsFile = file("keystore/keystore.properties")
+if (keystorePropsFile.exists()) keystoreProps.load(keystorePropsFile.inputStream())
+
 kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_11
@@ -35,6 +39,15 @@ android {
     namespace = "com.haky.edge"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
+    signingConfigs {
+        create("release") {
+            storeFile = if (keystoreProps.isNotEmpty()) file(keystoreProps["storeFile"] as String) else null
+            storePassword = keystoreProps["storePassword"] as? String
+            keyAlias = keystoreProps["keyAlias"] as? String
+            keyPassword = keystoreProps["keyPassword"] as? String
+        }
+    }
+
     defaultConfig {
         applicationId = "com.haky.edge"
         minSdk = libs.versions.android.minSdk.get().toInt()
@@ -58,6 +71,9 @@ android {
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
+            if (keystoreProps.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
