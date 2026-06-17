@@ -122,6 +122,8 @@ fun BriefingScreen(
     var supplyRows by remember { mutableStateOf<List<SupplyRow>>(emptyList()) }
     var dartLoading by remember { mutableStateOf(false) }
     var dartItems by remember { mutableStateOf<List<DartItem>>(emptyList()) }
+    var catalystBriefLoading by remember { mutableStateOf(false) }
+    var catalystBriefSectors by remember { mutableStateOf<List<com.haky.edge.model.SectorCatalystLine>>(emptyList()) }
 
     // 시장 탭
     var moodLoading by remember { mutableStateOf(false) }
@@ -254,16 +256,26 @@ fun BriefingScreen(
         } finally { dartLoading = false }
     }
 
+    suspend fun buildCatalystBrief(codes: List<String>) {
+        catalystBriefLoading = true
+        try {
+            if (codes.isEmpty()) return
+            val r = runCatching { api.getCatalystBrief(codes) }.getOrNull() ?: return
+            catalystBriefSectors = r.sectors
+        } finally { catalystBriefLoading = false }
+    }
+
     suspend fun load() {
         loading = true; supplyLoading = true; dartLoading = true; macroLoading = true
         moodLoading = true; impactLoading = true; earningsLoading = true; eventsLoading = true
-        sectorLoading = true; sectorBriefingLoading = true
+        sectorLoading = true; sectorBriefingLoading = true; catalystBriefLoading = true
         error = null
         supplyRows = emptyList(); dartItems = emptyList(); macroItems = emptyList()
         moodComment = ""; moodGeneratedAt = ""
         impactComment = ""; impactHoldings = emptyList(); impactWatch = emptyList(); impactGeneratedAt = ""
         earningsItems = emptyList(); eventItems = emptyList(); sectorItems = emptyList()
         sectorBriefingComment = ""; sectorSpotlight = emptyList(); sectorBriefingGeneratedAt = ""
+        catalystBriefSectors = emptyList()
 
         val allItems = watchlistRepo.all()
         watchlistIsEmpty = allItems.isEmpty()
@@ -278,6 +290,7 @@ fun BriefingScreen(
             launch { buildEvents() }
             launch { buildImpact(allItems) }
             launch { buildSectorBriefing(codes) }
+            launch { buildCatalystBrief(codes) }
             launch {
                 val quotes = runCatching { api.getQuotes(codes) }.getOrElse { e ->
                     error = "불러오기 실패: ${e.message}\n(백엔드 연결을 확인해 주세요)"
@@ -411,6 +424,23 @@ fun BriefingScreen(
                                 else if (dartLoading) LoadingRow("확인 중…")
                                 else if (dartItems.isEmpty()) EmptyRow("최근 7일간 공시가 없어요")
                                 else DartList(dartItems)
+                            }
+                        }
+                        // ── 테마별 재료 동향 ──
+                        item {
+                            CollapsibleCard(title = "테마별 재료 동향") {
+                                if (watchlistIsEmpty) {
+                                    EmptyRow("관심종목을 추가하면 테마별 재료 동향을 볼 수 있어요")
+                                } else if (catalystBriefLoading) {
+                                    LoadingRow("확인 중…")
+                                } else if (catalystBriefSectors.isEmpty()) {
+                                    EmptyRow("아직 재료 판정이 없어요. 종목 상세에서 뉴스·공시 영향 카드를 열면 채워집니다.")
+                                } else {
+                                    catalystBriefSectors.forEachIndexed { i, sector ->
+                                        CatalystBriefRow(sector)
+                                        if (i < catalystBriefSectors.size - 1) HorizontalDivider()
+                                    }
+                                }
                             }
                         }
                     } else {
@@ -687,6 +717,37 @@ private fun DartList(items: List<DartItem>) {
             }
         }
         if (idx < items.size - 1) HorizontalDivider()
+    }
+}
+
+// ── 테마별 재료 동향 행 ──
+@Composable
+private fun CatalystBriefRow(item: com.haky.edge.model.SectorCatalystLine) {
+    val (biasLabel, biasColor) = when (item.bias) {
+        "호재우위" -> "▲ 호재" to ChangeUp
+        "악재우위" -> "▼ 악재" to ChangeDown
+        else -> "━ 혼조" to androidx.compose.ui.graphics.Color(0xFFE69A28)
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.width(64.dp)) {
+            Surface(
+                shape = MaterialTheme.shapes.extraSmall,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                tonalElevation = 0.dp,
+            ) {
+                Text(
+                    item.sector,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
+            Text(biasLabel, style = MaterialTheme.typography.labelSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), color = biasColor)
+        }
+        Text(item.line, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
     }
 }
 

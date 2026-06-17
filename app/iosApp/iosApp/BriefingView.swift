@@ -73,6 +73,11 @@ struct BriefingView: View {
     @State private var sectorBriefingGeneratedAt = ""  // 캐시 최초 생성 시각 HH:mm
     @State private var sectorBriefingDate = ""         // 생성 기준일 YYYY-MM-DD
 
+    // 테마별 재료 동향 (catalyst brief)
+    @State private var catalystBriefLoading = false
+    @State private var catalystBriefSectors: [SectorCatalystLine] = []
+    @State private var catalystBriefExpanded = false
+
     // 접기/펼치기 상태 (기본 접힘)
     @State private var supplyExpanded = false
     @State private var dartExpanded = false
@@ -103,7 +108,7 @@ struct BriefingView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    let isLoading = loading || supplyLoading || dartLoading || macroLoading || moodLoading || impactLoading || earningsLoading || eventsLoading || sectorLoading || sectorBriefingLoading
+                    let isLoading = loading || supplyLoading || dartLoading || macroLoading || moodLoading || impactLoading || earningsLoading || eventsLoading || sectorLoading || sectorBriefingLoading || catalystBriefLoading
                     if isLoading {
                         ProgressView().scaleEffect(0.8)
                     } else {
@@ -165,6 +170,7 @@ struct BriefingView: View {
                 holdingsSection
                 supplySection
                 dartSection
+                catalystBriefSection
             } else {
                 marketMoodSection    // 오늘 시장 분위기 — 장 전 코스피 방향 한눈에
                 moodSignalSection    // 코스피 방향 선행 신호 (가중합 예측 + 적중률)
@@ -1258,6 +1264,78 @@ struct BriefingView: View {
         .padding(.vertical, 3)
     }
 
+    private var catalystBriefSection: some View {
+        Section {
+            Button { withAnimation { catalystBriefExpanded.toggle() } } label: {
+                HStack {
+                    Text("테마별 재료 동향").font(.headline)
+                    Spacer()
+                    if !catalystBriefSectors.isEmpty {
+                        let notable = catalystBriefSectors.filter { $0.bias == "악재우위" || $0.bias == "호재우위" }
+                        if !notable.isEmpty {
+                            Text("\(notable.count)개 테마")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    Image(systemName: catalystBriefExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+            .foregroundColor(.primary)
+            if watchlistIsEmpty {
+                Text("관심종목을 추가하면 테마별 재료 동향을 볼 수 있어요")
+                    .font(.footnote).foregroundColor(.secondary)
+            } else if catalystBriefLoading {
+                HStack { ProgressView().scaleEffect(0.8); Text("확인 중…").font(.footnote).foregroundColor(.secondary) }
+            } else if catalystBriefExpanded {
+                if catalystBriefSectors.isEmpty {
+                    Text("아직 재료 판정이 없어요. 종목 상세에서 뉴스·공시 영향 카드를 열면 채워집니다.")
+                        .font(.footnote).foregroundColor(.secondary)
+                } else {
+                    ForEach(catalystBriefSectors.indices, id: \.self) { i in
+                        catalystBriefRow(catalystBriefSectors[i])
+                        if i < catalystBriefSectors.count - 1 {
+                            Divider()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func catalystBriefRow(_ item: SectorCatalystLine) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            // 섹터 + bias 뱃지
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.sector)
+                    .font(.caption2)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Color(.secondarySystemFill))
+                    .cornerRadius(4)
+                let (bLabel, bColor) = biasBadge(item.bias)
+                Text(bLabel)
+                    .font(.caption2).bold()
+                    .foregroundColor(bColor)
+            }
+            // 한 줄 요약
+            Text(item.line)
+                .font(.subheadline)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 3)
+    }
+
+    private func biasBadge(_ bias: String) -> (String, Color) {
+        switch bias {
+        case "호재우위": return ("▲ 호재", .red)
+        case "악재우위": return ("▼ 악재", Color(red: 0.2, green: 0.4, blue: 1.0))
+        default:        return ("━ 혼조", .orange)
+        }
+    }
+
     // MARK: - 로드
 
     private func load() async {
@@ -1271,6 +1349,7 @@ struct BriefingView: View {
         eventsLoading = true
         sectorLoading = true
         sectorBriefingLoading = true
+        catalystBriefLoading = true
         errorText = nil
         supplyRows = []
         dartItems = []
@@ -1287,6 +1366,7 @@ struct BriefingView: View {
         sectorBriefingComment = ""
         sectorSpotlight = []
         sectorBriefingGeneratedAt = ""
+        catalystBriefSectors = []
 
         let allItems = Db.watchlist.all()
         watchlistIsEmpty = allItems.isEmpty
@@ -1301,6 +1381,7 @@ struct BriefingView: View {
         async let eventsTask: Void          = buildEvents()
         async let impactTask: Void          = buildImpact(allItems: allItems)
         async let sectorBriefingTask: Void  = buildSectorBriefing(codes: codes)
+        async let catalystBriefTask: Void   = buildCatalystBrief(codes: codes)
 
         let quotes: [Quote]
         do {
@@ -1310,7 +1391,7 @@ struct BriefingView: View {
             loading = false
             supplyLoading = false
             dartLoading = false
-            _ = await (macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, eventsTask, impactTask, sectorBriefingTask)
+            _ = await (macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, eventsTask, impactTask, sectorBriefingTask, catalystBriefTask)
             return
         }
         let quoteMap = Dictionary(uniqueKeysWithValues: quotes.map { ($0.code, $0) })
@@ -1326,10 +1407,17 @@ struct BriefingView: View {
         // supply·dart·macro·impact·sectorBriefing은 섹션 내부 스피너 유지하며 병렬 진행
         async let supplyTask: Void = buildSupply(allItems: allItems, quoteMap: quoteMap)
         async let dartTask: Void   = buildDart(codes: codes, allItems: allItems)
-        _ = await (supplyTask, dartTask, macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, eventsTask, impactTask, sectorBriefingTask)
+        _ = await (supplyTask, dartTask, macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, eventsTask, impactTask, sectorBriefingTask, catalystBriefTask)
 
         supplyLoading = false
         dartLoading = false
+    }
+
+    private func buildCatalystBrief(codes: [String]) async {
+        defer { catalystBriefLoading = false }
+        guard !codes.isEmpty else { return }
+        guard let result = try? await api.getCatalystBrief(codes: codes) else { return }
+        catalystBriefSectors = result.sectors
     }
 
     private func buildSectorBriefing(codes: [String], force: Bool = false) async {

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  디버그 빌드 전용 매니페스트. 로컬 백엔드(http://10.0.2.2:8080)는 평문 HTTP라
+  API 28+ 기본 정책상 차단된다 → 디버그에서만 cleartext 허용. release/prod(https)엔 영향 없음.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application
+        android:usesCleartextTraffic="true"
+        tools:ignore="UnusedAttribute" />
+</manifest>

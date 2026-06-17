@@ -1,6 +1,8 @@
 package com.haky.edge.api
 
 import com.haky.edge.model.Analysis
+import com.haky.edge.model.CatalystBriefReport
+import com.haky.edge.model.CatalystReport
 import com.haky.edge.model.Comparison
 import com.haky.edge.model.Backtest
 import com.haky.edge.model.FlowSensitivity
@@ -147,6 +149,27 @@ class EdgeApi(
         client.get("$baseUrl/analysis/$code") {
             if (mode != "defensive") parameter("mode", mode)
             if (refresh) parameter("refresh", "true")
+        }.body()
+
+    /**
+     * 종목별 재료(DART 공시 + 뉴스) 구조화 판정. 각 재료를 호재/악재·강도·선반영까지 판정해 반환.
+     * 백엔드가 (날짜·30분버킷) 캐시. refresh=true: 캐시 건너뛰고 즉시 재생성.
+     */
+    @Throws(Exception::class)
+    suspend fun getCatalysts(code: String, days: Int = 7, refresh: Boolean = false): CatalystReport =
+        client.get("$baseUrl/catalysts/$code") {
+            if (days != 7) parameter("days", days)
+            if (refresh) parameter("refresh", "true")
+        }.body()
+
+    /**
+     * 관심종목 재료 동향을 섹터별로 묶어 한 줄씩 반환. 캐시된 판정만 사용(Claude 미호출).
+     * 브리핑 "테마별 재료 동향" 섹션용.
+     */
+    @Throws(Exception::class)
+    suspend fun getCatalystBrief(codes: List<String>): CatalystBriefReport =
+        client.get("$baseUrl/catalyst-brief") {
+            parameter("codes", codes.joinToString(","))
         }.body()
 
     /**

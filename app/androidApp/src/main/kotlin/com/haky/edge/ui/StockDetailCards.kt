@@ -53,12 +53,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.haky.edge.model.Analysis
 import com.haky.edge.model.Backtest
+import com.haky.edge.model.CatalystItem
+import com.haky.edge.model.CatalystReport
+import androidx.compose.material3.TextButton
 import com.haky.edge.model.FactsRichness
-import com.haky.edge.model.DartDisclosure
 import com.haky.edge.model.EarningsEntry
 import com.haky.edge.model.FlowCorrelation
 import com.haky.edge.model.FlowSensitivity
-import com.haky.edge.model.NewsItem
 import com.haky.edge.model.ShortSellingSummary
 import com.haky.edge.model.PeerMetric
 import com.haky.edge.model.PeerValuation
@@ -143,31 +144,94 @@ private fun BadgePill(text: String, color: Color) {
     )
 }
 
-// ─── 관련 뉴스 ───────────────────────────────────────────
+// ─── 뉴스·공시 영향 (호재/악재 판정) — 접이식 ─────────────
+// 뉴스·공시를 카드 단위로 호재/악재·강도·선반영까지 판정. 접어도 netBias 배지로 결론은 보인다.
+// Claude 호출이라 로딩이 느릴 수 있음(백엔드 30분 캐시 적중 시 즉시).
 
 @Composable
-internal fun NewsCard(news: List<NewsItem>) {
+internal fun CatalystCard(report: CatalystReport?, loading: Boolean, attempted: Boolean, onRetry: () -> Unit) {
+    // 로드 실패(Claude 오류/타임아웃): 뉴스·공시 원문 섹션을 없앴으므로 빈 화면 방지용 폴백.
+    if (report == null && !loading && attempted) {
+        Row(
+            modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface, CardShape).padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("뉴스·공시 영향을 불러오지 못했어요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f))
+            TextButton(onClick = onRetry) { Text("다시 시도") }
+        }
+        return
+    }
+    if (report == null && !loading) return
     val uri = LocalUriHandler.current
-    Column(
-        modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface, CardShape).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    CollapsibleCard(
+        title = "뉴스·공시 영향",
+        leadingEmoji = "📊",
+        trailing = {
+            if (report != null) BadgePill(report.netBias, netBiasColor(report.netBias))
+            else CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+        },
     ) {
-        Text("관련 뉴스", style = MaterialTheme.typography.titleSmall)
-        news.forEachIndexed { idx, a ->
-            Column(
-                modifier = Modifier.fillMaxWidth().clickable { runCatching { uri.openUri(a.url) } }.padding(vertical = 3.dp),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(a.title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(a.source, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("·", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(shortDate(a.publishedAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (report != null) {
+            if (report.summary.isNotEmpty()) {
+                Text(report.summary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 4.dp))
+            }
+            if (report.items.isEmpty()) {
+                Text("최근 7일 새 재료(공시·뉴스)가 없습니다.",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                report.items.forEach { c ->
+                    HorizontalDivider()
+                    CatalystRow(c) { runCatching { uri.openUri(c.url) } }
                 }
             }
-            if (idx < news.size - 1) HorizontalDivider()
+        } else {
+            Text("재료 분석 중…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+@Composable
+private fun CatalystRow(c: CatalystItem, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 5.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            BadgePill("${c.sentiment} ${c.strength}", sentimentColor(c.sentiment))
+            Text(c.category, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Text(c.source, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("·", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(catalystDate(c), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text(c.title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (c.reason.isNotEmpty()) {
+            Text(c.reason, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (c.preReflected) {
+            val note = c.preReflectedNote?.let { " · $it" } ?: ""
+            Text("⚠ 선반영 가능성$note", style = MaterialTheme.typography.labelSmall, color = OrangeAccent)
+        }
+    }
+}
+
+// 공시는 YYYYMMDD, 뉴스는 RFC822 → 표기 분기.
+private fun catalystDate(c: CatalystItem): String =
+    if (c.source == "공시") formattedDate8(c.date) else shortDate(c.date)
+
+@Composable
+private fun sentimentColor(s: String): Color = when (s) {
+    "호재" -> ChangeUp    // 한국 관례: 상승/호재 = 빨강
+    "악재" -> ChangeDown
+    else   -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+@Composable
+private fun netBiasColor(b: String): Color = when (b) {
+    "호재우위" -> ChangeUp
+    "악재우위" -> ChangeDown
+    else       -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
 // "Wed, 04 Jun 2026 10:30:00 +0900" → "06/04 10:30" (실패 시 앞 16자)
@@ -514,28 +578,6 @@ private fun ddayColor(days: Int): Color = when {
     days < 14 -> ChangeUp
     days < 30 -> OrangeAccent
     else -> MaterialTheme.colorScheme.onSurfaceVariant
-}
-
-// ─── DART 공시 ───────────────────────────────────────────
-
-@Composable
-internal fun DartDisclosureCard(list: List<DartDisclosure>) {
-    if (list.isEmpty()) return
-    val uri = LocalUriHandler.current
-    CollapsibleCard(title = "공시 (${list.size}건, 30일)", leadingEmoji = "📄") {
-        Column {
-            list.forEachIndexed { idx, d ->
-                if (idx > 0) HorizontalDivider()
-                Column(
-                    modifier = Modifier.fillMaxWidth().clickable { runCatching { uri.openUri(d.url) } }.padding(vertical = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    Text(d.reportName, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(formattedDate8(d.date), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-    }
 }
 
 // ─── 지표 영향 ───────────────────────────────────────────

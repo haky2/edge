@@ -11,14 +11,16 @@ struct StockDetailView: View {
     private let logRepo: ActionLogRepository
     @State private var quote: Quote?
     @State private var flows: [InvestorFlow] = []   // 일별 수급(외인/기관/개인)
-    @State private var news: [NewsItem] = []         // 관련 뉴스
     @State private var analysis: Analysis?           // AI 종합 코멘트
+    @State private var catalysts: CatalystReport?    // 뉴스·공시 영향(호재/악재 판정)
+    @State private var catalystsLoading = false
+    @State private var catalystAttempted = false     // 1회 로드 시도 후 nil이면 실패로 간주(폴백 안내)
+    @State private var catalystExpanded = false      // 뉴스·공시 영향 (기본 접힘, netBias 배지는 접어도 보임)
     @State private var technicalResult: TechnicalResult?  // 이평·RSI·거래량 추세(2단계)
     @State private var targetPriceInfo: TargetPriceInfo?   // 컨센서스 목표주가
     @State private var dailyBars: [DailyBar] = []           // 일봉 (차트용)
     @State private var logEntries: [ActionLogEntry] = []  // 이 종목 행동 로그
     @State private var swipedLogId: Int64? = nil
-    @State private var dartDisclosures: [DartDisclosure] = []
     @State private var earningsEntry: EarningsEntry?
     @State private var stockSignal: StockImpact?
     @State private var shortSelling: ShortSellingSummary?
@@ -28,7 +30,6 @@ struct StockDetailView: View {
     @State private var peerExpanded = false
     @State private var backtest: Backtest?          // 신호별 익일 적중률(검증된 신호)
     @State private var flowSensitivity: FlowSensitivity?  // 수급-가격 민감도
-    @State private var dartExpanded = false
     @State private var earningsExpanded = false
     @State private var signalExpanded = false
     @State private var indicatorHelpExpanded = false
@@ -73,7 +74,8 @@ struct StockDetailView: View {
                     // ── AI 근거 ──
                     if let tr = technicalResult { technicalCard(tr, price: Double(q.price)) }
                     if !flows.isEmpty { flowCard() }
-                    if !news.isEmpty { newsCard() }
+                    // 뉴스·공시는 판정 카드 하나로 일원화(원문 뉴스/공시 섹션 제거). 링크는 카드 안에서 원문으로.
+                    catalystCard()
                     // ── 심화 분석 (기본 접힘) ──
                     analysisCard(q)
                     if let band = valuationBand { valuationBandCard(band) }
@@ -85,7 +87,6 @@ struct StockDetailView: View {
                     ProgressView().padding(.top, 40)
                 }
                 // ── 외부 환경 (기본 접힘) ──
-                dartDisclosureSection()
                 earningsDueDateSection()
                 macroSignalSection()
                 // ── 내 기록 ──
@@ -121,6 +122,7 @@ struct StockDetailView: View {
         }
         .task { await load() }             // 진입 시 시세·수급·뉴스 갱신(빠름)
         .task { await loadAnalysis() }     // AI 코멘트는 느려서 별도로(동시 진행)
+        .task { await loadCatalysts() }    // 재료 판정도 Claude 호출이라 별도(동시 진행)
         .onChange(of: modeRaw) {
             analysis = nil   // 이전 모드 코멘트 즉시 제거 → 로딩 상태 바로 표시
             Task { await loadAnalysis() }
@@ -1691,34 +1693,140 @@ struct StockDetailView: View {
         }
     }
 
-    // 뉴스 카드(2b). 종목명으로 네이버 검색한 최신 헤드라인. 탭하면 Safari로 원문 이동.
-    private func newsCard() -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("관련 뉴스").font(.subheadline.weight(.semibold)).padding(.top, 8)
-            ForEach(news, id: \.url) { article in
-                Link(destination: URL(string: article.url) ?? URL(string: "https://news.naver.com")!) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(article.title.trimmingCharacters(in: .whitespacesAndNewlines))
-                            .font(.caption)
-                            .foregroundColor(.primary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        HStack(spacing: 6) {
-                            Text(article.source).font(.caption2).foregroundColor(.secondary)
-                            Text("·").foregroundColor(.secondary)
-                            Text(shortDate(article.publishedAt)).font(.caption2).foregroundColor(.secondary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 3)
-                }
-                if article.url != news.last?.url { Divider() }
+    // ── 뉴스·공시 영향 (호재/악재 판정) — 접이식 ──
+    // 뉴스·공시를 카드 단위로 호재/악재·강도·선반영까지 판정. 접어도 netBias 배지로 결론은 보인다.
+    // Claude 호출이라 로딩이 느릴 수 있음(백엔드 30분 캐시 적중 시 즉시).
+    @ViewBuilder
+    private func catalystCard() -> some View {
+        if catalysts == nil && !catalystsLoading && catalystAttempted {
+            // 로드 실패(Claude 오류/타임아웃). 뉴스·공시 원문 섹션을 없앴으므로 빈 화면 방지용 폴백.
+            HStack(spacing: 8) {
+                Image(systemName: "newspaper").foregroundColor(.secondary)
+                Text("뉴스·공시 영향을 불러오지 못했어요").font(.caption).foregroundColor(.secondary)
+                Spacer()
+                Button("다시 시도") { Task { await loadCatalysts(force: true) } }
+                    .font(.caption.weight(.semibold))
             }
-            .padding(.bottom, 4)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardStyle()
+        } else if catalysts != nil || catalystsLoading {
+            VStack(spacing: 0) {
+                HStack(spacing: 6) {
+                    Image(systemName: "newspaper").foregroundColor(.orange)
+                    Text("뉴스·공시 영향").font(.subheadline.weight(.semibold))
+                    Spacer()
+                    if let rep = catalysts {
+                        Text(rep.netBias)
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(netBiasColor(rep.netBias).opacity(0.15))
+                            .foregroundColor(netBiasColor(rep.netBias))
+                            .clipShape(Capsule())
+                    } else {
+                        ProgressView().scaleEffect(0.8)
+                    }
+                    Image(systemName: catalystExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { catalystExpanded.toggle() } }
+
+                if catalystExpanded {
+                    if let rep = catalysts {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if !rep.summary.isEmpty {
+                                Text(rep.summary)
+                                    .font(.caption).foregroundColor(.primary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            if rep.items.isEmpty {
+                                Text("최근 7일 새 재료(공시·뉴스)가 없습니다.")
+                                    .font(.caption2).foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            } else {
+                                ForEach(rep.items, id: \.url) { c in
+                                    Divider()
+                                    catalystRow(c)
+                                }
+                            }
+                        }
+                        .padding(.bottom, 8)
+                    } else {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("재료 분석 중…").font(.caption).foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .padding(.bottom, 10)
+                    }
+                }
+            }
+            .cardStyle()
         }
+    }
+
+    private func catalystRow(_ c: CatalystItem) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                // 호재(빨강)/악재(파랑)/중립(회색) + 강도
+                Text("\(c.sentiment) \(c.strength)")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(sentimentColor(c.sentiment).opacity(0.15))
+                    .foregroundColor(sentimentColor(c.sentiment))
+                    .clipShape(Capsule())
+                Text(c.category).font(.caption2).foregroundColor(.secondary)
+                Spacer()
+                Text(c.source).font(.caption2).foregroundColor(.secondary)
+                Text("·").foregroundColor(.secondary)
+                Text(catalystDate(c)).font(.caption2).foregroundColor(.secondary)
+            }
+            Link(destination: URL(string: c.url) ?? URL(string: "https://news.naver.com")!) {
+                Text(c.title.trimmingCharacters(in: .whitespacesAndNewlines))
+                    .font(.caption).foregroundColor(.primary)
+                    .lineLimit(2).multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if !c.reason.isEmpty {
+                Text(c.reason).font(.caption2).foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if c.preReflected {
+                HStack(alignment: .top, spacing: 3) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9)).foregroundColor(.orange)
+                    Text("선반영 가능성" + (c.preReflectedNote.map { " · \($0)" } ?? ""))
+                        .font(.caption2).foregroundColor(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardStyle()
+    }
+
+    // 공시는 YYYYMMDD, 뉴스는 RFC822 → 표기 분기.
+    private func catalystDate(_ c: CatalystItem) -> String {
+        c.source == "공시" ? formattedDate8(c.date) : shortDate(c.date)
+    }
+
+    private func sentimentColor(_ s: String) -> Color {
+        switch s {
+        case "호재": return .red   // 한국 관례: 상승/호재 = 빨강
+        case "악재": return .blue
+        default:     return .gray
+        }
+    }
+
+    private func netBiasColor(_ b: String) -> Color {
+        switch b {
+        case "호재우위": return .red
+        case "악재우위": return .blue
+        default:         return .gray  // 혼조·중립
+        }
     }
 
     // "Wed, 04 Jun 2026 10:30:00 +0900" → "06/04 10:30"
@@ -1737,45 +1845,6 @@ struct StockDetailView: View {
 
     private func loadLogs() {
         logEntries = logRepo.getByCode(code: item.code, limit: 5)
-    }
-
-    // DART 공시 — 접기 섹션 (30일, 없으면 미표시)
-    @ViewBuilder
-    private func dartDisclosureSection() -> some View {
-        if !dartDisclosures.isEmpty {
-            VStack(spacing: 0) {
-                HStack(spacing: 6) {
-                    Image(systemName: "doc.text").foregroundColor(.orange)
-                    Text("공시 (\(dartDisclosures.count)건, 30일)").font(.subheadline.weight(.semibold))
-                    Spacer()
-                    Image(systemName: dartExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption).foregroundColor(.secondary)
-                }
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { dartExpanded.toggle() } }
-                if dartExpanded {
-                    ForEach(dartDisclosures, id: \.url) { d in
-                        Divider()
-                        if let url = URL(string: d.url) {
-                            Link(destination: url) { dartDisclosureRow(d) }.foregroundColor(.primary)
-                        } else {
-                            dartDisclosureRow(d)
-                        }
-                    }
-                }
-            }
-            .cardStyle()
-        }
-    }
-
-    private func dartDisclosureRow(_ d: DartDisclosure) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(d.reportName).font(.caption).lineLimit(2)
-            Text(formattedDate8(d.date)).font(.caption2).foregroundColor(.secondary)
-        }
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // 실적 일정 — 접기 섹션
@@ -2057,7 +2126,6 @@ struct StockDetailView: View {
         loading = true
         if let q = try? await api.getQuote(code: item.code) { quote = q }
         flows = (try? await api.getInvestorFlow(code: item.code, days: 5)) ?? []
-        news = (try? await api.getNews(stockName: item.name, display: 5)) ?? []
         if let daily = try? await api.getDaily(code: item.code, bars: 120) {
             dailyBars = daily
             technicalResult = TechnicalIndicators.shared.calculate(bars: daily)
@@ -2065,8 +2133,7 @@ struct StockDetailView: View {
         targetPriceInfo = try? await api.getTargetPrice(code: item.code)
         loading = false
 
-        // DART·실적·지표영향·공매도·밸류에이션은 느린 네트워크 이후 병렬 로드 (접기 기본이라 늦어도 무방)
-        async let dartTask          = api.getDartDisclosures(code: item.code, days: 30)
+        // 실적·지표영향·공매도·밸류에이션은 느린 네트워크 이후 병렬 로드 (접기 기본이라 늦어도 무방)
         async let earnsTask         = api.getEarnings(codes: [item.code])
         async let signalTask        = api.getStockSignals(code: item.code)
         async let shortSellingTask  = api.getShortSelling(code: item.code)
@@ -2074,7 +2141,6 @@ struct StockDetailView: View {
         async let peerValuationTask = api.getPeerValuation(code: item.code)
         async let backtestTask          = api.getBacktest(code: item.code)
         async let flowSensitivityTask   = api.getFlowSensitivity(code: item.code)
-        dartDisclosures = (try? await dartTask) ?? []
         earningsEntry   = (try? await earnsTask)?.first
         stockSignal     = try? await signalTask
         shortSelling    = try? await shortSellingTask
@@ -2104,6 +2170,14 @@ struct StockDetailView: View {
             analysis = try? await api.getAnalysis(code: item.code, mode: analysisMode.rawValue, refresh: force)
         }
         analyzing = false
+    }
+
+    private func loadCatalysts(force: Bool = false) async {
+        catalystsLoading = true
+        if force { catalysts = nil }
+        catalysts = try? await api.getCatalysts(code: item.code, days: 7, refresh: force)
+        catalystsLoading = false
+        catalystAttempted = true
     }
 }
 
