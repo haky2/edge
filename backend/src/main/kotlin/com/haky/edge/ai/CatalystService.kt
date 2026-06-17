@@ -8,6 +8,7 @@ import com.haky.edge.master.StockMaster
 import com.haky.edge.news.NaverNewsClient
 import com.haky.edge.news.NewsItem
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -24,6 +25,22 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+
+/** 브리핑용: 섹터 단위로 묶은 재료 동향 한 줄. */
+@Serializable
+data class SectorCatalystLine(
+    val sector: String,
+    val bias: String,             // "호재우위" | "악재우위" | "혼조"
+    val line: String,             // "종목A·종목B — 한 줄 요약"
+    val stockNames: List<String>, // 해당 섹터 비중립 종목 이름 목록
+)
+
+/** 브리핑용: 관심종목 재료 동향 집계 결과. */
+@Serializable
+data class CatalystBriefReport(
+    val date: String,
+    val sectors: List<SectorCatalystLine>,
+)
 
 /**
  * 재료 1건의 구조화 판정. AnalysisService의 산문 코멘트와 달리, 뉴스·공시를
@@ -387,6 +404,68 @@ class CatalystService(
             mutex.withLock { runCatching { file.writeText(json.encodeToString(ser, HashMap(map))) } }
         }
     }
+
+    /** 캐시에 있는 재료 판정만 조회 — Claude 호출 없음. 캐시 미스면 null 반환. */
+    fun peekCached(code: String, days: Int = 7): CatalystReport? {
+        val today = effectiveMarketDate()
+        val key = "$today|${System.currentTimeMillis() / 1_800_000}|$days|$code"
+        cache[key]?.let { return it }
+        return fileCache.get(key)?.also { cache[key] = it }
+    }
+
+    /**
+     * 관심종목 재료 동향을 섹터별로 묶어 브리핑용 한 줄씩 반환.
+     * 오직 캐시된 판정만 사용(Claude 미호출). 판정 미캐시 종목은 조용히 제외.
+     * 섹터 결정은 MacroImpactService 7일 캐시 + MANUAL_OVERRIDES 재사용(거의 즉시).
+     */
+    suspend fun brief(codes: List<String>): CatalystBriefReport = coroutineScope {
+        val today = effectiveMarketDate()
+        val reports = codes.mapNotNull { code -> peekCached(code)?.let { code to it } }.toMap()
+
+        data class SS(val report: CatalystReport, val sector: String)
+        val stockSectors = codes.map { code ->
+            async {
+                val rpt = reports[code] ?: return@async null
+                val sectors = runCatching {
+                    macroImpact.resolveStockSectors(code, rpt.name, "")
+                }.getOrElse { emptyList() }
+                val label = if (sectors.isEmpty()) "기타" else sectors.first().label
+                SS(rpt, label)
+            }
+        }.awaitAll().filterNotNull()
+
+        val groups = stockSectors.groupBy { it.sector }
+        val lines = groups.mapNotNull { (sector, stocks) ->
+            val notable = stocks.filter { it.report.netBias !in listOf("중립", "") }
+            if (notable.isEmpty()) return@mapNotNull null
+
+            val pos = notable.count { it.report.netBias == "호재우위" }
+            val neg = notable.count { it.report.netBias == "악재우위" }
+            val bias = when {
+                pos > neg -> "호재우위"
+                neg > pos -> "악재우위"
+                else -> "혼조"
+            }
+
+            val best = notable.maxByOrNull { briefBiasScore(it.report.netBias) }
+            val snippet = best?.report?.summary
+                ?.substringBefore("다만")?.substringBefore(".")?.trim()?.take(35) ?: ""
+            val nameStr = notable.take(2).joinToString("·") { it.report.name }
+            val line = if (snippet.isNotBlank()) "$nameStr — $snippet" else nameStr
+
+            SectorCatalystLine(
+                sector = sector,
+                bias = bias,
+                line = line,
+                stockNames = notable.map { it.report.name },
+            )
+        }.sortedWith(compareBy { briefBiasOrder(it.bias) })
+
+        CatalystBriefReport(date = today, sectors = lines)
+    }
+
+    private fun briefBiasScore(bias: String) = when (bias) { "호재우위" -> 3; "혼조" -> 2; "악재우위" -> 1; else -> 0 }
+    private fun briefBiasOrder(bias: String) = when (bias) { "악재우위" -> 0; "혼조" -> 1; "호재우위" -> 2; else -> 3 }
 
     companion object {
         // 선반영 룰 임계값(휴리스틱).

@@ -1,6 +1,7 @@
 package com.haky.edge.api
 
 import com.haky.edge.model.Analysis
+import com.haky.edge.model.CatalystBriefReport
 import com.haky.edge.model.CatalystReport
 import com.haky.edge.model.Comparison
 import com.haky.edge.model.Backtest
@@ -159,6 +160,16 @@ class EdgeApi(
         client.get("$baseUrl/catalysts/$code") {
             if (days != 7) parameter("days", days)
             if (refresh) parameter("refresh", "true")
+        }.body()
+
+    /**
+     * 관심종목 재료 동향을 섹터별로 묶어 한 줄씩 반환. 캐시된 판정만 사용(Claude 미호출).
+     * 브리핑 "테마별 재료 동향" 섹션용.
+     */
+    @Throws(Exception::class)
+    suspend fun getCatalystBrief(codes: List<String>): CatalystBriefReport =
+        client.get("$baseUrl/catalyst-brief") {
+            parameter("codes", codes.joinToString(","))
         }.body()
 
     /**

@@ -23,4 +23,17 @@ fun Route.catalystRoutes(catalyst: CatalystService) {
         val force = call.request.queryParameters["refresh"] == "true"
         call.respond(catalyst.catalysts(code, days, force = force))
     }
+
+    // GET /catalyst-brief?codes=018260,329180,...
+    //   캐시된 재료 판정을 섹터별로 묶어 브리핑용 한 줄씩 반환. Claude 호출 없음(즉시).
+    //   판정이 아직 캐시되지 않은 종목은 조용히 제외.
+    get("/catalyst-brief") {
+        val codes = call.request.queryParameters["codes"].orEmpty()
+            .split(",").map { it.trim() }.filter { CODE_REGEX.matches(it) }
+        if (codes.isEmpty()) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("codes 파라미터가 없거나 유효한 6자리 코드가 없습니다"))
+            return@get
+        }
+        call.respond(catalyst.brief(codes))
+    }
 }
