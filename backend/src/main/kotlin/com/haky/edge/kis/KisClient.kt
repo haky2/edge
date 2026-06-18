@@ -476,60 +476,6 @@ class KisClient(
         throw KisException("한투 업종지수 조회 실패(${spec.iscd}): $lastMsg")
     }
 
-    /**
-     * 코스피200 야간선물 현재가를 MacroIndicator 로 반환.
-     * 야간 세션(18:00~05:00) 밖이거나 가격이 0이면 null 반환 — 호출부에서 listOfNotNull 로 처리.
-     * 근월물 코드를 자동 계산한다(K200 선물 만기: 3/6/9/12월 두 번째 목요일).
-     */
-    suspend fun getK200Futures(): MacroIndicator? = runCatching {
-        val iscd = nearMonthFuturesCode()
-        val accessToken = token()
-        val resp: KisFuturesResponse = rateLimiter.withPermit {
-            http.get("$baseUrl/uapi/domestic-futureoption/v1/quotations/inquire-price") {
-                header("authorization", "Bearer $accessToken")
-                header("appkey", appKey)
-                header("appsecret", appSecret)
-                header("tr_id", "FHMIF10000000")
-                header("custtype", "P")
-                parameter("FID_COND_MRKT_DIV_CODE", "F")
-                parameter("FID_INPUT_ISCD", iscd)
-            }.body()
-        }
-        if (resp.rtCd != "0") return@runCatching null
-        val o = resp.output1 ?: return@runCatching null
-        val price = o.price.toDoubleSafe()
-        if (price == 0.0) return@runCatching null  // 주간 세션 / 미개장 시
-        val mul = signMultiplier(o.sign)
-        MacroIndicator(
-            key = "k200f",
-            label = "K200 야간선물",
-            value = price,
-            change = kotlin.math.abs(o.change.toDoubleSafe()) * mul,
-            changeRate = kotlin.math.abs(o.changeRate.toDoubleSafe()) * mul,
-        )
-    }.getOrNull()
-
-    /** K200 선물 근월물 코드. 만기(3/6/9/12월 두 번째 목요일) 이후면 다음 분기로. */
-    internal fun nearMonthFuturesCode(): String {
-        val today = java.time.LocalDate.now(KST)
-        val quarterMonths = listOf(3, 6, 9, 12)
-        for (month in quarterMonths) {
-            val year = today.year
-            val expiry = secondThursdayOf(year, month)
-            if (!today.isAfter(expiry)) {
-                return "101W%02d%02d".format(year % 100, month)
-            }
-        }
-        // 12월 만기도 지났으면 다음 해 3월
-        return "101W%02d%02d".format((today.year + 1) % 100, 3)
-    }
-
-    private fun secondThursdayOf(year: Int, month: Int): java.time.LocalDate {
-        var d = java.time.LocalDate.of(year, month, 1)
-        while (d.dayOfWeek != java.time.DayOfWeek.THURSDAY) d = d.plusDays(1)
-        return d.plusDays(7)
-    }
-
     companion object {
         private const val MAX_ATTEMPTS = 4
         private const val BACKOFF_MS = 250L

@@ -88,8 +88,9 @@ class StockMaster(private val http: HttpClient) {
             if (front.length < 21) continue // 이름 시작 위치(21)보다 짧으면 비정상 줄
             val code = front.substring(0, 9).trim()
             val name = front.substring(21).trim()
-            // ETF/ETN 등 코드에 문자가 섞인 항목은 일반 종목 검색 대상이 아니라 6자리 숫자만 채택.
-            if (code.length == 6 && code.all { it.isDigit() } && name.isNotEmpty()) {
+            // 단축코드는 6자리 영숫자. 거래소가 신규 ETF/ETN에 영문 섞인 코드(예: 0167A0 SOL AI반도체TOP2플러스)를
+            // 쓰므로 숫자 전용으로 거르면 정상 상장 ETF가 통째로 누락된다 → 6자리 영숫자면 채택.
+            if (code.length == 6 && code.all { it.isLetterOrDigit() } && name.isNotEmpty()) {
                 result.add(StockInfo(code, name, market))
             }
         }

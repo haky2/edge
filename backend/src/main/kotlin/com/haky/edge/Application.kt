@@ -53,7 +53,6 @@ import com.haky.edge.routes.peerValuationRoutes
 import com.haky.edge.routes.targetPriceRoutes
 import com.haky.edge.routes.valuationBandRoutes
 import com.haky.edge.routes.webSearchTestRoutes
-import com.haky.edge.routes.futuresTestRoutes
 import com.haky.edge.routes.morningBriefRoutes
 import com.haky.edge.routes.eventReminderRoutes
 import com.haky.edge.routes.costSummaryRoutes
@@ -256,7 +255,6 @@ fun Application.module() {
             comparisonRoutes(comparison)
             eventRoutes(eventSync)
             webSearchTestRoutes(claude)
-            futuresTestRoutes(kis)
             prewarmRoutes(kis, dart)
             slackTestRoutes(slack, opsChannel)
             morningBriefRoutes(morningBrief)

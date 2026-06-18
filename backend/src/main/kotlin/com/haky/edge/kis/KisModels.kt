@@ -2,7 +2,6 @@ package com.haky.edge.kis
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonElement
 
 // 이 파일은 두 종류의 모델을 담는다:
 //  (1) Quote  — 우리가 "앱에 내려주는" 깔끔한 모델(필드명도 우리가 정함)
@@ -210,20 +209,6 @@ data class SectorIndex(
     val value: Double,      // 현재 지수
     val change: Double,     // 전일 대비
     val changeRate: Double, // 등락률 %
-)
-
-// ── 코스피200 선물 현재가 (FHMIF10000000) ──────────────────────────────────
-// 야간 선물 세션(18:00~05:00) 중 선물 현재가를 조회한다.
-// output1: 선물가격, output2: 코스피 종합, output3: KOSPI200 지수.
-// 필드명을 아직 실측하지 못했으므로 JsonElement 로 받아 탐색 후 확정한다.
-
-@Serializable
-data class KisFuturesResponse(
-    @SerialName("rt_cd") val rtCd: String = "",
-    @SerialName("msg1") val msg1: String = "",
-    val output1: JsonElement? = null, // 선물 가격 (세션 중에만 채워짐)
-    val output2: JsonElement? = null, // 코스피 종합
-    val output3: JsonElement? = null, // KOSPI200 지수
 )
 
 /** 한투 연동 중 발생한 오류(상류 문제)를 일반 버그와 구분하기 위한 예외 — StatusPages에서 502로 매핑된다. */
