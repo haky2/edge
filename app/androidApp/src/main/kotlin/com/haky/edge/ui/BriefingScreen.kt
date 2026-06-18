@@ -49,6 +49,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -891,10 +892,11 @@ private fun EventRowView(e: MarketEvent) {
         "주의" -> OrangeAccent to "주의"
         else -> EdgeTheme.colors.neutral to "중립"
     }
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    val isPast = isPastEvent(e.date)
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).alpha(if (isPast) 0.5f else 1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.width(48.dp)) {
             Text(eventDateLabel(e.date), style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Pill(badge, accent)
+            if (isPast) Pill("종료", EdgeTheme.colors.neutral) else Pill(badge, accent)
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1364,6 +1366,12 @@ private fun eventDateLabel(dateStr: String): String {
     val parts = dateStr.split("-")
     return if (parts.size == 3) "${parts[1]}/${parts[2]}" else dateStr
 }
+
+// 이벤트 날짜가 오늘(KST)보다 과거인지 — 막 지난 일정을 "종료"로 흐리게 표시하는 데 쓴다.
+private fun isPastEvent(dateStr: String): Boolean = runCatching {
+    java.time.LocalDate.parse(dateStr)
+        .isBefore(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))
+}.getOrDefault(false)
 
 // "20250601" → "25.06.01"
 private fun formatDartDate(date: String): String {
