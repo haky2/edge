@@ -10,7 +10,7 @@ import kotlinx.coroutines.coroutineScope
 
 // "a,b,c" → [a,b,c] (6자리 숫자만). MacroRoutes.kt의 동일 함수와 중복이나 파일 내 private라 재선언.
 private fun String?.toCodeList(): List<String> =
-    this?.split(",")?.map { it.trim() }?.filter { it.matches(Regex("""\d{6}""")) }?.distinct() ?: emptyList()
+    this?.split(",")?.map { it.trim() }?.filter { it.matches(Regex("""[0-9A-Z]{6}""")) }?.distinct() ?: emptyList()
 
 fun Route.earningsRoutes(dart: DartClient) {
     // GET /earnings?codes=a,b,c

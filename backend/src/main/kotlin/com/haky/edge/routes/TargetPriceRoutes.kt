@@ -18,8 +18,8 @@ data class TargetPriceResponse(
 fun Route.targetPriceRoutes(naverTargetPrice: NaverTargetPriceClient) {
     get("/target-price/{code}") {
         val code = call.parameters["code"].orEmpty()
-        if (!Regex("""\d{6}""").matches(code)) {
-            call.respond(HttpStatusCode.BadRequest, ErrorResponse("종목코드는 6자리 숫자여야 합니다: '$code'"))
+        if (!Regex("""[0-9A-Z]{6}""").matches(code)) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("종목코드는 6자리 영숫자여야 합니다: '$code'"))
             return@get
         }
         val price = naverTargetPrice.getTargetPrice(code)

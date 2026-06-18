@@ -39,7 +39,7 @@ class SlackCommandService(
     private val eventSync: EventSyncService,
     private val comparison: ComparisonService,
 ) {
-    private val codeRegex = Regex("""\d{6}""")
+    private val codeRegex = Regex("""[0-9A-Z]{6}""")
 
     /** 슬래시 명령 진입점. 서브커맨드 파싱 → 각 핸들러 위임. 절대 예외 밖으로 던지지 않는다. */
     suspend fun process(rawText: String, responseUrl: String, userId: String = "", userName: String = "") {

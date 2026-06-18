@@ -11,14 +11,14 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 
-private val CODE_REGEX = Regex("""\d{6}""")
+private val CODE_REGEX = Regex("""[0-9A-Z]{6}""")
 
 fun Route.investorRoutes(kis: KisClient) {
     // GET /investor/{code}?days=5 — 종목별 일별 외인/기관/개인 순매수(최근 N일, 최신일이 앞).
     get("/investor/{code}") {
         val code = call.parameters["code"].orEmpty()
         if (!CODE_REGEX.matches(code)) {
-            call.respond(HttpStatusCode.BadRequest, ErrorResponse("종목코드는 6자리 숫자여야 합니다: '$code'"))
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("종목코드는 6자리 영숫자여야 합니다: '$code'"))
             return@get
         }
         val days = (call.request.queryParameters["days"]?.toIntOrNull() ?: 5).coerceIn(1, 30)

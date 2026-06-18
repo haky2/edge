@@ -10,7 +10,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 
-private val CODE_REGEX = Regex("""\d{6}""")
+private val CODE_REGEX = Regex("""[0-9A-Z]{6}""")
 
 /**
  * GET /prewarm?codes=a,b,c — 브리핑 진입 전 캐시 예열용.

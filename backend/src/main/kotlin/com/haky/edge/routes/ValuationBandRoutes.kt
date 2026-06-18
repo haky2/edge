@@ -11,8 +11,8 @@ fun Route.valuationBandRoutes(service: ValuationBandService) {
     // GET /valuation-band/{code} — PER/PBR 역사적 밴드 + 현재 백분위. 당일 캐시.
     get("/valuation-band/{code}") {
         val code = call.parameters["code"].orEmpty()
-        if (!Regex("""\d{6}""").matches(code)) {
-            call.respond(HttpStatusCode.BadRequest, ErrorResponse("종목코드는 6자리 숫자여야 합니다: '$code'"))
+        if (!Regex("""[0-9A-Z]{6}""").matches(code)) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("종목코드는 6자리 영숫자여야 합니다: '$code'"))
             return@get
         }
         val band = service.getValuationBand(code)

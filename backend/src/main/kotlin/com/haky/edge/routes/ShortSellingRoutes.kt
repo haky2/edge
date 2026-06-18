@@ -7,14 +7,14 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 
-private val CODE_REGEX = Regex("""\d{6}""")
+private val CODE_REGEX = Regex("""[0-9A-Z]{6}""")
 
 fun Route.shortSellingRoutes(krx: KrxShortSellingClient) {
     // GET /short-selling/{code} — 종목별 공매도 거래량·잔고 요약. 당일 캐시.
     get("/short-selling/{code}") {
         val code = call.parameters["code"].orEmpty()
         if (!CODE_REGEX.matches(code)) {
-            call.respond(HttpStatusCode.BadRequest, ErrorResponse("종목코드는 6자리 숫자여야 합니다: '$code'"))
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("종목코드는 6자리 영숫자여야 합니다: '$code'"))
             return@get
         }
         val result = krx.getShortSelling(code)

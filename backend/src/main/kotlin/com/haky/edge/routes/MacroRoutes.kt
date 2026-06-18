@@ -48,7 +48,7 @@ fun Route.macroImpactRoutes(service: MacroImpactService) {
     // GET /macro-signal/{code}
     //   - 종목 1개의 섹터 + 지표별 방향 신호. Claude 호출 없음. 상세화면에서 빠르게 조회.
     get("/macro-signal/{code}") {
-        val code = call.parameters["code"]?.takeIf { it.matches(Regex("""\d{6}""")) }
+        val code = call.parameters["code"]?.takeIf { it.matches(Regex("""[0-9A-Z]{6}""")) }
             ?: return@get call.respond(HttpStatusCode.BadRequest, ErrorResponse("유효한 종목 코드가 필요합니다"))
         call.respond(service.stockSignals(code))
     }
@@ -58,7 +58,7 @@ fun Route.macroImpactRoutes(service: MacroImpactService) {
 private fun String?.toCodeList(): List<String> =
     this?.split(",")
         ?.map { it.trim() }
-        ?.filter { it.matches(Regex("""\d{6}""")) }
+        ?.filter { it.matches(Regex("""[0-9A-Z]{6}""")) }
         ?.distinct()
         ?: emptyList()
 
@@ -80,7 +80,7 @@ private fun String?.toPositionMap(): Map<String, HoldingPosition> =
         ?.mapNotNull { entry ->
             val parts = entry.split(":")
             if (parts.size != 3) return@mapNotNull null
-            val code = parts[0].trim().takeIf { it.matches(Regex("""\d{6}""")) } ?: return@mapNotNull null
+            val code = parts[0].trim().takeIf { it.matches(Regex("""[0-9A-Z]{6}""")) } ?: return@mapNotNull null
             val avg = parts[1].toDoubleOrNull() ?: return@mapNotNull null
             val qty = parts[2].toLongOrNull() ?: return@mapNotNull null
             code to HoldingPosition(avg, qty)

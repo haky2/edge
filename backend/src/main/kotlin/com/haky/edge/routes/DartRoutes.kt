@@ -8,7 +8,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 
-private val CODE_REGEX = Regex("""\d{6}""")
+private val CODE_REGEX = Regex("""[0-9A-Z]{6}""")
 
 fun Route.dartRoutes(dart: DartClient) {
     // GET /dart/{code}?days=7

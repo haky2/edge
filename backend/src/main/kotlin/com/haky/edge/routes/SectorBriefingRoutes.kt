@@ -12,7 +12,7 @@ fun Route.sectorBriefingRoutes(service: SectorBriefingService) {
     get("/sector-briefing") {
         val codes = call.request.queryParameters["codes"]
             ?.split(",")?.map { it.trim() }
-            ?.filter { it.matches(Regex("""\d{6}""")) }
+            ?.filter { it.matches(Regex("""[0-9A-Z]{6}""")) }
             ?.distinct()
             ?: emptyList()
         val force = call.request.queryParameters["refresh"] == "true"

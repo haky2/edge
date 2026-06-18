@@ -7,7 +7,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 
-private val CODE_REGEX = Regex("""\d{6}""")
+private val CODE_REGEX = Regex("""[0-9A-Z]{6}""")
 
 fun Route.catalystRoutes(catalyst: CatalystService) {
     // GET /catalysts/{code}?days=7&refresh=true
@@ -16,7 +16,7 @@ fun Route.catalystRoutes(catalyst: CatalystService) {
     get("/catalysts/{code}") {
         val code = call.parameters["code"].orEmpty()
         if (!CODE_REGEX.matches(code)) {
-            call.respond(HttpStatusCode.BadRequest, ErrorResponse("종목코드는 6자리 숫자여야 합니다: '$code'"))
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("종목코드는 6자리 영숫자여야 합니다: '$code'"))
             return@get
         }
         val days = call.request.queryParameters["days"]?.toIntOrNull()?.coerceIn(1, 30) ?: 7
