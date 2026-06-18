@@ -4,14 +4,13 @@
 > MTS엔 없는, 나만의 투자 판단 우위를 만드는 보조 도구.
 
 ## 개요
-개인용 주식 분석 보조 앱 **"Edge"**. MTS는 실행 도구, 이 앱은 판단 보조 도구.
-혼자 쓰다가 지인 몇 명에게 배포 (iOS + Android).
+개인용 주식 분석 보조 앱 **"Edge"**. MTS는 실행 도구, 이 앱은 판단 보조 도구. iOS + Android 네이티브 앱 + Ktor 백엔드.
 
-**배포 전제로 백엔드 서버를 둔다.** 앱에는 API 키를 두지 않고, 모든 외부 호출(한투/DART/Claude)을 백엔드가 대행한다. 이유:
-- 한투 앱키 1개를 백엔드가 보관 → **친구는 한투 계좌 불필요**, 앱만 설치하면 됨
+**백엔드 서버를 앞단에 둔다.** 앱에는 API 키를 두지 않고, 모든 외부 호출(한투/DART/Claude)을 백엔드가 대행한다. 이유:
+- 한투 앱키 1개를 백엔드가 보관 → 사용자는 한투 계좌 없이 앱만 설치하면 됨
 - Claude/한투 키가 클라이언트에 노출되지 않음
-- 시세·분석 결과를 **공유 캐시**로 묶어 비용/Rate Limit 제어 (N명 → ≈1× 비용)
-- 푸시 스케줄러를 나중에 백엔드에 얹기만 하면 됨
+- 시세·분석 결과를 **공유 캐시**로 묶어 호출량/Rate Limit 제어 (N명 → ≈1×)
+- 정기 작업(아침 브리핑·신호 스캔 등)을 백엔드 스케줄러로 처리
 
 ---
 
@@ -21,11 +20,11 @@
 |---|---|---|
 | 언어 | Kotlin (KMP) | Kotlin Multiplatform |
 | iOS UI | SwiftUI | |
-| Android UI | Jetpack Compose | Phase 5에서 포팅 |
+| Android UI | Jetpack Compose | iOS와 풀 패리티 완료 |
 | 로컬 DB | SQLDelight | KMP 호환, 무료 오픈소스 |
 | AI 분석 | Claude API (Sonnet 4.6) | 필요시 Opus 선택 가능 |
 | 빌드/iOS | Xcode | Mac 필수 |
-| 백엔드 | **Cloud Run + Ktor (Kotlin)** | 무료 티어, 키 보관·프록시·캐시·푸시 스케줄러. KMP와 언어 통일 |
+| 백엔드 | **Cloud Run + Ktor (Kotlin)** | 키 보관·프록시·캐시·정기 스케줄러. KMP와 언어 통일 |
 | 백엔드 캐시 | 인메모리 우선 (나중에 필요시 Redis/KV) | 시세 수초, 분석 결과 당일 캐시 — 캐시는 필요해질 때 추가 |
 
 ---
@@ -208,8 +207,8 @@
 ### 보유 계좌
 - 미래에셋 (일반, IRP) — 수동 입력
 - 카카오페이증권 (ISA) — 수동 입력
-- 토스증권 — Phase 5에서 자동 연동 예정
-- 한투 — API 연동용 (개설 예정)
+- 토스증권 — 자동 연동 검토(미적용)
+- 한투 — API 연동용 (개설·연동 완료)
 
 ### 관심종목 (우선순위순) — 2026-06-03 갱신, 코드는 /search로 검증
 1. 삼성에스디에스 (018260)
@@ -226,29 +225,21 @@
 
 ---
 
-## 비용 구조
+## 운영
 
-| 항목 | 비용 |
-|---|---|
-| Claude API (Sonnet) | 캐싱 없이 ~30건/인/일 ≈ 월 $18/인. **프롬프트 캐싱 + 결과 공유 캐시 + 온디맨드 생성**으로 N명을 ≈1×로 수렴 (실측 목표 월 $5~15) |
-| Apple Developer 계정 | **$99/년 — 친구 iOS 배포 시 필요** (TestFlight, 외부 테스터 100명 링크 설치). 7일 재서명은 매주 재설치라 비현실적 |
-| 백엔드 (Cloud Run / Workers) | 친구 몇 명 규모는 무료 티어 내, ≈$0 |
-| Android 배포 | APK 직접 배포, 무료 |
-| SQLDelight / 한투 API / DART | 무료 |
-
-> 비용 핵심 레버: ① 프롬프트 캐싱(시스템·종목정의 90% 할인) ② 같은 종목·시점 분석은 1회 생성 후 전 유저 공유 ③ 9종목 자동생성 대신 탭 시 생성+당일 캐시.
+- **Claude API 호출량 최소화**: ① 프롬프트 캐싱(시스템·종목정의 90% 할인) ② 같은 종목·시점 분석은 1회 생성 후 전 유저 공유 캐시 ③ 자동 생성 대신 탭 시 생성 + 당일 캐시.
+- **백엔드**: Cloud Run + Cloud Scheduler(정기 잡) + Cloud Tasks(비동기) + Secret Manager(키) + GCS(캐시·토큰 영속).
+- **배포**: Android는 서명된 APK 직접 배포. iOS는 개발자 설치(Personal Team), TestFlight는 Apple Developer 계정 등록 시점에.
 
 ---
 
-## 다음 액션
+## 현재 상태 (마무리 단계)
 
-1. 한투 계좌 개설 + API 키 신청
-2. DART API 키 신청 + 네이버 검색 OpenAPI 키 발급
-3. 백엔드 스택 확정 ✅ Cloud Run + Ktor (캐시는 인메모리로 시작, 키 설계는 코드에서)
-4. 토스 Open API 사전신청
-5. 맥북에 Xcode 설치
-6. Claude Code로 KMP 프로젝트 + 백엔드 세팅 (Phase 1부터)
-7. (배포 시점) Apple Developer 가입 + TestFlight 세팅
+Phase 1~5 핵심 기능 완성. iOS·Android 풀 패리티, 백엔드 Cloud Run 배포 운영 중.
+- ✅ 한투/DART/네이버/Claude 키 발급 + 백엔드 연동
+- ✅ KMP 앱(iOS SwiftUI · Android Compose) + Ktor 백엔드, vertical slice로 단계별 구현
+- ✅ Cloud Run 배포 + Cloud Scheduler/Tasks 자동화 + Slack 연동
+- (선택) iOS TestFlight 배포는 Apple Developer 계정 등록 시점에
 
 ---
 

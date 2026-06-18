@@ -60,9 +60,9 @@ backend/
 ## 빌드/툴 버전
 - JDK 21 (SDKMAN), Gradle 9.5.1(wrapper), Kotlin 2.3.20, Ktor 3.2.0.
 
-## 배포 (예정, 1.0c)
-- Cloud Run 컨테이너로 배포. 키는 Cloud Run 환경변수/Secret으로 주입(.env 와 동일 변수명).
-- 배포 후 베이스 URL을 앱 설정에 반영. 실기기·친구 테스트는 이 시점부터 가능.
+## 배포
+- Cloud Run 컨테이너로 배포(운영 중). 키는 Secret Manager로 주입(.env 와 동일 변수명). 자세한 절차는 [deploy.md](deploy.md).
+- 배포 후 베이스 URL을 앱 설정에 반영하면 실기기에서 관통 동작.
 
 ## 트러블슈팅
 - 한투 연동 관련 에러(EGW…, 부호, 종목명 없음 등)는 [kis-api-notes.md](kis-api-notes.md) 참고.
