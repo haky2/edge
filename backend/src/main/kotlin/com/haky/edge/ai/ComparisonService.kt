@@ -70,8 +70,8 @@ class ComparisonService(
             // 두 종목 데이터 병렬 수집
             val quoteAD  = async { kis.getPrice(codeA) }
             val quoteBD  = async { kis.getPrice(codeB) }
-            val nameAD   = async { master.search(codeA).firstOrNull { it.code == codeA }?.name ?: codeA }
-            val nameBD   = async { master.search(codeB).firstOrNull { it.code == codeB }?.name ?: codeB }
+            val nameAD   = async { master.findByCode(codeA)?.name ?: codeA }
+            val nameBD   = async { master.findByCode(codeB)?.name ?: codeB }
             val flowsAD  = async { runCatching { kis.getInvestorFlow(codeA, days = 3) }.getOrElse { emptyList() } }
             val flowsBD  = async { runCatching { kis.getInvestorFlow(codeB, days = 3) }.getOrElse { emptyList() } }
             val barsAD   = async { runCatching { kis.getDailyChart(codeA, bars = 20) }.getOrElse { emptyList() } }

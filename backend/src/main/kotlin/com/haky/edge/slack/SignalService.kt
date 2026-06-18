@@ -65,7 +65,7 @@ class SignalService(
         val valuationSignals = mutableListOf<ValuationSignal>()
 
         for (code in codes) {
-            val name = runCatching { master.search(code).firstOrNull { it.code == code }?.name }.getOrNull() ?: code
+            val name = runCatching { master.findByCode(code)?.name }.getOrNull() ?: code
 
             // 1. 연속 순매수 — 미확정(전부 0)일은 getInvestorFlow가 이미 제외함.
             runCatching { kis.getInvestorFlow(code, days = 10) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { flows ->

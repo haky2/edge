@@ -126,7 +126,7 @@ class MacroImpactService(
 
     /** 종목 1개의 섹터(복수 가능)를 결정하고 지표별 방향 신호를 계산한다. */
     private suspend fun buildStockImpact(code: String, indicators: List<MacroIndicator>): StockImpact {
-        val name = master.search(code).firstOrNull { it.code == code }?.name ?: code
+        val name = master.findByCode(code)?.name ?: code
         val kisName = runCatching { kis.getPrice(code).sectorName }.getOrElse { "" }
         // 수동 오버라이드 → 캐시 → Claude 자동 추론 → KIS 업종명 폴백 순.
         val sectors = resolveSectors(code, name, kisName)
@@ -225,7 +225,7 @@ class MacroImpactService(
     suspend fun classifyStocks(codes: List<String>): List<SectorEntry> = coroutineScope {
         codes.map { code ->
             async {
-                val name = master.search(code).firstOrNull { it.code == code }?.name ?: code
+                val name = master.findByCode(code)?.name ?: code
                 val kisName = runCatching { kis.getPrice(code).sectorName }.getOrElse { "" }
                 val sectors = resolveSectors(code, name, kisName)
                 SectorEntry(code, if (sectors.isEmpty()) "기타" else sectors.first().label)

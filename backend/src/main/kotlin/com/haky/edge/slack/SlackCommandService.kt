@@ -288,5 +288,5 @@ class SlackCommandService(
     }
 
     private suspend fun resolveStockName(code: String): String =
-        runCatching { master.search(code, limit = 1).firstOrNull()?.name ?: code }.getOrElse { code }
+        runCatching { master.findByCode(code)?.name ?: code }.getOrElse { code }
 }

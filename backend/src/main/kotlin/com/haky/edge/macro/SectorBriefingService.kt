@@ -63,7 +63,7 @@ class SectorBriefingService(
 
         // 각 종목의 이름 + 섹터 분류(MacroImpactService 7일 캐시 재사용).
         val stockSectors: List<Triple<String, String, List<MacroImpactService.Sector>>> = codes.map { code ->
-            val name = master.search(code).firstOrNull { it.code == code }?.name ?: code
+            val name = master.findByCode(code)?.name ?: code
             val kisName = runCatching { kis.getPrice(code).sectorName }.getOrElse { "" }
             Triple(code, name, macroImpact.resolveStockSectors(code, name, kisName))
         }

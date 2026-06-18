@@ -120,7 +120,7 @@ class AnalysisService(
         val t0 = System.currentTimeMillis()
         return coroutineScope {
             val quoteD          = async { kis.getPrice(code) }
-            val nameD           = async { master.search(code).firstOrNull { it.code == code }?.name ?: code }
+            val nameD           = async { master.findByCode(code)?.name ?: code }
             val flowsD          = async { kis.getInvestorFlow(code, days = 5) }
             val barsD           = async { runCatching { kis.getDailyChart(code, bars = 20) }.getOrElse { emptyList() } }
             val financialsD     = async { runCatching { dart.getFinancials(code) }.getOrNull() }

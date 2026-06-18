@@ -65,6 +65,12 @@ class StockMaster(private val http: HttpClient) {
     }
 
     /**
+     * 코드로 정확히 1건 조회(종목명 해석용). `search(code)`는 영문 섞인 코드(예: 0167A0)를 이름검색으로
+     * 오라우팅해 못 찾으므로, 코드→이름 변환은 반드시 이 함수를 쓴다.
+     */
+    suspend fun findByCode(code: String): StockInfo? = all().firstOrNull { it.code == code }
+
+    /**
      * 마스터 파일 1개(KOSPI 또는 KOSDAQ)를 받아 파싱한다.
      *
      * @param tailLen 줄 끝 고정폭 메타 영역의 길이. 이 길이만큼을 잘라내면 앞부분(코드+이름)만 남는다.

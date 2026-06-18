@@ -115,7 +115,7 @@ class CatalystService(
         }
 
         return coroutineScope {
-            val nameD          = async { master.search(code).firstOrNull { it.code == code }?.name ?: code }
+            val nameD          = async { master.findByCode(code)?.name ?: code }
             val quoteD         = async { kis.getPrice(code) }
             val disclosuresD   = async { runCatching { dart.getDisclosures(code, days) }.getOrElse { emptyList() } }
             val barsD          = async { runCatching { kis.getDailyChart(code, bars = 10) }.getOrElse { emptyList() } }

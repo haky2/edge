@@ -57,7 +57,7 @@ class PeerValuationService(
         fileCache.get(cacheKey)?.let { return it }
 
         val target = runCatching { kis.getPrice(code) }.getOrNull() ?: return null
-        val name = runCatching { master.search(code).firstOrNull { it.code == code }?.name }.getOrNull() ?: code
+        val name = runCatching { master.findByCode(code)?.name }.getOrNull() ?: code
         val sectors = runCatching { macroImpact.resolveStockSectors(code, name, target.sectorName) }.getOrElse { emptyList() }
 
         // 분류된 섹터 순서대로(주력 우선) 바스켓을 찾아, 유효 비교가 나오는 첫 섹터를 채택.
