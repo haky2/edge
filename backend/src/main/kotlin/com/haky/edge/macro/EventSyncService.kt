@@ -70,18 +70,24 @@ class EventSyncService(private val claude: ClaudeClient) {
         return sb.toString()
     }
 
-    fun getUpcoming(days: Int): List<MarketEvent> {
+    /**
+     * 저장된 이벤트 중 [오늘-includePastDays, 오늘+days] 구간만 반환(날짜순).
+     * includePastDays>0이면 막 지난 이벤트도 잠깐 남겨 "복기"용으로 노출한다(앱 표시 전용).
+     * 리마인더·아침브리핑·facts 주입은 기본값 0(임박만)을 유지한다.
+     */
+    fun getUpcoming(days: Int, includePastDays: Int = 0): List<MarketEvent> {
         if (!storeFile.exists()) return emptyList()
         val store = runCatching {
             json.decodeFromString(EventStore.serializer(), storeFile.readText())
         }.getOrNull() ?: return emptyList()
 
         val today = LocalDate.now(KST)
+        val from = today.minusDays(includePastDays.toLong())
         val until = today.plusDays(days.toLong())
         return store.events.filter { event ->
             runCatching {
                 val d = LocalDate.parse(event.date)
-                !d.isBefore(today) && !d.isAfter(until)
+                !d.isBefore(from) && !d.isAfter(until)
             }.getOrDefault(false)
         }.sortedBy { it.date }
     }

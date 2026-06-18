@@ -6,6 +6,38 @@
 
 ---
 
+## 2026-06-18 — 이벤트 캘린더 1일 보존 (지난 일정 복기)
+
+**한 일**
+- 사용자 아이디어: 이벤트가 날짜 지나면 즉시 사라져 "뭐가 있었지" 까먹음 → 어제 것까지 잠깐 남기고 다다음날 사라지게.
+- **실제 영향 자동 요약은 보류**(시장 움직임을 특정 이벤트 탓으로 단정 = 환각 리스크). 날짜 보존 + 시각 구분만.
+- **백엔드**: `EventSyncService.getUpcoming(days, includePastDays = 0)` 파라미터 추가. 앱 표시(`GET /events`)만 `includePastDays = 1`. 리마인더·아침브리핑·Slack·Claude facts는 기본 0(임박만) 유지 → 지난 이벤트 리마인더 부작용 없음.
+- **iOS/Android**(동시): 지난 이벤트 행 opacity 0.5 + 카테고리 배지를 회색 "종료"로 교체.
+- 동작: 이벤트일 D → D·D+1 노출(D+1은 "종료" 흐림), D+2 사라짐.
+- **검증**: 백엔드 compileKotlin · Android assembleDebug · iOS BUILD SUCCEEDED 전부 통과.
+
+**다음 할 일**
+- 배포 후 라이브에서 지난 이벤트 노출 확인. 앱 재빌드 시 흐림 시각 확인.
+
+---
+
+## 2026-06-17 — 재료 판정 슬라이스 3 (테마별 재료 동향, Sonnet) + 배포
+
+**한 일**
+- **백엔드**: `CatalystService.peekCached()` (캐시 읽기 전용, Claude 0회) + `brief()` (관심종목 섹터별 집계 → `CatalystBriefReport`). 병렬 섹터 추론(`resolveStockSectors` — MANUAL_OVERRIDES → 7일 캐시 → Claude 60토큰 → autoSector 폴백). `GET /catalyst-brief?codes=` 라우트.
+- **SharedLogic 모델**: `SectorCatalystLine`(sector·bias·line·stockNames) + `CatalystBriefReport`, `EdgeApi.getCatalystBrief()`.
+- **iOS BriefingView**: "내 종목" 탭 `dartSection` 아래 "테마별 재료 동향" 섹션. 기본 접힘, 캐시 없을 때 안내 문구("종목 상세에서 뉴스·공시 영향 카드를 열면 채워집니다"). `biasBadge(_:)` 호재=빨강/악재=파랑/혼조=주황.
+- **Android BriefingScreen**: `CatalystBriefRow` Composable + CollapsibleCard "테마별 재료 동향" MyStocks탭 dart 카드 아래.
+- **검증**: curl `/catalyst-brief?codes=267260`(HD현대일렉트릭, 캐시 있을 때) → `전력기기 | 호재우위 | HD현대일렉트릭 — 글로벌 전력난과 데이터센터·AI 확산에 따른 노후 전력망 교체` 정상 반환. Android `widthIn` → `width(64.dp)` 컴파일 에러 수정.
+- **배포**: `deploy.sh` → 리비전 `edge-backend-00049-6kw` Cloud Run 배포 완료. 헬스체크 OK. Slack 알림 발송.
+- 커밋: `f270337` (브랜치 `feat/catalyst-news-impact`, 미푸시)
+
+**다음 할 일**
+- 클라이언트 앱 재빌드 후 "테마별 재료 동향" 섹션 시각 확인.
+- 슬라이스 4(Slack 통합, 선택).
+
+---
+
 ## 2026-06-17 — 재료 판정 슬라이스 1b (증분 캐싱 + 선반영 룰화, Opus)
 
 **한 일** (사용자 통찰: "뉴스는 안 변하니 영구 캐시, 선반영만 변함")

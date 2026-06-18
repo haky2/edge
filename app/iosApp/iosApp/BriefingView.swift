@@ -706,17 +706,18 @@ struct BriefingView: View {
             case "주의":  (.orange,    "주의")
             default:      (.secondary, "중립")
         }
+        let isPast = isPastEvent(e.date)
         return HStack(alignment: .top, spacing: 10) {
             VStack(spacing: 2) {
                 Text(eventDateLabel(e.date))
                     .font(.caption.weight(.semibold))
                     .foregroundColor(.secondary)
                     .frame(width: 44, alignment: .center)
-                Text(badgeLabel)
+                Text(isPast ? "종료" : badgeLabel)
                     .font(.caption2.weight(.semibold))
                     .padding(.horizontal, 5).padding(.vertical, 2)
-                    .background(accentColor.opacity(0.15))
-                    .foregroundColor(accentColor)
+                    .background((isPast ? Color.secondary : accentColor).opacity(0.15))
+                    .foregroundColor(isPast ? .secondary : accentColor)
                     .clipShape(Capsule())
             }
             VStack(alignment: .leading, spacing: 3) {
@@ -731,6 +732,18 @@ struct BriefingView: View {
             }
         }
         .padding(.vertical, 3)
+        .opacity(isPast ? 0.5 : 1)
+    }
+
+    /// 이벤트 날짜가 오늘보다 과거인지(KST 기준). 막 지난 일정을 "종료"로 흐리게 표시하는 데 쓴다.
+    private func isPastEvent(_ dateStr: String) -> Bool {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        fmt.timeZone = TimeZone(identifier: "Asia/Seoul")
+        guard let d = fmt.date(from: dateStr) else { return false }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Seoul") ?? .current
+        return cal.startOfDay(for: d) < cal.startOfDay(for: Date())
     }
 
     private func eventLegendRow(_ label: String, color: Color, desc: String) -> some View {
