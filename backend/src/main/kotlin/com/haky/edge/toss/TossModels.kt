@@ -90,4 +90,74 @@ fun TossWarning.toStockWarning(): StockWarning {
     return StockWarning(type = warningType, label = label, severity = severity, startDate = startDate, endDate = endDate)
 }
 
+// ── 개장 캘린더(market-calendar) ────────────────────────────────────
+// GET /api/v1/market-calendar/KR → { "result": { today, previousBusinessDay, nextBusinessDay } }
+// MarketDay.integrated 가 null 이면 그 날은 정규장 휴장. nextBusinessDay.date = 다음 거래일.
+// 공휴일은 한투 미제공이라 EventSync가 Claude로 추정하던 것을 공식값으로 대체.
+
+@Serializable
+data class TossCalendarResponse(val result: TossCalendarResult = TossCalendarResult())
+
+@Serializable
+data class TossCalendarResult(
+    val today: TossMarketDay = TossMarketDay(),
+    val previousBusinessDay: TossMarketDay = TossMarketDay(),
+    val nextBusinessDay: TossMarketDay = TossMarketDay(),
+)
+
+/** integrated 가 null = 휴장(정규/장전/장후 세션 전체 없음). */
+@Serializable
+data class TossMarketDay(
+    val date: String = "",
+    val integrated: TossSessions? = null,
+)
+
+@Serializable
+data class TossSessions(
+    val preMarket: TossSession? = null,
+    val regularMarket: TossSession? = null,
+    val afterMarket: TossSession? = null,
+)
+
+/** 시각은 ISO8601("2026-06-22T09:00:00+09:00")로 온다. 표시엔 HH:mm 만 쓴다. */
+@Serializable
+data class TossSession(
+    val startTime: String? = null,
+    val singlePriceAuctionStartTime: String? = null,
+    val endTime: String? = null,
+)
+
+/**
+ * 앱·서비스에 내려주는 정규화 개장 캘린더(국내 KRX 기준).
+ * isHoliday=오늘 정규장 휴장 여부. regularStart/End=오늘 열릴 때 정규장 HH:mm.
+ */
+@Serializable
+data class MarketCalendar(
+    val date: String,                  // 오늘 (yyyy-MM-dd, KST)
+    val isHoliday: Boolean,            // 오늘 정규장 휴장 여부
+    val regularStart: String? = null,  // "09:00" (휴장이면 null)
+    val regularEnd: String? = null,    // "15:30"
+    val previousBusinessDay: String = "", // 직전 거래일
+    val nextBusinessDay: String = "",     // 다음 거래일
+)
+
+/** ISO8601 시각 문자열에서 HH:mm 만 뽑는다. 형식이 다르면 null. */
+private fun String?.toHhmm(): String? {
+    val t = this ?: return null
+    val i = t.indexOf('T')
+    return if (i >= 0 && t.length >= i + 6) t.substring(i + 1, i + 6) else null
+}
+
+fun TossCalendarResult.toMarketCalendar(): MarketCalendar {
+    val regular = today.integrated?.regularMarket
+    return MarketCalendar(
+        date = today.date,
+        isHoliday = today.integrated == null,
+        regularStart = regular?.startTime.toHhmm(),
+        regularEnd = regular?.endTime.toHhmm(),
+        previousBusinessDay = previousBusinessDay.date,
+        nextBusinessDay = nextBusinessDay.date,
+    )
+}
+
 class TossException(message: String) : RuntimeException(message)

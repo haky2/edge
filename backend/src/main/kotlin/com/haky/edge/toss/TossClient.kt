@@ -5,10 +5,14 @@ import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.forms.submitForm
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
+import io.ktor.client.statement.HttpResponse
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
+import io.ktor.http.isSuccess
 import com.haky.edge.util.KST
 import io.ktor.serialization.kotlinx.json.json
 import java.time.LocalDate
@@ -112,15 +116,39 @@ class TossClient(
         if (clientId.isNotBlank() && clientSecret.isNotBlank()) token()
     }
 
+    /** 캐시 토큰을 무효화(메모리+파일). 401(만료·타 프로세스 발급으로 무효화 등) 시 재발급을 강제한다. */
+    private fun invalidateToken() {
+        cachedToken = null
+        tokenExpiryMs = 0
+        runCatching { tokenFile.delete() }
+    }
+
+    /**
+     * Bearer 토큰을 붙여 GET. 401(토큰 무효)이면 토큰을 버리고 1회 재발급해 재시도한다
+     * (토스는 새 토큰 발급 시 이전 토큰을 무효화할 수 있어, 캐시 토큰이 401날 수 있다).
+     * 재시도 후에도 2xx가 아니면 예외 — 에러 응답이 빈 결과(예: 가짜 '휴장')로 둔갑하는 것을 막는다.
+     */
+    private suspend fun authedGet(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse {
+        suspend fun once(): HttpResponse = http.get(url) {
+            header("Authorization", "Bearer ${token()}")
+            block()
+        }
+        var resp = once()
+        if (resp.status == HttpStatusCode.Unauthorized) {
+            invalidateToken()
+            resp = once()
+        }
+        if (!resp.status.isSuccess()) throw TossException("토스 호출 실패: ${resp.status} ($url)")
+        return resp
+    }
+
     /**
      * 다종목 현재가 조회(최대 200개 콤마구분). 토스는 lastPrice 만 준다 — 등락률/거래량은 없음.
      * 슬라이스0의 연결 확인용. 메인 시세는 KisClient.getPrice 가 계속 담당한다.
      */
     suspend fun getPrices(symbols: List<String>): List<TossPrice> {
         if (symbols.isEmpty()) return emptyList()
-        val accessToken = token()
-        val resp: TossPricesResponse = http.get("$baseUrl/api/v1/prices") {
-            header("Authorization", "Bearer $accessToken")
+        val resp: TossPricesResponse = authedGet("$baseUrl/api/v1/prices") {
             parameter("symbols", symbols.joinToString(","))
         }.body()
         return resp.result
@@ -132,10 +160,7 @@ class TossClient(
      */
     suspend fun getWarnings(symbol: String): List<TossWarning> {
         if (clientId.isBlank() || clientSecret.isBlank()) return emptyList()
-        val accessToken = token()
-        val resp: TossWarningsResponse = http.get("$baseUrl/api/v1/stocks/$symbol/warnings") {
-            header("Authorization", "Bearer $accessToken")
-        }.body()
+        val resp: TossWarningsResponse = authedGet("$baseUrl/api/v1/stocks/$symbol/warnings").body()
         return resp.result
     }
 
@@ -148,6 +173,23 @@ class TossClient(
         return getWarnings(symbol)
             .filter { it.endDate.isNullOrBlank() || it.endDate >= today }
             .map { it.toStockWarning() }
+    }
+
+    // 개장 캘린더 당일 캐시(KST 날짜 키). 캘린더는 하루 단위로만 바뀌어 전 유저가 1회 호출분을 공유.
+    @Volatile private var calendarCache: Pair<String, MarketCalendar>? = null
+
+    /**
+     * 국내(KRX) 개장 캘린더 — 오늘 휴장 여부 + 직전/다음 거래일. 당일 캐시.
+     * 키 미설정/오류 시 null(호출부가 캘린더 없이도 동작하게).
+     */
+    suspend fun getMarketCalendar(): MarketCalendar? {
+        if (clientId.isBlank() || clientSecret.isBlank()) return null
+        val today = LocalDate.now(KST).toString()
+        calendarCache?.let { (day, cal) -> if (day == today) return cal }
+        val resp: TossCalendarResponse = authedGet("$baseUrl/api/v1/market-calendar/KR").body()
+        val cal = resp.result.toMarketCalendar()
+        calendarCache = today to cal
+        return cal
     }
 }
 

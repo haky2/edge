@@ -12,6 +12,7 @@ import com.haky.edge.model.EarningsEntry
 import com.haky.edge.model.InvestorFlow
 import com.haky.edge.model.MacroImpact
 import com.haky.edge.model.MacroIndicator
+import com.haky.edge.model.MarketCalendar
 import com.haky.edge.model.MarketMood
 import com.haky.edge.model.StockImpact
 import com.haky.edge.model.NewsItem
@@ -180,6 +181,15 @@ class EdgeApi(
         client.get("$baseUrl/catalyst-brief") {
             parameter("codes", codes.joinToString(","))
         }.body()
+
+    /**
+     * 국내(KRX) 개장 캘린더 — 오늘 휴장 여부 + 직전/다음 거래일. 브리핑 휴장 배너용.
+     * 토스 기반(한투 미제공). 키 미설정/오류 시 null(배너 숨김).
+     */
+    @Throws(Exception::class)
+    suspend fun getMarketCalendar(): MarketCalendar? = runCatching {
+        client.get("$baseUrl/market-calendar").body<MarketCalendar>()
+    }.getOrNull()
 
     /**
      * 매크로 지표(코스피·코스닥·원/달러·다우·나스닥·S&P500). 브리핑 "시장 지표" 섹션용.

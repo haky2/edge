@@ -152,6 +152,7 @@ fun BriefingScreen(
     var impactDate by remember { mutableStateOf("") }
     var watchlistIsEmpty by remember { mutableStateOf(false) }
 
+    var calendar by remember { mutableStateOf<com.haky.edge.model.MarketCalendar?>(null) }
     var macroLoading by remember { mutableStateOf(false) }
     var macroItems by remember { mutableStateOf<List<MacroIndicator>>(emptyList()) }
 
@@ -181,6 +182,9 @@ fun BriefingScreen(
         try {
             runCatching { api.getMacro() }.getOrNull()?.let { macroItems = it }
         } finally { macroLoading = false }
+    }
+    suspend fun buildCalendar() {
+        calendar = runCatching { api.getMarketCalendar() }.getOrNull()
     }
     suspend fun buildMarketMood(force: Boolean = false) {
         moodLoading = true
@@ -293,6 +297,7 @@ fun BriefingScreen(
         val codes = allItems.map { it.code }
 
         coroutineScope {
+            launch { buildCalendar() }
             launch { buildMacro() }
             launch { buildMarketMood() }
             launch { loadMoodAccuracy() }
@@ -432,6 +437,11 @@ fun BriefingScreen(
                             )
                             FreshnessBanner(fresh)
                         }
+                    }
+
+                    // 휴장일 배너 — 양 탭 공통, 오늘 휴장일 때만(거래일엔 노출 안 함).
+                    calendar?.takeIf { it.isHoliday }?.let { cal ->
+                        item { HolidayBanner(cal) }
                     }
 
                     if (selectedTab == BriefTab.MyStocks) {
@@ -1252,6 +1262,36 @@ private fun FreshnessBanner(f: Freshness) {
         Icon(if (f.isLive) Icons.Filled.Sensors else Icons.Filled.CalendarToday, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(f.bannerText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+@Composable
+private fun HolidayBanner(cal: com.haky.edge.model.MarketCalendar) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.Filled.CalendarToday, contentDescription = null, modifier = Modifier.size(16.dp), tint = OrangeAccent)
+        Text("오늘은 휴장입니다", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+        val next = formatBizDay(cal.nextBusinessDay)
+        if (next != null) {
+            Spacer(Modifier.weight(1f))
+            Text("다음 거래일 $next", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+// "2026-06-24" → "6/24(수)". 파싱 실패 시 원문, 빈 문자열이면 null.
+private fun formatBizDay(ymd: String): String? {
+    if (ymd.isEmpty()) return null
+    return runCatching {
+        val tz = TimeZone.getTimeZone("Asia/Seoul")
+        val d = SimpleDateFormat("yyyy-MM-dd", Locale.KOREAN).apply { timeZone = tz }.parse(ymd)
+        SimpleDateFormat("M/d(E)", Locale.KOREAN).apply { timeZone = tz }.format(d!!)
+    }.getOrDefault(ymd)
 }
 
 private fun computeFreshness(now: Date = Date()): Freshness {

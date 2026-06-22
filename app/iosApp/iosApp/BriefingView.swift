@@ -21,6 +21,7 @@ struct BriefingView: View {
     // supply 로드 중: 수급 섹션 내부 스피너. quotes와 독립적으로 관리.
     @State private var supplyLoading = false
     @State private var errorText: String?
+    @State private var calendar: MarketCalendar?   // 개장 캘린더(휴장/다음 거래일 배너)
 
     // 시장 지표(코스피·환율·미국지수). 관심종목과 무관해 quotes와 독립 병렬 로드.
     @State private var macroLoading = false
@@ -163,6 +164,21 @@ struct BriefingView: View {
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
             } footer: {
                 dataFreshnessBanner
+            }
+
+            // 휴장일 배너 — 양 탭 공통, 오늘 휴장일 때만. 거래일엔 노출 안 함(군더더기 방지).
+            if let cal = calendar, cal.isHoliday {
+                Section {
+                    HStack(spacing: 8) {
+                        Image(systemName: "calendar.badge.exclamationmark")
+                            .foregroundColor(.orange)
+                        Text("오늘은 휴장입니다").font(.subheadline.weight(.semibold))
+                        if let next = formatBizDay(cal.nextBusinessDay) {
+                            Spacer()
+                            Text("다음 거래일 \(next)").font(.footnote).foregroundColor(.secondary)
+                        }
+                    }
+                }
             }
 
             if selectedTab == .myStocks {
@@ -1386,6 +1402,7 @@ struct BriefingView: View {
         let codes = allItems.map { $0.code }
 
         // 시장 지표·분위기·섹터·실적일정·매크로 영향·섹터 브리핑은 quotes와 독립 병렬.
+        async let calendarTask: Void        = buildCalendar()
         async let macroTask: Void           = buildMacro()
         async let moodTask: Void            = buildMarketMood()
         async let moodAccuracyTask: Void    = loadMoodAccuracy()
@@ -1447,6 +1464,24 @@ struct BriefingView: View {
         defer { macroLoading = false }
         guard let items = try? await api.getMacro() else { return }
         macroItems = items
+    }
+
+    private func buildCalendar() async {
+        calendar = try? await api.getMarketCalendar()
+    }
+
+    // "2026-06-24" → "6/24(수)". 파싱 실패 시 원문 그대로(빈 문자열이면 nil).
+    private func formatBizDay(_ ymd: String) -> String? {
+        guard !ymd.isEmpty else { return nil }
+        let inFmt = DateFormatter()
+        inFmt.dateFormat = "yyyy-MM-dd"
+        inFmt.timeZone = TimeZone(identifier: "Asia/Seoul")
+        guard let d = inFmt.date(from: ymd) else { return ymd }
+        let outFmt = DateFormatter()
+        outFmt.locale = Locale(identifier: "ko_KR")
+        outFmt.timeZone = TimeZone(identifier: "Asia/Seoul")
+        outFmt.dateFormat = "M/d(E)"
+        return outFmt.string(from: d)
     }
 
     private func buildMarketMood(force: Bool = false) async {

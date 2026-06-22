@@ -133,6 +133,7 @@ class AnalysisService(
             val flowSensD       = async { runCatching { backtestSvc.getFlowSensitivity(code) }.getOrNull() }
             val quarterlyD      = async { runCatching { dart.getQuarterlyIncome(code) }.getOrNull() }
             val warningsD       = async { runCatching { toss.getActiveWarnings(code) }.getOrElse { emptyList() } }
+            val calendarD       = async { runCatching { toss.getMarketCalendar() }.getOrNull() }
 
             // sectorChangeRate=quote.sectorName 필요, 뉴스=name 필요 → 두 await 후 병렬 합류
             val quote = quoteD.await()
@@ -163,7 +164,8 @@ class AnalysisService(
             val warningsText = warningsD.await()
                 .takeIf { it.isNotEmpty() }
                 ?.let { "투자유의(거래소 지정, 현재 발동 중): " + it.joinToString(", ") { w -> w.label } }
-            val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, eventsText, warningsText, position)
+            val calendar = calendarD.await()
+            val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, eventsText, warningsText, calendar, position)
             // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
             val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
             // 모델 라우팅: force=수동 새로고침→Sonnet, isRefresh=급변 자동 재생성→Opus, 그 외=최초 생성→Opus.
@@ -224,6 +226,7 @@ class AnalysisService(
         quarterlyIncome: QuarterlyIncome?,
         eventsText: String?,
         warningsText: String?,
+        calendar: com.haky.edge.toss.MarketCalendar?,
         position: Position? = null,
     ): String {
         val sb = StringBuilder()
@@ -231,8 +234,12 @@ class AnalysisService(
         val kst = ZonedDateTime.now(ZoneId.of("Asia/Seoul"))
         val totalMin = kst.hour * 60 + kst.minute
         val isWeekend = kst.dayOfWeek == DayOfWeek.SATURDAY || kst.dayOfWeek == DayOfWeek.SUNDAY
+        // 캘린더가 있으면 공식 휴장 여부(주말+공휴일 모두 커버), 없으면 주말 휴리스틱 폴백.
+        // 공휴일(평일)을 "장 중"으로 오표시하던 문제를 토스 개장 캘린더로 바로잡는다.
+        val isHoliday = calendar?.isHoliday ?: isWeekend
+        val nextDay = calendar?.nextBusinessDay?.takeIf { it.isNotBlank() }
         val marketStatus = when {
-            isWeekend       -> "주말(휴장) — 전일 종가 기준"
+            isHoliday       -> "휴장 — 전일 종가 기준" + (nextDay?.let { " (다음 거래일 $it)" } ?: "")
             totalMin < 540  -> "장 전 (09:00 개장 전) — 전일 종가 기준"
             totalMin < 930  -> "장 중 (09:00~15:30)"
             else            -> "장 마감 후 (15:30 이후) — 당일 종가 확정"

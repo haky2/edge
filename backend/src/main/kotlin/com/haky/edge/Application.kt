@@ -40,6 +40,7 @@ import com.haky.edge.routes.dartRoutes
 import com.haky.edge.routes.earningsRoutes
 import com.haky.edge.routes.investorRoutes
 import com.haky.edge.routes.macroImpactRoutes
+import com.haky.edge.routes.marketCalendarRoutes
 import com.haky.edge.routes.sectorClassifyRoutes
 import com.haky.edge.routes.macroRoutes
 import com.haky.edge.routes.marketMoodLogRoutes
@@ -243,6 +244,7 @@ fun Application.module() {
         rateLimit(ApiRateLimit) {
             quoteRoutes(kis)
             warningsRoutes(toss)
+            marketCalendarRoutes(toss)
             chartRoutes(kis)
             investorRoutes(kis)
             macroRoutes(kis, fearGreed, copper, ecos, yahoo)
