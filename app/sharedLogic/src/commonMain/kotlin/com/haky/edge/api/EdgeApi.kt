@@ -21,6 +21,7 @@ import com.haky.edge.model.SectorEntry
 import com.haky.edge.model.SectorIndex
 import com.haky.edge.model.ShortSellingSummary
 import com.haky.edge.model.StockInfo
+import com.haky.edge.model.StockWarning
 import com.haky.edge.model.TargetPriceInfo
 import com.haky.edge.model.MarketEvent
 import com.haky.edge.model.MoodAccuracyReport
@@ -101,6 +102,14 @@ class EdgeApi(
         client.get("$baseUrl/search") {
             parameter("q", query)
         }.body()
+
+    /**
+     * 종목 투자유의(시장경보·단기과열·정리매매·VI). 토스 기반(한투 미제공). 발동 없으면 빈 리스트.
+     * 백엔드가 키 미설정/오류 시에도 빈 배열로 응답하므로 상세 화면을 막지 않는다.
+     */
+    @Throws(Exception::class)
+    suspend fun getWarnings(code: String): List<StockWarning> =
+        client.get("$baseUrl/warnings/$code").body()
 
     /** 종목 일별 수급(외인/기관/개인 순매수) 최근 days일치. 최신일이 앞(장후 확정값만). */
     @Throws(Exception::class)

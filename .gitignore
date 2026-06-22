@@ -28,6 +28,8 @@ secrets.properties
 **/src/main/resources/application-local.*
 .kis-token.json
 **/.kis-token.json
+.toss-token.json
+**/.toss-token.json
 # iOS 배포용 실제 백엔드 URL·토큰(1.0c). Config.xcconfig가 optional include.
 **/Configuration/Secrets.xcconfig
 

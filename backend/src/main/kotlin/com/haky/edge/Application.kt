@@ -14,6 +14,7 @@ import com.haky.edge.dart.DartClient
 import com.haky.edge.dart.DartException
 import com.haky.edge.kis.KisClient
 import com.haky.edge.kis.KisException
+import com.haky.edge.toss.TossClient
 import com.haky.edge.macro.CopperClient
 import com.haky.edge.macro.EcosClient
 import com.haky.edge.macro.FearGreedClient
@@ -52,6 +53,7 @@ import com.haky.edge.routes.shortSellingRoutes
 import com.haky.edge.routes.peerValuationRoutes
 import com.haky.edge.routes.targetPriceRoutes
 import com.haky.edge.routes.valuationBandRoutes
+import com.haky.edge.routes.warningsRoutes
 import com.haky.edge.routes.webSearchTestRoutes
 import com.haky.edge.routes.morningBriefRoutes
 import com.haky.edge.routes.eventReminderRoutes
@@ -165,6 +167,13 @@ fun Application.module() {
         baseUrl = System.getenv("KIS_BASE_URL") ?: "https://openapi.koreainvestment.com:9443",
     )
     // 종목 마스터는 인증이 필요 없는 공개 다운로드라 별도의 평범한 HttpClient 를 쓴다(KisClient 와 분리).
+    // 토스 보강 소스(한투에 없는 투자유의·개장캘린더·상하한가). 슬라이스0=인증/연결 확인.
+    // 키 미설정이면 warmup/호출이 조용히 건너뛰므로 로컬에선 .env 없이도 서버가 뜬다.
+    val toss = TossClient(
+        clientId = System.getenv("TOSS_CLIENT_ID").orEmpty(),
+        clientSecret = System.getenv("TOSS_CLIENT_SECRET").orEmpty(),
+        baseUrl = System.getenv("TOSS_BASE_URL") ?: "https://openapi.tossinvest.com",
+    )
     val master = StockMaster(HttpClient(CIO))
     val naver = NaverNewsClient(
         clientId = System.getenv("NAVER_CLIENT_ID").orEmpty(),
@@ -223,6 +232,7 @@ fun Application.module() {
     // 첫 번째 실제 요청이 올 때 이 두 초기화 작업(각 수 초)을 기다리지 않아도 되게 함.
     launch {
         runCatching { kis.warmup() }   // KIS 접근토큰 선발급
+        runCatching { toss.warmup() }  // 토스 접근토큰 선발급(키 미설정이면 내부에서 건너뜀)
         runCatching { dart.warmup() }  // DART corpCode.xml 다운로드·파싱
     }
 
@@ -232,6 +242,7 @@ fun Application.module() {
         // 나머지 데이터 라우트는 전부 IP별 레이트리밋 적용(토큰 인증은 configureSecurity 인터셉트에서 전역 처리).
         rateLimit(ApiRateLimit) {
             quoteRoutes(kis)
+            warningsRoutes(toss)
             chartRoutes(kis)
             investorRoutes(kis)
             macroRoutes(kis, fearGreed, copper, ecos, yahoo)

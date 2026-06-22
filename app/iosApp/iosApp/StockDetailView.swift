@@ -10,6 +10,7 @@ struct StockDetailView: View {
     private let api: EdgeApi
     private let logRepo: ActionLogRepository
     @State private var quote: Quote?
+    @State private var warnings: [StockWarning] = []  // 투자유의(시장경보·단기과열·정리매매·VI, 토스)
     @State private var flows: [InvestorFlow] = []   // 일별 수급(외인/기관/개인)
     @State private var analysis: Analysis?           // AI 종합 코멘트
     @State private var catalysts: CatalystReport?    // 뉴스·공시 영향(호재/악재 판정)
@@ -67,6 +68,7 @@ struct StockDetailView: View {
                 if let q = quote {
                     // ── 현재 상황 ──
                     priceHeader(q)
+                    if !warnings.isEmpty { warningChips() }
                     priceChartCard(q)
                     positionCard(q)
                     // ── 종합 판단 ──
@@ -159,6 +161,36 @@ struct StockDetailView: View {
             Text("\(up ? "▲" : "▼") \(abs(q.change).formatted())  \(String(format: "%.2f", abs(q.changeRate)))%")
                 .font(.headline)
                 .foregroundColor(up ? .red : .blue)
+        }
+    }
+
+    // 투자유의 칩 — 시장경보(투자주의/경고/위험)·단기과열·정리매매·VI. 토스 기반(한투 미제공).
+    // 발동 항목이 있을 때만(상위 호출에서 가드) 가격 바로 아래 눈에 띄게 노출.
+    private func warningChips() -> some View {
+        // 위험도 높은 순으로 정렬해 가장 중요한 경보가 앞에 오게.
+        let order: [String: Int] = ["danger": 0, "warn": 1, "info": 2]
+        let sorted = warnings.sorted { (order[$0.severity] ?? 9) < (order[$1.severity] ?? 9) }
+        return ChipFlowLayout(spacing: 6) {
+            ForEach(Array(sorted.enumerated()), id: \.offset) { _, w in
+                let c = chipColor(w.severity)
+                Text(w.label)
+                    .font(.caption.weight(.semibold))
+                    .fixedSize()
+                    .padding(.horizontal, 9).padding(.vertical, 4)
+                    .background(c.opacity(0.15))
+                    .foregroundColor(c)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(c.opacity(0.35), lineWidth: 0.5))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private func chipColor(_ severity: String) -> Color {
+        switch severity {
+        case "danger": return .red
+        case "warn":   return .orange
+        default:        return .gray
         }
     }
 
@@ -2125,6 +2157,7 @@ struct StockDetailView: View {
     private func load() async {
         loading = true
         if let q = try? await api.getQuote(code: item.code) { quote = q }
+        warnings = (try? await api.getWarnings(code: item.code)) ?? []
         flows = (try? await api.getInvestorFlow(code: item.code, days: 5)) ?? []
         if let daily = try? await api.getDaily(code: item.code, bars: 120) {
             dailyBars = daily

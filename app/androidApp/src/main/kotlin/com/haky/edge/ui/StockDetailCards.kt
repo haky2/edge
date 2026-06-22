@@ -65,6 +65,7 @@ import com.haky.edge.model.PeerMetric
 import com.haky.edge.model.PeerValuation
 import com.haky.edge.model.SignalResult
 import com.haky.edge.model.StockImpact
+import com.haky.edge.model.StockWarning
 import com.haky.edge.model.ValuationBand
 import com.haky.edge.ui.theme.ChangeDown
 import com.haky.edge.ui.theme.ChangeUp
@@ -142,6 +143,40 @@ private fun BadgePill(text: String, color: Color) {
             .background(color.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
             .padding(horizontal = 6.dp, vertical = 2.dp),
     )
+}
+
+// ─── 투자유의 칩 (시장경보·단기과열·정리매매·VI, 토스 기반) ─────────────
+// 한투엔 없는 데이터. 발동 항목이 있을 때만 가격 바로 아래 노출. 위험도 높은 순(danger→warn→info) 정렬.
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun WarningChips(warnings: List<StockWarning>) {
+    if (warnings.isEmpty()) return
+    val order = mapOf("danger" to 0, "warn" to 1, "info" to 2)
+    val sorted = warnings.sortedBy { order[it.severity] ?: 9 }
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        sorted.forEach { w ->
+            val c = warningColor(w.severity)
+            Text(
+                w.label,
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = c,
+                modifier = Modifier
+                    .background(c.copy(alpha = 0.15f), RoundedCornerShape(50))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun warningColor(severity: String): Color = when (severity) {
+    "danger" -> EdgeTheme.colors.up       // 빨강 (위험·경고·정리매매)
+    "warn"   -> EdgeTheme.colors.orange   // 주황 (단기과열)
+    else      -> EdgeTheme.colors.neutral // 회색 (VI 등 참고)
 }
 
 // ─── 뉴스·공시 영향 (호재/악재 판정) — 접이식 ─────────────
