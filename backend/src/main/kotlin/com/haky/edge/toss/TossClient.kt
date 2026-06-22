@@ -9,7 +9,9 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.http.Parameters
+import com.haky.edge.util.KST
 import io.ktor.serialization.kotlinx.json.json
+import java.time.LocalDate
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
@@ -135,6 +137,17 @@ class TossClient(
             header("Authorization", "Bearer $accessToken")
         }.body()
         return resp.result
+    }
+
+    /**
+     * 진행 중인 투자유의만 한글 라벨·severity 로 정규화해 반환. 해제일이 지난 과거 경보는 제외
+     * (만료된 칩/문구는 오해를 부른다). endDate 미정(진행 중)은 포함. 상세 칩·AI 코멘트 facts 공용.
+     */
+    suspend fun getActiveWarnings(symbol: String): List<StockWarning> {
+        val today = LocalDate.now(KST).toString() // yyyy-MM-dd (KST 기준)
+        return getWarnings(symbol)
+            .filter { it.endDate.isNullOrBlank() || it.endDate >= today }
+            .map { it.toStockWarning() }
     }
 }
 

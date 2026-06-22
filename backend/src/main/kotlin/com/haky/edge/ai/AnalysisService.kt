@@ -76,6 +76,7 @@ data class Position(
  */
 class AnalysisService(
     private val kis: KisClient,
+    private val toss: com.haky.edge.toss.TossClient,
     private val naver: NaverNewsClient,
     private val master: StockMaster,
     private val claude: ClaudeClient,
@@ -131,6 +132,7 @@ class AnalysisService(
             val backtestD       = async { runCatching { backtestSvc.getBacktest(code) }.getOrNull() }
             val flowSensD       = async { runCatching { backtestSvc.getFlowSensitivity(code) }.getOrNull() }
             val quarterlyD      = async { runCatching { dart.getQuarterlyIncome(code) }.getOrNull() }
+            val warningsD       = async { runCatching { toss.getActiveWarnings(code) }.getOrElse { emptyList() } }
 
             // sectorChangeRate=quote.sectorName 필요, 뉴스=name 필요 → 두 await 후 병렬 합류
             val quote = quoteD.await()
@@ -157,7 +159,11 @@ class AnalysisService(
 
             // 임박 거시 이벤트(향후 2주) — 파일 캐시 읽기라 가벼움. 없으면 null로 건너뜀.
             val eventsText = runCatching { eventSync.upcomingFactsText() }.getOrNull()
-            val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, eventsText, position)
+            // 투자유의(거래소 지정 시장경보·단기과열·정리매매·VI) — 발동 항목 라벨만. 없으면 null로 건너뜀.
+            val warningsText = warningsD.await()
+                .takeIf { it.isNotEmpty() }
+                ?.let { "투자유의(거래소 지정, 현재 발동 중): " + it.joinToString(", ") { w -> w.label } }
+            val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, eventsText, warningsText, position)
             // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
             val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
             // 모델 라우팅: force=수동 새로고침→Sonnet, isRefresh=급변 자동 재생성→Opus, 그 외=최초 생성→Opus.
@@ -217,6 +223,7 @@ class AnalysisService(
         flowSensitivity: FlowSensitivity?,
         quarterlyIncome: QuarterlyIncome?,
         eventsText: String?,
+        warningsText: String?,
         position: Position? = null,
     ): String {
         val sb = StringBuilder()
@@ -232,6 +239,8 @@ class AnalysisService(
         }
         sb.appendLine("현재 시장 상태: $marketStatus")
         sb.appendLine("현재가: ${q.price}원 (전일대비 ${q.change}, ${q.changeRate}%)")
+        // 투자유의는 리스크 신호라 상단에 배치(거래소 지정 시장경보·단기과열·정리매매·VI).
+        if (warningsText != null) sb.appendLine(warningsText)
         if (sectorChangeRate != null) {
             val rs = q.changeRate - sectorChangeRate
             val label = when {
@@ -734,6 +743,11 @@ class AnalysisService(
                 - 동종 상대 밸류: "동종 상대 밸류" 섹션이 있으면 같은 업종 경쟁사 중앙값과 비교한 위치다. 역사적 상단권이어도 동종 대비 낮으면 상대적으로 싼 편이고(리레이팅 국면에서 특히 의미 있다), 동종 대비 높으면 그 프리미엄을 정당화할 실적·성장 근거가 있는지 짚어라.
                 - 표본·신뢰도: 밴드에 "신뢰도 낮음/표본 적음" 표시가 있으면 밴드 결론을 약하게 다뤄라.
                 업종을 미리 단정하지 말고(반도체든 조선·방산이든) 위 사실로 판단하라. 반대로 역사적으로 싸 보여도 이익이 꺾이는 중이면 함정일 수 있다는 양방향 경계를 똑같이 적용하라.
+            15. "투자유의" 항목이 있으면 거래소가 실제로 지정한 리스크 신호이므로 반드시 짚어라(없으면 언급하지 마라):
+                - "투자위험"·"정리매매"는 강한 경고 — 상장폐지·급락 위험을 신중하지만 분명하게 알려라.
+                - "투자경고"·"단기과열"은 과열·변동성 확대 신호로, 단기 급등 뒤 되돌림 위험을 짚어라.
+                - "정적VI"·"동적VI"는 변동성 완화장치 발동 이력으로, 주가 변동성이 큰 상태라는 참고 정보로만 다뤄라.
+                종합 단락에서 한두 문장으로 녹이되, 이 사실로 매매를 지시하지는 마라.
         """.trimIndent()
 
         // 공격 모드 시스템 프롬프트. 방어 모드와 같은 사실·환각가드 위에서, 개별 종목 매매 판단까지
@@ -783,6 +797,9 @@ class AnalysisService(
             12. 밸류에이션 해석 균형(중요): "역사적 상단권"·높은 PER/PBR 백분위를 그 자체로 "비싸다·매수하지 마라"로 단정하지 마라.
                 역사 밴드는 한 축일 뿐 — 실적 방향(매출·이익이 구조적으로 늘면 리레이팅이거나 이익 점프로 과거 밴드가 무의미), 컨센서스 목표가 상승여력·상향/하향 추세, 동종 상대 밸류(같은 업종 대비 낮음/높음), 밴드 표본·신뢰도를 함께 저울질해 스탠스를 정하라.
                 업종을 미리 단정하지 말고(반도체·조선·방산 불문) 사실로 판단하라. 단호한 결론을 내되, 역으로 싸 보여도 이익이 꺾이면 함정일 수 있다는 경계도 적용하라.
+            13. "투자유의" 항목이 있으면 거래소가 지정한 리스크 신호다(없으면 언급 금지). 종합·액션 단락에서 스탠스에 반영하라:
+                "투자위험"·"정리매매"는 강한 경고 — 신규 진입을 말리거나 보유분 리스크 관리(비중 축소·손절 라인)를 분명히 권하라.
+                "투자경고"·"단기과열"·"VI"는 과열·변동성 신호로, 추격 매수를 경계하고 되돌림을 기다리라는 식으로 액션에 묶어라. 단 결과를 단정하지는 마라.
         """.trimIndent()
     }
 }
