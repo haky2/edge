@@ -11,6 +11,7 @@ struct StockDetailView: View {
     private let logRepo: ActionLogRepository
     @State private var quote: Quote?
     @State private var warnings: [StockWarning] = []  // 투자유의(시장경보·단기과열·정리매매·VI, 토스)
+    @State private var priceLimits: PriceLimits?       // 상·하한가(토스)
     @State private var flows: [InvestorFlow] = []   // 일별 수급(외인/기관/개인)
     @State private var analysis: Analysis?           // AI 종합 코멘트
     @State private var catalysts: CatalystReport?    // 뉴스·공시 영향(호재/악재 판정)
@@ -69,6 +70,7 @@ struct StockDetailView: View {
                     // ── 현재 상황 ──
                     priceHeader(q)
                     if !warnings.isEmpty { warningChips() }
+                    priceLimitView(q)
                     priceChartCard(q)
                     positionCard(q)
                     // ── 종합 판단 ──
@@ -193,6 +195,33 @@ struct StockDetailView: View {
         default:        return .gray
         }
     }
+
+    // 가격 제한폭(상·하한가) — 현재가 대비 여력 %. 제한폭 도달 시 칩. 제한폭 없는 시장(미국 등)은 숨김.
+    @ViewBuilder
+    private func priceLimitView(_ q: Quote) -> some View {
+        if let pl = priceLimits, let upper = pl.upper?.int64Value, let lower = pl.lower?.int64Value, q.price > 0 {
+            let price = Double(q.price)
+            let upPct = (Double(upper) - price) / price * 100
+            let lowPct = (Double(lower) - price) / price * 100
+            HStack(spacing: 6) {
+                if q.price >= upper {
+                    Text("상한가 도달").font(.caption.weight(.semibold)).foregroundColor(.red)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Color.red.opacity(0.15)).clipShape(Capsule())
+                } else if q.price <= lower {
+                    Text("하한가 도달").font(.caption.weight(.semibold)).foregroundColor(.blue)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Color.blue.opacity(0.15)).clipShape(Capsule())
+                }
+                Text("상한가 \(upper.formatted()) (\(fmtSignedPct(upPct)))  ·  하한가 \(lower.formatted()) (\(fmtSignedPct(lowPct)))")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    private func fmtSignedPct(_ p: Double) -> String { String(format: "%+.1f%%", p) }
 
     // 가격 차트 카드 = "내 기준선 차트". 종가 흐름 + 고저 밴드 + 20일 추세선 위에
     // 내 평단·목표·손절을 가로선으로 얹어 "내가 산 가격이 지금 어디"를 한눈에 본다.
@@ -2158,6 +2187,7 @@ struct StockDetailView: View {
         loading = true
         if let q = try? await api.getQuote(code: item.code) { quote = q }
         warnings = (try? await api.getWarnings(code: item.code)) ?? []
+        priceLimits = try? await api.getPriceLimits(code: item.code)
         flows = (try? await api.getInvestorFlow(code: item.code, days: 5)) ?? []
         if let daily = try? await api.getDaily(code: item.code, bars: 120) {
             dailyBars = daily

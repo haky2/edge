@@ -92,6 +92,7 @@ fun StockDetailScreen(
     var watchItem by remember { mutableStateOf(item) }
     var quote by remember { mutableStateOf(initialQuote) }
     var warnings by remember { mutableStateOf<List<com.haky.edge.model.StockWarning>>(emptyList()) }
+    var priceLimits by remember { mutableStateOf<com.haky.edge.model.PriceLimits?>(null) }
     var dailyBars by remember { mutableStateOf<List<com.haky.edge.model.DailyBar>>(emptyList()) }
     var flows by remember { mutableStateOf<List<com.haky.edge.model.InvestorFlow>>(emptyList()) }
     var shortSelling by remember { mutableStateOf<com.haky.edge.model.ShortSellingSummary?>(null) }
@@ -177,6 +178,9 @@ fun StockDetailScreen(
         warnings = try { api.getWarnings(watchItem.code) } catch (_: Exception) { emptyList() }
     }
     LaunchedEffect(watchItem.code) {
+        priceLimits = try { api.getPriceLimits(watchItem.code) } catch (_: Exception) { null }
+    }
+    LaunchedEffect(watchItem.code) {
         val code = watchItem.code
         try { shortSelling = api.getShortSelling(code) } catch (_: Exception) {}
         try { valuationBand = api.getValuationBand(code) } catch (_: Exception) {}
@@ -232,6 +236,7 @@ fun StockDetailScreen(
         ) {
             PriceHeader(code = watchItem.code, quote = quote)
             WarningChips(warnings)
+            quote?.let { q -> priceLimits?.let { PriceLimitsLine(it, q.price) } }
             quote?.let { q ->
                 PriceChartCard(
                     quote = q,

@@ -16,6 +16,7 @@ import com.haky.edge.model.MarketCalendar
 import com.haky.edge.model.MarketMood
 import com.haky.edge.model.StockImpact
 import com.haky.edge.model.NewsItem
+import com.haky.edge.model.PriceLimits
 import com.haky.edge.model.Quote
 import com.haky.edge.model.SectorBriefing
 import com.haky.edge.model.SectorEntry
@@ -111,6 +112,14 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getWarnings(code: String): List<StockWarning> =
         client.get("$baseUrl/warnings/$code").body()
+
+    /**
+     * 종목 가격 제한폭(상·하한가). 토스 기반(한투 미제공). 제한폭 없는 시장(미국 등)이나 오류 시 null.
+     */
+    @Throws(Exception::class)
+    suspend fun getPriceLimits(code: String): PriceLimits? = runCatching {
+        client.get("$baseUrl/price-limits/$code").body<PriceLimits>()
+    }.getOrNull()
 
     /** 종목 일별 수급(외인/기관/개인 순매수) 최근 days일치. 최신일이 앞(장후 확정값만). */
     @Throws(Exception::class)

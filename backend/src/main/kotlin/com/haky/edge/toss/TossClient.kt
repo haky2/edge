@@ -175,6 +175,18 @@ class TossClient(
             .map { it.toStockWarning() }
     }
 
+    /**
+     * 종목 가격 제한폭(상·하한가). 제한폭 없는 시장(미국 등)이면 둘 다 null인 PriceLimits.
+     * 키 미설정이면 null(호출부가 카드 숨김).
+     */
+    suspend fun getPriceLimits(symbol: String): PriceLimits? {
+        if (clientId.isBlank() || clientSecret.isBlank()) return null
+        val resp: TossPriceLimitsResponse = authedGet("$baseUrl/api/v1/price-limits") {
+            parameter("symbol", symbol)
+        }.body()
+        return resp.result.toPriceLimits()
+    }
+
     // 개장 캘린더 당일 캐시(KST 날짜 키). 캘린더는 하루 단위로만 바뀌어 전 유저가 1회 호출분을 공유.
     @Volatile private var calendarCache: Pair<String, MarketCalendar>? = null
 

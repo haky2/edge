@@ -160,4 +160,33 @@ fun TossCalendarResult.toMarketCalendar(): MarketCalendar {
     )
 }
 
+// ── 가격 제한폭(price-limits) ───────────────────────────────────────
+// GET /api/v1/price-limits?symbol → { "result": { upperLimitPrice, lowerLimitPrice, ... } }
+// 가격은 문자열, 제한폭 없는 시장(미국 등)은 null. KR은 보통 전일종가 ±30%(틱 반올림 반영된 실제값).
+
+@Serializable
+data class TossPriceLimitsResponse(val result: TossPriceLimits = TossPriceLimits())
+
+@Serializable
+data class TossPriceLimits(
+    val timestamp: String = "",
+    val upperLimitPrice: String? = null,
+    val lowerLimitPrice: String? = null,
+    val currency: String = "",
+)
+
+/** 앱에 내려주는 정규화 가격 제한폭. 둘 다 null이면(제한폭 없음) 호출부가 카드를 숨긴다. */
+@Serializable
+data class PriceLimits(
+    val upper: Long? = null,  // 상한가
+    val lower: Long? = null,  // 하한가
+    val currency: String = "KRW",
+)
+
+fun TossPriceLimits.toPriceLimits() = PriceLimits(
+    upper = upperLimitPrice?.trim()?.toDoubleOrNull()?.toLong(),
+    lower = lowerLimitPrice?.trim()?.toDoubleOrNull()?.toLong(),
+    currency = currency.ifBlank { "KRW" },
+)
+
 class TossException(message: String) : RuntimeException(message)

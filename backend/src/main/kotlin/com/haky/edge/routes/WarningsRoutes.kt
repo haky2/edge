@@ -23,4 +23,19 @@ fun Route.warningsRoutes(toss: TossClient) {
         val warnings: List<StockWarning> = runCatching { toss.getActiveWarnings(code) }.getOrDefault(emptyList())
         call.respond(warnings)
     }
+
+    // GET /price-limits/{code} — 종목 상·하한가. 제한폭 없거나 오류 시 503(앱은 카드만 숨김).
+    get("/price-limits/{code}") {
+        val code = call.parameters["code"].orEmpty()
+        if (!WARN_CODE_REGEX.matches(code)) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("종목코드는 6자리 영숫자여야 합니다: '$code'"))
+            return@get
+        }
+        val limits = runCatching { toss.getPriceLimits(code) }.getOrNull()
+        if (limits == null) {
+            call.respond(HttpStatusCode.ServiceUnavailable, ErrorResponse("가격 제한폭을 가져오지 못했습니다"))
+            return@get
+        }
+        call.respond(limits)
+    }
 }

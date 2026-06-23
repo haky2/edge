@@ -63,6 +63,7 @@ import com.haky.edge.model.FlowSensitivity
 import com.haky.edge.model.ShortSellingSummary
 import com.haky.edge.model.PeerMetric
 import com.haky.edge.model.PeerValuation
+import com.haky.edge.model.PriceLimits
 import com.haky.edge.model.SignalResult
 import com.haky.edge.model.StockImpact
 import com.haky.edge.model.StockWarning
@@ -177,6 +178,32 @@ private fun warningColor(severity: String): Color = when (severity) {
     "danger" -> EdgeTheme.colors.up       // 빨강 (위험·경고·정리매매)
     "warn"   -> EdgeTheme.colors.orange   // 주황 (단기과열)
     else      -> EdgeTheme.colors.neutral // 회색 (VI 등 참고)
+}
+
+// ─── 가격 제한폭(상·하한가, 토스) ─────────────
+// 현재가 대비 상/하한가 여력 %. 제한폭 도달 시 칩. 제한폭 없는 시장(미국 등)은 호출부에서 숨김.
+@Composable
+internal fun PriceLimitsLine(limits: PriceLimits, currentPrice: Long) {
+    val upper = limits.upper
+    val lower = limits.lower
+    if (upper == null || lower == null || currentPrice <= 0L) return
+    val upPct = (upper - currentPrice).toDouble() / currentPrice * 100
+    val lowPct = (lower - currentPrice).toDouble() / currentPrice * 100
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        when {
+            currentPrice >= upper -> BadgePill("상한가 도달", EdgeTheme.colors.up)
+            currentPrice <= lower -> BadgePill("하한가 도달", EdgeTheme.colors.down)
+        }
+        Text(
+            "상한가 ${upper.fmt()} (${"%+.1f%%".format(upPct)})  ·  하한가 ${lower.fmt()} (${"%+.1f%%".format(lowPct)})",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 // ─── 뉴스·공시 영향 (호재/악재 판정) — 접이식 ─────────────
