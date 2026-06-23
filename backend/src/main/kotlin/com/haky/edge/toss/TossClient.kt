@@ -57,11 +57,15 @@ class TossClient(
      * 유효한 액세스 토큰을 반환한다.
      *  1) 락 없이 메모리 캐시 확인(빠른 경로) → 2) 만료 시에만 락 잡고 파일 캐시 → 3) 그래도 없으면 발급.
      */
-    private suspend fun token(): String {
-        validToken()?.let { return it }
+    private suspend fun token(forceRefresh: Boolean = false): String {
+        // forceRefresh=401 재시도 경로: 메모리/파일 캐시를 건너뛰고 무조건 새로 발급한다.
+        // (토스가 토큰을 무효화했는데 GCS 파일 삭제가 지연돼 스테일 토큰을 다시 읽으면 재시도도 401나는 것 방지)
+        if (!forceRefresh) validToken()?.let { return it }
         return tokenMutex.withLock {
-            validToken()?.let { return it }       // 락 대기 중 다른 코루틴이 발급했을 수 있음
-            loadTokenFromFile()?.let { return it } // 재시작 직후: 파일에 살아있는 토큰 재사용
+            if (!forceRefresh) {
+                validToken()?.let { return it }       // 락 대기 중 다른 코루틴이 발급했을 수 있음
+                loadTokenFromFile()?.let { return it } // 재시작 직후: 파일에 살아있는 토큰 재사용
+            }
             if (clientId.isBlank() || clientSecret.isBlank()) {
                 throw TossException("TOSS_CLIENT_ID / TOSS_CLIENT_SECRET 가 설정되지 않았습니다 (.env 확인)")
             }
@@ -75,6 +79,7 @@ class TossClient(
                 },
             ).body()
             if (resp.accessToken.isBlank()) {
+                println("[Toss] 토큰 발급 실패: ${resp.error} ${resp.errorDescription}".trim())
                 throw TossException("토스 토큰 발급 실패: ${resp.error} ${resp.errorDescription}".trim())
             }
             cachedToken = resp.accessToken
@@ -129,16 +134,19 @@ class TossClient(
      * 재시도 후에도 2xx가 아니면 예외 — 에러 응답이 빈 결과(예: 가짜 '휴장')로 둔갑하는 것을 막는다.
      */
     private suspend fun authedGet(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse {
-        suspend fun once(): HttpResponse = http.get(url) {
-            header("Authorization", "Bearer ${token()}")
+        suspend fun once(forceRefresh: Boolean): HttpResponse = http.get(url) {
+            header("Authorization", "Bearer ${token(forceRefresh)}")
             block()
         }
-        var resp = once()
+        var resp = once(forceRefresh = false)
         if (resp.status == HttpStatusCode.Unauthorized) {
             invalidateToken()
-            resp = once()
+            resp = once(forceRefresh = true) // 캐시/파일 무시하고 새 토큰으로 재시도
         }
-        if (!resp.status.isSuccess()) throw TossException("토스 호출 실패: ${resp.status} ($url)")
+        if (!resp.status.isSuccess()) {
+            println("[Toss] 호출 실패: ${resp.status} ($url)")
+            throw TossException("토스 호출 실패: ${resp.status} ($url)")
+        }
         return resp
     }
 
