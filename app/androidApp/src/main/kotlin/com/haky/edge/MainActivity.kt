@@ -4,7 +4,20 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,12 +53,29 @@ class MainActivity : ComponentActivity() {
                 else    -> isSystemInDarkTheme()
             }
             EdgeTheme(darkTheme = isDark) {
-                EdgeApp(
-                    watchlistRepo = watchlistRepo,
-                    actionLogRepo = actionLogRepo,
-                    api = api,
-                    onThemeChange = { themeMode = it },
-                )
+                Box(modifier = Modifier.fillMaxSize()) {
+                    EdgeApp(
+                        watchlistRepo = watchlistRepo,
+                        actionLogRepo = actionLogRepo,
+                        api = api,
+                        onThemeChange = { themeMode = it },
+                    )
+                    // 개발(Debug) 빌드 = 로컬 백엔드를 보고 있다는 표식. 운영(Release)엔 안 나온다.
+                    if (BuildConfig.DEBUG) {
+                        Text(
+                            "LOCAL",
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .statusBarsPadding()
+                                .padding(top = 2.dp, end = 8.dp)
+                                .background(Color(0xFFFF9F0A), RoundedCornerShape(50))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
             }
         }
     }
