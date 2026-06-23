@@ -26,7 +26,10 @@ class MainActivity : ComponentActivity() {
         // 첫 실행은 빈 관심종목으로 시작한다(시드 없음). 사용자가 검색으로 직접 추가.
         val watchlistRepo = WatchlistRepository(driverFactory)
         val actionLogRepo = ActionLogRepository(driverFactory)
-        val baseUrl = BuildConfig.EDGE_BASE_URL.ifEmpty { "http://10.0.2.2:8080" }
+        // Debug(개발 빌드)는 항상 로컬 백엔드(에뮬레이터 10.0.2.2=호스트 맥), Release는 운영(Cloud Run) URL.
+        // → 개발 중엔 재배포 없이 `cd backend && ./run.sh` 만 띄우면 에뮬이 그 로컬 서버를 본다.
+        val baseUrl = if (BuildConfig.DEBUG) "http://10.0.2.2:8080"
+                      else BuildConfig.EDGE_BASE_URL.ifEmpty { "http://10.0.2.2:8080" }
         val api = EdgeApi(baseUrl = baseUrl, apiToken = BuildConfig.EDGE_API_TOKEN)
 
         setContent {

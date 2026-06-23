@@ -8,13 +8,19 @@ enum Db {
         WatchlistRepository(driverFactory: DriverFactory())
     }()
     static let actionLog = ActionLogRepository(driverFactory: DriverFactory())
-    // 백엔드 주소·토큰은 빌드 설정(Config.xcconfig → Info.plist)에서 읽는다.
-    // 로컬 개발: 값이 비어 localhost·토큰없음 → 기존 동작 그대로. 배포 빌드(1.0c-b): Secrets.xcconfig로 실제 값 주입.
+    // 백엔드 주소·토큰. Debug(Xcode 실행)는 항상 로컬 백엔드, Release(Archive/TestFlight)는 운영(Cloud Run).
+    // → 개발 중엔 재배포 없이 `cd backend && ./run.sh` 만 띄우면 시뮬레이터가 그 로컬 서버를 본다.
+    // 운영 URL·토큰은 Secrets.xcconfig → Info.plist(EDGE_BASE_URL/EDGE_API_TOKEN)에서 읽는다.
     static let api: EdgeApi = {
         let info = Bundle.main.infoDictionary
         let url = (info?["EDGE_BASE_URL"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
         let token = (info?["EDGE_API_TOKEN"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+        #if DEBUG
+        // 시뮬레이터는 맥과 네트워크를 공유 → localhost 가 맥의 로컬 백엔드. 토큰은 로컬 .env 와 같은 값 사용.
+        let base = "http://localhost:8080"
+        #else
         let base = url.isEmpty ? "http://localhost:8080" : url
+        #endif
         return EdgeApi(baseUrl: base, apiToken: token)
     }()
 }
