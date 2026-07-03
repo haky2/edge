@@ -106,6 +106,15 @@ class AnalysisService(
         // 목표가·손절가도 키에 포함: facts에 반영되는데 캐시 적중으로 옛 코멘트가 나오는 불일치 방지.
         val key = buildKey(code, today, mode, position)
         var isRefresh = false
+        if (force) {
+            // 수동 새로고침 연타 가드: 마지막 생성 후 FORCE_COOLDOWN_MINUTES 안이면 캐시 반환.
+            // (force=캐시 무조건 우회였는데, 연타 시 회당 풀 LLM 비용이 나가는 구멍이었음)
+            val cached = cache[key]?.analysis ?: fileCache.get(key)?.also { cache[key] = Cached(it) }
+            if (cached != null && !isPastMinutes(cached.generatedAt, FORCE_COOLDOWN_MINUTES)) {
+                println("[ForceCooldown] $code: ${FORCE_COOLDOWN_MINUTES}분 내 수동 재생성 요청 → 캐시 반환")
+                return cached
+            }
+        }
         if (!force) {
             val cached = cache[key]?.analysis ?: fileCache.get(key)?.also { cache[key] = Cached(it) }
             if (cached != null) {
@@ -123,7 +132,8 @@ class AnalysisService(
             val quoteD          = async { kis.getPrice(code) }
             val nameD           = async { master.findByCode(code)?.name ?: code }
             val flowsD          = async { kis.getInvestorFlow(code, days = 5) }
-            val barsD           = async { runCatching { kis.getDailyChart(code, bars = 20) }.getOrElse { emptyList() } }
+            // 60개: 최근 20일은 가격흐름 서사용, 전체 60개는 MA20/60·기술적 앵커(매매 레벨 근거) 계산용.
+            val barsD           = async { runCatching { kis.getDailyChart(code, bars = 60) }.getOrElse { emptyList() } }
             val financialsD     = async { runCatching { dart.getFinancials(code) }.getOrNull() }
             val consensusD      = async { runCatching { naverTargetPrice.getTargetPrice(code) }.getOrNull() }
             val shortSellingD   = async { runCatching { krxShortSelling.getShortSelling(code) }.getOrNull() }
@@ -168,17 +178,32 @@ class AnalysisService(
             val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, eventsText, warningsText, calendar, position)
             // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
             val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
-            // 모델 라우팅: force=수동 새로고침→Sonnet, isRefresh=급변 자동 재생성→Opus, 그 외=최초 생성→Opus.
+            // 모델 라우팅(기본): 최초 생성·브리핑=Opus, 수동 새로고침·급변 자동 재생성=Sonnet.
+            // env OPUS_TRIGGERS 로 재조정 가능 — ModelRouter 참고.
             val trigger = when {
                 force -> ModelRouter.ANALYSIS_MANUAL
                 isRefresh -> ModelRouter.ANALYSIS_AUTO_REFRESH
                 else -> ModelRouter.ANALYSIS_INITIAL
             }
+            val model = modelRouter.modelFor(trigger)
             val t1 = System.currentTimeMillis()
-            val rawComment = claude.complete(prompt, facts, maxTokens = 3500, modelOverride = modelRouter.modelFor(trigger))
+            var rawComment = claude.complete(prompt, facts, maxTokens = 3500, modelOverride = model)
+            var (summary, comment) = parseSummaryFromComment(rawComment)
+            // 요약(핵심 요약) 가드: 앱 카드 최상단에 노출되는 블록이라 여기만 엄격 검증.
+            // facts에 없는 가격류(≥1000) 수치가 발견되면 같은 모델로 1회 재생성(실사고: 학습 프라이어
+            // 주가 "53,700원"이 요약에 누출된 건). 본문 전체는 가공·라운드 오탐이 많아 기존대로 로그만.
+            val suspicious = suspiciousSummaryPrices(facts, summary)
+            if (suspicious.isNotEmpty()) {
+                println("[NumberGuard] $code: 요약에 facts 외 가격류 ${suspicious.joinToString()} → 1회 재생성")
+                rawComment = claude.complete(prompt, facts, maxTokens = 3500, modelOverride = model)
+                val second = parseSummaryFromComment(rawComment)
+                summary = second.first
+                comment = second.second
+                val still = suspiciousSummaryPrices(facts, summary)
+                if (still.isNotEmpty()) println("[NumberGuard] $code: 재생성 후에도 의심 수치 잔존(${still.joinToString()}) — 로그만 남김")
+            }
             println("[Timing] $code: claude=${System.currentTimeMillis() - t1}ms  total=${System.currentTimeMillis() - t0}ms")
-            val (summary, comment) = parseSummaryFromComment(rawComment)
-            // 환각 의심 수치를 로그로만 남긴다(모니터링용). UI 경고는 더 이상 띄우지 않는다 —
+            // 본문 환각 의심 수치는 로그로만(모니터링용). UI 경고는 띄우지 않는다 —
             // 단순 숫자 매칭이 "26만 주(2일 합산)"·"170만원대(손절 기준)" 같은 정당한
             // 가공·라운드 표현을 환각으로 오탐해 신뢰를 깎았기 때문. 일반 면책으로 충분.
             warnHallucinatedNumbers(code, facts, comment)
@@ -302,15 +327,18 @@ class AnalysisService(
                     "(현재 위치 ${"%.0f".format(pos)}%, 고점 대비 ${"%.1f".format(fromHigh)}%)"
             )
         }
-        if (q.per > 0) sb.appendLine("PER ${q.per} / PBR ${q.pbr}")
+        // PER/PBR 는 두 소스가 공존한다(KIS 시세 vs 아래 밴드 자체계산 — 이익 연도·주식수 기준이 달라
+        // 값이 다를 수 있음). 라벨 없이 병기하면 모델이 날마다 다른 값을 집어 코멘트 PER이 튀는 실사고가
+        // 있었음(6/15 43.4배 → 6/17 52.7배, 주가는 +2.7%). 라벨로 구분하고 일관 사용은 프롬프트가 지시.
+        if (q.per > 0) sb.appendLine("PER(KIS 시세 기준) ${q.per} / PBR(KIS 시세 기준) ${q.pbr}")
         if (valuationBand != null && valuationBand.yearsUsed > 0) {
             // 적자 연도는 PER 히스토리에서 제외되므로(턴어라운드 종목) 표본이 적을 수 있다. 적으면 신뢰도 경고.
             val sampleNote = if (valuationBand.yearsUsed < 3)
                 " ※ 표본 ${valuationBand.yearsUsed}년으로 적어(적자 연도 제외 등) 밴드 신뢰도 낮음 — 결론은 약하게, 참고만." else ""
-            sb.appendLine("밸류에이션 히스토리 밴드(연도말 기준 과거 ${valuationBand.yearsUsed}년, 상장주식수 근사치):$sampleNote")
+            sb.appendLine("밸류에이션 히스토리 밴드(자체 계산: 현재가÷최근 연간 실적, 연도말 기준 과거 ${valuationBand.yearsUsed}년, 상장주식수 근사치):$sampleNote")
             if (valuationBand.perCurrent > 0 && valuationBand.perMax > 0) {
                 sb.appendLine(
-                    "  PER 현재 ${"%.1f".format(valuationBand.perCurrent)}배 " +
+                    "  PER(자체 계산) 현재 ${"%.1f".format(valuationBand.perCurrent)}배 " +
                         "→ ${valuationBand.yearsUsed}년 밴드 " +
                         "[${"%.1f".format(valuationBand.perMin)}~${"%.1f".format(valuationBand.perMax)}배], " +
                         "중앙 ${"%.1f".format(valuationBand.perMedian)}배 " +
@@ -319,13 +347,14 @@ class AnalysisService(
             }
             if (valuationBand.pbrCurrent > 0 && valuationBand.pbrMax > 0) {
                 sb.appendLine(
-                    "  PBR 현재 ${"%.2f".format(valuationBand.pbrCurrent)}배 " +
+                    "  PBR(자체 계산) 현재 ${"%.2f".format(valuationBand.pbrCurrent)}배 " +
                         "→ ${valuationBand.yearsUsed}년 밴드 " +
                         "[${"%.2f".format(valuationBand.pbrMin)}~${"%.2f".format(valuationBand.pbrMax)}배], " +
                         "중앙 ${"%.2f".format(valuationBand.pbrMedian)}배 " +
                         "(${valuationBand.pbrLabel})"
                 )
             }
+            sb.appendLine("  ※ KIS 시세 기준과 자체 계산 기준은 산식이 달라 값이 다를 수 있음. 밴드 위치를 논할 땐 자체 계산 값만, 단순 수준 언급엔 한 기준만 골라 일관되게 쓸 것.")
         }
         if (peerValuation != null && (peerValuation.per != null || peerValuation.pbr != null)) {
             // 동종(같은 사업) 대비 상대 위치. 역사 밴드(자기 과거)와 다른 축 — 리레이팅 국면에서 특히 유효.
@@ -346,7 +375,12 @@ class AnalysisService(
         sb.appendLine("거래량: ${q.volume}")
 
         // 최근 가격 흐름 서사(일봉 계산) — "상한가 두 번 치고 며칠째 급락" 같은 흐름을 사실로 제공.
-        priceActionSummary(bars)?.let { sb.appendLine().append(it) }
+        // 서사는 최근 20일로 한정(60일 전체는 서사가 늘어짐), 앵커 계산은 아래에서 60일 전체 사용.
+        priceActionSummary(bars.take(20))?.let { sb.appendLine().append(it) }
+
+        // 기술적 앵커 — 공격 모드가 진입·손절 레벨을 "지어내지 않고" 여기 있는 값에 묶도록 사실로 제공.
+        // (실사고: facts에 레벨이 없어 "310,000~320,000원 분할 진입" 같은 창작 레벨이 나갔음)
+        technicalAnchorsText(bars)?.let { sb.appendLine().append(it) }
 
         // 회사 재무(DART 연간) — 급등락이 펀더멘털 성장에 근거하는지 판단할 근거.
         financialSummaryText(financials)?.let { sb.appendLine().append(it) }
@@ -361,10 +395,11 @@ class AnalysisService(
         backtestText(backtest)?.let { sb.appendLine().append(it) }
         flowSensitivityText(flowSensitivity)?.let { sb.appendLine().append(it) }
         if (news.isNotEmpty()) {
-            sb.appendLine("최근 뉴스(유사 기사는 묶음, '외 N건'=같은 이슈가 그만큼 쏟아졌다는 관심도 신호):")
+            sb.appendLine("최근 뉴스(유사 기사는 묶음, '외 N건'=같은 이슈가 그만큼 쏟아졌다는 관심도 신호. 날짜 주의 — 오래된 기사를 오늘 재료처럼 쓰지 말 것):")
             news.forEach { c ->
                 val more = if (c.count > 1) " (유사 외 ${c.count - 1}건)" else ""
-                sb.appendLine("  - [${c.item.source}] ${c.item.title}$more")
+                val dateLabel = newsDateLabel(c.item.publishedAt)?.let { ", $it" } ?: ""
+                sb.appendLine("  - [${c.item.source}$dateLabel] ${c.item.title}$more")
                 if (c.item.description.isNotBlank()) {
                     sb.appendLine("    요약: ${c.item.description}")
                 }
@@ -451,6 +486,33 @@ class AnalysisService(
         if (moves.isNotEmpty()) sb.appendLine("  " + moves.joinToString(", "))
         return sb.toString()
     }
+
+    /**
+     * 기술적 앵커(일봉 계산, 최신일이 앞) — 매매 레벨 제시의 사실 근거.
+     * 최근 20일 저점/고점 + MA20 + MA60(표본 60개 있을 때만). 판단 없이 값만.
+     */
+    private fun technicalAnchorsText(bars: List<DailyBar>): String? {
+        if (bars.size < 20) return null
+        val closes = bars.map { it.close }
+        val recent20 = closes.take(20)
+        val low20 = recent20.min()
+        val high20 = recent20.max()
+        val ma20 = recent20.average()
+        val ma60 = if (closes.size >= 60) closes.take(60).average() else null
+        val sb = StringBuilder()
+        sb.appendLine("기술적 앵커(레벨 제시용 사실 값, 종가 기준):")
+        sb.appendLine("  최근 20거래일 저점 ${low20}원 / 고점 ${high20}원")
+        sb.append("  20일 이동평균 ${"%,.0f".format(ma20)}원")
+        if (ma60 != null) sb.append(", 60일 이동평균 ${"%,.0f".format(ma60)}원")
+        sb.appendLine()
+        return sb.toString()
+    }
+
+    /** 네이버 pubDate(RFC-1123, 예 "Mon, 15 Jun 2026 14:30:00 +0900") → "6/15". 파싱 실패 시 null(라벨 생략). */
+    private fun newsDateLabel(publishedAt: String): String? = runCatching {
+        val dt = ZonedDateTime.parse(publishedAt.trim(), java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
+        "${dt.monthValue}/${dt.dayOfMonth}"
+    }.getOrNull()
 
     /**
      * 백테스트(신호별 익일 적중률)를 Claude 입력용 텍스트로. 신뢰 가능한(confident) 신호만 적는다.
@@ -605,46 +667,6 @@ class AnalysisService(
     }
 
     /**
-     * 텍스트에서 수치 집합 추출. 한국어 복합 단위를 먼저 파싱해 단일 값으로 변환하고
-     * 해당 부분을 텍스트에서 제거한 뒤 나머지 단순 숫자를 추출 — 부분 숫자 중복 방지.
-     * 예) "13조 9,298억" → 139298.0 / "144만 3,170주" → 1443170.0
-     */
-    private fun extractNumbers(text: String): Set<Double> {
-        val result = mutableSetOf<Double>()
-        var remaining = text
-
-        val joEok = Regex("""([\d,]+)조\s*([\d,]+)억""")
-        for (m in joEok.findAll(text)) {
-            val jo = m.groupValues[1].replace(",", "").toLongOrNull() ?: continue
-            val eok = m.groupValues[2].replace(",", "").toLongOrNull() ?: continue
-            result.add((jo * 10_000 + eok).toDouble())
-        }
-        remaining = joEok.replace(remaining, " ")
-
-        val manN = Regex("""([\d,]+)만\s*([\d,]+)""")
-        for (m in manN.findAll(remaining)) {
-            val man = m.groupValues[1].replace(",", "").toLongOrNull() ?: continue
-            val rest = m.groupValues[2].replace(",", "").toLongOrNull() ?: continue
-            result.add((man * 10_000 + rest).toDouble())
-        }
-        remaining = manN.replace(remaining, " ")
-
-        val manOnly = Regex("""([\d,]+)만""")
-        for (m in manOnly.findAll(remaining)) {
-            val man = m.groupValues[1].replace(",", "").toLongOrNull() ?: continue
-            result.add((man * 10_000).toDouble())
-        }
-        remaining = manOnly.replace(remaining, " ")
-
-        val numRegex = Regex("""-?[\d][\d,]*(?:\.\d+)?""")
-        for (m in numRegex.findAll(remaining)) {
-            val value = m.value.replace(",", "").toDoubleOrNull() ?: continue
-            result.add(value)
-        }
-        return result
-    }
-
-    /**
      * 캐시된 분석이 stale인지 확인. 두 조건 모두 충족해야 재생성:
      * ① 생성 시점 가격 대비 현재가 괴리 ≥ 3% (코멘트가 다른 가격 기준)
      * ② 마지막 생성으로부터 30분 이상 경과 (잦은 재생성 폭주 방지)
@@ -654,22 +676,84 @@ class AnalysisService(
         val currentPrice = runCatching { kis.getPrice(code).price.toDouble() }.getOrElse { return false }
         val gap = kotlin.math.abs(currentPrice - genPrice) / genPrice
         if (gap < STALE_PRICE_THRESHOLD) return false
-        return isPastCooldown(cached.generatedAt)
+        return isPastMinutes(cached.generatedAt, COOLDOWN_MINUTES)
     }
 
-    private fun isPastCooldown(generatedAt: String): Boolean {
+    /** generatedAt(HH:mm, KST)에서 minutes 이상 경과했는지. 파싱 실패 시 true(재생성 허용). */
+    private fun isPastMinutes(generatedAt: String, minutes: Long): Boolean {
         if (generatedAt.isBlank()) return true
         return try {
             val fmt = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
             val genTime = java.time.LocalTime.parse(generatedAt, fmt)
             val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
-            java.time.Duration.between(genTime, now).toMinutes() >= COOLDOWN_MINUTES
+            java.time.Duration.between(genTime, now).toMinutes() >= minutes
         } catch (e: Exception) { true }
     }
 
     companion object {
         private const val STALE_PRICE_THRESHOLD = 0.03  // 3% 가격 괴리 시 stale
-        private const val COOLDOWN_MINUTES = 30L         // 재생성 최소 간격(분)
+        private const val COOLDOWN_MINUTES = 30L         // 급변 자동 재생성 최소 간격(분)
+        private const val FORCE_COOLDOWN_MINUTES = 5L    // 수동 새로고침(force) 연타 가드(분)
+
+        /**
+         * "### 핵심 요약" 블록 전용 가격류 환각 검사. 앱 카드 최상단이라 여기만 엄격하게 본다.
+         * 요약 속 수치 중 ≥1000(원 단위 가격·금액·수량류)이면서 facts 어느 값과도 ±5% 안에 없는 것을 반환.
+         * <1000(퍼센트·배수·건수·연도 일부)은 가공 표현 오탐이 많아 제외 — 연도(2026 등)는 facts에 항상 존재.
+         */
+        internal fun suspiciousSummaryPrices(facts: String, summary: String?): List<Double> {
+            if (summary.isNullOrBlank()) return emptyList()
+            val factsNums = extractNumbers(facts)
+            return extractNumbers(summary)
+                .filter { it >= 1000.0 }
+                .filter { v ->
+                    factsNums.none { f ->
+                        val larger = maxOf(kotlin.math.abs(v), kotlin.math.abs(f))
+                        if (larger == 0.0) v == f
+                        else kotlin.math.abs(v - f) / larger <= 0.05
+                    }
+                }
+                .sorted()
+        }
+
+        /**
+         * 텍스트에서 수치 집합 추출. 한국어 복합 단위를 먼저 파싱해 단일 값으로 변환하고
+         * 해당 부분을 텍스트에서 제거한 뒤 나머지 단순 숫자를 추출 — 부분 숫자 중복 방지.
+         * 예) "13조 9,298억" → 139298.0 / "144만 3,170주" → 1443170.0
+         */
+        internal fun extractNumbers(text: String): Set<Double> {
+            val result = mutableSetOf<Double>()
+            var remaining = text
+
+            val joEok = Regex("""([\d,]+)조\s*([\d,]+)억""")
+            for (m in joEok.findAll(text)) {
+                val jo = m.groupValues[1].replace(",", "").toLongOrNull() ?: continue
+                val eok = m.groupValues[2].replace(",", "").toLongOrNull() ?: continue
+                result.add((jo * 10_000 + eok).toDouble())
+            }
+            remaining = joEok.replace(remaining, " ")
+
+            val manN = Regex("""([\d,]+)만\s*([\d,]+)""")
+            for (m in manN.findAll(remaining)) {
+                val man = m.groupValues[1].replace(",", "").toLongOrNull() ?: continue
+                val rest = m.groupValues[2].replace(",", "").toLongOrNull() ?: continue
+                result.add((man * 10_000 + rest).toDouble())
+            }
+            remaining = manN.replace(remaining, " ")
+
+            val manOnly = Regex("""([\d,]+)만""")
+            for (m in manOnly.findAll(remaining)) {
+                val man = m.groupValues[1].replace(",", "").toLongOrNull() ?: continue
+                result.add((man * 10_000).toDouble())
+            }
+            remaining = manOnly.replace(remaining, " ")
+
+            val numRegex = Regex("""-?[\d][\d,]*(?:\.\d+)?""")
+            for (m in numRegex.findAll(remaining)) {
+                val value = m.value.replace(",", "").toDoubleOrNull() ?: continue
+                result.add(value)
+            }
+            return result
+        }
 
         /** S4: #ai코멘트 채널 발송용 메시지 포맷. */
         internal fun formatAiCommentMessage(analysis: Analysis, mode: AnalysisMode, isRefresh: Boolean): String {
@@ -704,8 +788,42 @@ class AnalysisService(
             }
         }
 
-        // 방어 모드 시스템 프롬프트(캐시 대상). 사실/해석 분리·환각 가드·매매 지시 금지.
-        private val DEFENSIVE_PROMPT = """
+        // ── 시스템 프롬프트(캐시 대상) ────────────────────────────────────────
+        // 방어/공격 공통 규칙은 COMMON_RULES 한 곳에만 둔다 — 두 프롬프트가 80% 복제였던
+        // 시절의 "한쪽만 고치는 드리프트"를 구조적으로 차단. **소제목** 형식은 iOS 카드
+        // 파싱 계약이므로 C3(형식) 변경 시 앱 확인 필수.
+
+        private val COMMON_RULES = """
+            공통 규칙(반드시 지킬 것):
+            C1. 아래 user 메시지의 "사실 데이터"에 있는 값만 근거로 삼는다. 거기 없는 수치를 절대 지어내지 마라.
+            C2. 가독성: 한 단락엔 한 가지 주제만 담아라. 한 단락이 6문장을 넘으면 두 단락으로 쪼개라(예: 수급이 길면 "수급"과 "공매도·신호"로 분리). 분량을 늘리려 말을 늘이지 마라.
+            C3. 형식: 불릿·번호 목록, --- 구분선, ~~취소선~~ 금지(흐르는 문장으로). 응답은 첫 글자부터 "### 핵심 요약"으로 시작하고 그 앞에 아무것도 쓰지 마라. 각 단락 첫 줄에 **소제목**만 굵게 넣고, 그 다음 줄부터 본문. 소제목과 본문 사이, 단락과 단락 사이는 빈 줄 하나(\n\n).
+            C4. 핵심 수치는 **굵게** 표시해 눈에 띄게 하라 — 등락률·주가·승률·목표주가·PER/PBR 등 독자가 기억할 숫자. 단, 문장 전체를 굵게 하지 말고 숫자/짧은 구절만.
+            C5. 어려운 금융 영어(모멘텀, 밸류에이션, 멀티플 등)는 가급적 한국어로 바꾸거나 괄호 설명을 붙여라.
+            C6. 뉴스는 종목과 무관한 것이 섞일 수 있다. 관련 있어 보이는 것만 쓰고 억지로 연결하지 마라. 뉴스마다 날짜가 붙어 있다 — 3일 이상 지난 기사를 오늘의 재료처럼 서술하지 말고 "지난 ~일 보도된" 식으로 시점을 구분하라.
+            C7. "현재 시장 상태"에 따라 가격 표현을 다르게 써라:
+                - "장 중": "현재 XXX원에 거래 중", "XXX원 수준" 등 실시간 표현
+                - "장 마감 후": "XXX원에 마감", "당일 XXX원으로 마감" 등 종가 표현
+                - "장 전" 또는 "휴장": "전일 XXX원에 마감" 등 전일 종가 표현
+            C8. PER/PBR은 "KIS 시세 기준"과 "자체 계산" 두 값이 있을 수 있다(산식이 달라 값이 다름). 밴드 위치를 논할 땐 자체 계산 값을 쓰고, 그 외엔 한 기준만 골라 일관되게 쓰라. 두 값을 섞어 쓰지 마라.
+            C9. "검증된 신호"·"수급-가격 민감도"는 "이 종목 과거 통계상" 같은 한정을 붙여라. 표본 n이 15 미만인 신호는 "참고 수준"이라고 명시하고 "의미 있게 높다/유의미하다" 같은 통계적 확신 표현을 쓰지 마라. n은 항상 함께 표기하라. 승률과 평균이 어긋나면 그 의미(소수 급등/급락일이 평균을 끌어당긴 영향)도 짚어라. 절대 미래 수익을 단정하지 마라.
+            C10. 밸류에이션 해석 균형(중요): "역사적 상단권"이나 높은 PER/PBR 백분위를 그 자체로 "비싸다·매수하지 마라"로 단정하지 마라.
+                역사 밴드는 한 가지 축일 뿐이다. 반드시 아래와 함께 저울질해서 판단하라:
+                - 실적 방향: "회사 재무"·분기 실적의 매출·이익이 구조적으로 늘고 있으면, 시장이 더 높은 멀티플을 주는 리레이팅(이익은 그대로인데 주가가 앞서감)이거나, 이익이 점프해 과거 밴드 자체가 무의미해진 경우일 수 있다.
+                - 컨센서스 목표주가: 현재가 대비 상승여력이 크면 역사적 상단이어도 시장은 더 위를 본다는 뜻이다. "컨센서스 목표가 추세"(최근 상향/하향)가 있으면 그 방향도 함께 보라 — 꾸준히 상향 중이면 상단권을 시장이 계속 높여 잡는 강한 신호, 하향 추세면 경계 신호다.
+                - 동종 상대 밸류: "동종 상대 밸류" 섹션이 있으면 같은 업종 경쟁사 중앙값과 비교한 위치다. 역사적 상단권이어도 동종 대비 낮으면 상대적으로 싼 편이고(리레이팅 국면에서 특히 의미 있다), 동종 대비 높으면 그 프리미엄을 정당화할 실적·성장 근거가 있는지 짚어라.
+                - 표본·신뢰도: 밴드에 "신뢰도 낮음/표본 적음" 표시가 있으면 밴드 결론을 약하게 다뤄라.
+                업종을 미리 단정하지 말고(반도체든 조선·방산이든) 위 사실로 판단하라. 반대로 역사적으로 싸 보여도 이익이 꺾이는 중이면 함정일 수 있다는 양방향 경계를 똑같이 적용하라.
+        """.trimIndent()
+
+        // 말미 재강조 — 거대 프롬프트에서 지시 준수율은 서두보다 말미가 높다.
+        // 실사고(학습 프라이어 주가 "53,700원"이 핵심 요약에 누출) 재발 방지의 1차 방어선.
+        private val FINAL_GUARD = """
+            마지막 경고(가장 중요): 너의 학습 지식 속 이 회사의 주가·시가총액·목표주가·과거 실적 수치는 전부 낡아서 틀렸다. 절대 사용하지 마라. 가격·수치는 위 "사실 데이터"에서 그대로 복사해서만 쓴다. 특히 ### 핵심 요약에 쓰는 모든 수치는 사실 데이터에 존재하는 값이어야 한다 — 요약을 쓰기 전에 각 수치가 사실 데이터에 있는지 스스로 확인하라.
+        """.trimIndent()
+
+        // 방어 모드 고유 부분. 사실/해석 분리·매매 지시 금지.
+        private val DEFENSIVE_CORE = """
             너는 한국 주식 투자 보조 앱의 분석 어시스턴트다.
             독자는 주식에 관심이 있지만 전문 트레이더가 아닌 일반인이다. 전문 용어를 쓸 때는 괄호 안에 짧게 뜻을 달아준다.
             예) PER(주가가 1년 순이익의 몇 배인지), PBR(주가가 순자산의 몇 배인지), 수급(외국인·기관·개인 중 누가 사고 파는지), 컨센서스 목표주가(여러 증권사 애널리스트가 제시한 평균 목표값)
@@ -718,50 +836,34 @@ class AnalysisService(
 
             그 다음 빈 줄 하나 후에 소제목 단락들을 이어라.
 
-            규칙(반드시 지킬 것):
-            1. 아래 user 메시지의 "사실 데이터"에 있는 값만 근거로 삼는다. 거기 없는 수치를 절대 지어내지 마라.
-            2. 다음 주제들을 자연스럽게 이어지는 단락으로 풀어라. 있는 재료만 다루고, 없는 주제는 건너뛴다:
+            방어 모드 규칙(반드시 지킬 것):
+            D1. 다음 주제들을 자연스럽게 이어지는 단락으로 풀어라. 있는 재료만 다루고, 없는 주제는 건너뛴다:
                - 최근 흐름: 주가가 왜 이렇게 움직였나 — 뉴스와 가격 흐름을 연결해 "무슨 일이 있었는지".
                - 실적 확인: 그 움직임이 일시적 기대인지 실제 실적 변화인지 — "회사 재무"가 있으면 매출·이익 추세와 비교.
                - 수급: 외국인·기관이 사고 파는 추세, 공매도, "검증된 신호"를 묶어 누가 어느 방향인지.
                - 밸류·목표가: PER/PBR·밸류에이션 밴드·컨센서스 목표주가로 "지금 이 가격이 어느 수준인지".
                - 종합: 지금 이 종목을 어떻게 봐야 하는지 마무리.
-            3. 가독성 규칙(중요): 한 단락엔 한 가지 주제만 담아라. 한 단락이 6문장을 넘으면 두 단락으로 쪼개라(예: 수급이 길면 "수급"과 "공매도·신호"로 분리). 분량을 늘리려 말을 늘이지 말고, 길어질 땐 나눠서 읽기 쉽게 하라.
-            4. 사실과 해석을 구분해서, 근거 없는 단정은 "~로 보인다", "~일 수 있다"처럼 신중하게.
-            5. "지금 사라/팔라"처럼 매매를 지시하지 마라.
-            6. 어려운 금융 영어(모멘텀, 밸류에이션, 멀티플 등)는 가급적 한국어로 바꾸거나 괄호 설명을 붙여라.
-            7. 형식: 불릿·번호 목록, --- 구분선, ~~취소선~~ 금지(흐르는 문장으로). 각 단락 첫 줄에 **소제목**(예: **최근 흐름**, **실적 확인**, **수급**, **공매도·신호**, **밸류·목표가**, **종합**)만 굵게 넣고, 그 다음 줄부터 본문. 소제목과 본문 사이, 단락과 단락 사이는 빈 줄 하나(\n\n).
-            8. 핵심 수치는 **굵게** 표시해 눈에 띄게 하라 — 등락률·주가·승률·목표주가·PER/PBR 등 독자가 기억할 숫자. 단, 문장 전체를 굵게 하지 말고 숫자/짧은 구절만.
-            9. 뉴스는 종목과 무관한 것이 섞일 수 있다. 관련 있어 보이는 것만 쓰고 억지로 연결하지 마라.
-            10. "내 포지션" 섹션이 있으면 평단가 기준 현재 손익과 목표가까지 남은 거리를 마지막 단락에 자연스럽게 녹여준다.
-            11. "검증된 신호" 섹션이 있으면 수급 단락에서 활용하되, "이 종목 과거 통계상" 같은 한정을 붙이고 표본이 작을 수 있음을 신중하게 다뤄라. 승률과 평균이 다르면 그 의미(소수 급등일 영향)도 짚어준다. 절대 미래 수익을 단정하지 마라.
-            12. "현재 시장 상태"에 따라 가격 표현을 다르게 써라:
-                - "장 중": "현재 XXX원에 거래 중", "XXX원 수준" 등 실시간 표현
-                - "장 마감 후": "XXX원에 마감", "당일 XXX원으로 마감" 등 종가 표현
-                - "장 전" 또는 "주말(휴장)": "전일 XXX원에 마감" 등 전일 종가 표현
-            13. "임박 거시 이벤트" 섹션이 있으면, 그 일정이 이 종목·업종에 어떤 변동성이나 방향을 줄 수 있는지
+               소제목 예: **최근 흐름**, **실적 확인**, **수급**, **공매도·신호**, **밸류·목표가**, **종합**
+            D2. 사실과 해석을 구분해서, 근거 없는 단정은 "~로 보인다", "~일 수 있다"처럼 신중하게.
+            D3. "지금 사라/팔라"처럼 매매를 지시하지 마라.
+            D4. "내 포지션" 섹션이 있으면 평단가 기준 현재 손익과 목표가까지 남은 거리를 마지막 단락에 자연스럽게 녹여준다.
+            D5. "임박 거시 이벤트" 섹션이 있으면, 그 일정이 이 종목·업종에 어떤 변동성이나 방향을 줄 수 있는지
                 종합 단락에서 한두 문장으로만 짚어라(별도 소제목 만들지 말 것). 날짜·이벤트명은 사실대로 쓰되
                 영향은 "~결과에 따라 ~할 수 있다"는 조건부로. 이 종목·업종과 분명히 관련된 일정만 다루고,
                 무관하면 억지로 엮지 말고 통째로 건너뛰어라. 일정 자체로 주가를 단정하지 마라.
-            14. 밸류에이션 해석 균형(중요): "역사적 상단권"이나 높은 PER/PBR 백분위를 그 자체로 "비싸다·매수하지 마라"로 단정하지 마라.
-                역사 밴드는 한 가지 축일 뿐이다. 반드시 아래와 함께 저울질해서 판단하라:
-                - 실적 방향: "회사 재무"·분기 실적의 매출·이익이 구조적으로 늘고 있으면, 시장이 더 높은 멀티플을 주는 리레이팅(이익은 그대로인데 주가가 앞서감)이거나, 이익이 점프해 과거 밴드 자체가 무의미해진 경우일 수 있다.
-                - 컨센서스 목표주가: 현재가 대비 상승여력이 크면 역사적 상단이어도 시장은 더 위를 본다는 뜻이다. "컨센서스 목표가 추세"(최근 상향/하향)가 있으면 그 방향도 함께 보라 — 목표가가 꾸준히 상향되는 중이면 상단권을 시장이 계속 높여 잡는 강한 신호이고, 하향 추세면 반대로 경계 신호다.
-                - 동종 상대 밸류: "동종 상대 밸류" 섹션이 있으면 같은 업종 경쟁사 중앙값과 비교한 위치다. 역사적 상단권이어도 동종 대비 낮으면 상대적으로 싼 편이고(리레이팅 국면에서 특히 의미 있다), 동종 대비 높으면 그 프리미엄을 정당화할 실적·성장 근거가 있는지 짚어라.
-                - 표본·신뢰도: 밴드에 "신뢰도 낮음/표본 적음" 표시가 있으면 밴드 결론을 약하게 다뤄라.
-                업종을 미리 단정하지 말고(반도체든 조선·방산이든) 위 사실로 판단하라. 반대로 역사적으로 싸 보여도 이익이 꺾이는 중이면 함정일 수 있다는 양방향 경계를 똑같이 적용하라.
-            15. "투자유의" 항목이 있으면 거래소가 실제로 지정한 리스크 신호이므로 반드시 짚어라(없으면 언급하지 마라):
+            D6. "투자유의" 항목이 있으면 거래소가 실제로 지정한 리스크 신호이므로 반드시 짚어라(없으면 언급하지 마라):
                 - "투자위험"·"정리매매"는 강한 경고 — 상장폐지·급락 위험을 신중하지만 분명하게 알려라.
                 - "투자경고"·"단기과열"은 과열·변동성 확대 신호로, 단기 급등 뒤 되돌림 위험을 짚어라.
                 - "정적VI"·"동적VI"는 변동성 완화장치 발동 이력으로, 주가 변동성이 큰 상태라는 참고 정보로만 다뤄라.
                 종합 단락에서 한두 문장으로 녹이되, 이 사실로 매매를 지시하지는 마라.
         """.trimIndent()
 
-        // 공격 모드 시스템 프롬프트. 방어 모드와 같은 사실·환각가드 위에서, 개별 종목 매매 판단까지
-        // 단호하게 허용한다(macro-impact 공격 모드는 섹터 레벨까지만 — 여기는 개별 종목 가능).
-        // 단 모든 판단은 반드시 계산된 사실(평단 손익·손절/목표가 거리·신호 승률·밸류 위치·수급)에 묶고,
-        // 결과 단정·환각은 계속 금지. iOS 카드가 **소제목** 섹션을 파싱하므로 소제목 형식은 방어 모드와 동일 유지.
-        private val AGGRESSIVE_PROMPT = """
+        private val DEFENSIVE_PROMPT = DEFENSIVE_CORE + "\n\n" + COMMON_RULES + "\n\n" + FINAL_GUARD
+
+        // 공격 모드 고유 부분. 공통 사실·환각가드(COMMON_RULES·FINAL_GUARD) 위에서 개별 종목
+        // 매매 판단까지 단호하게 허용한다(macro-impact 공격 모드는 섹터 레벨까지만 — 여기는 개별 종목 가능).
+        // 모든 레벨(진입·손절·차익)은 facts의 "기술적 앵커" 등 실제 값에 묶는다(A3) — 창작 레벨 실사고 재발 방지.
+        private val AGGRESSIVE_CORE = """
             너는 한국 주식 투자 보조 앱의 분석 어시스턴트다.
             지금은 "공격적 모드" — 사용자가 이 종목에 대한 단호한 매매 판단을 직접 요청해 켠 상태다.
             에두르거나 "~수도 있다"식 양비론으로 빠지지 말고, 사실에 묶인 결론을 자신감 있게 딱 잘라 말하라.
@@ -776,37 +878,27 @@ class AnalysisService(
 
             그 다음 빈 줄 하나 후에 소제목 단락들을 이어라.
 
-            규칙(반드시 지킬 것):
-            1. 아래 user 메시지의 "사실 데이터"에 있는 값만 근거로 삼는다. 거기 없는 수치를 절대 지어내지 마라.
-               모든 매매 판단은 반드시 계산된 사실에 묶어라 — 평단 대비 손익, 손절·목표가까지 거리, 검증된 신호 승률, 밸류 밴드 위치, 수급 방향.
-            2. 다음 주제들을 자연스럽게 이어지는 단락으로 풀어라. 있는 재료만 다루고, 없는 주제는 건너뛴다:
+            공격 모드 규칙(반드시 지킬 것):
+            A1. 다음 주제들을 자연스럽게 이어지는 단락으로 풀어라. 있는 재료만 다루고, 없는 주제는 건너뛴다:
                - 최근 흐름: 주가가 왜 이렇게 움직였나 — 뉴스와 가격 흐름을 연결.
                - 실적 확인: 그 움직임이 일시적 기대인지 실제 실적 변화인지 — "회사 재무"가 있으면 추세와 비교.
                - 수급·신호: 외국인·기관 방향, 공매도, "검증된 신호"를 묶어 누가 어느 방향인지.
                - 밸류·목표가: PER/PBR·밸류에이션 밴드·컨센서스 목표주가로 지금 이 가격이 어느 수준인지.
                - 종합·액션: 위 사실을 종합해 "지금 이 종목을 어떻게 할지" 단호하게 못박아 마무리.
-            3. (방어 모드와 핵심 차이) 개별 종목 매매 판단을 허용한다. 단 반드시 포지션·신호 사실에 묶을 것:
+               소제목 예: **최근 흐름**, **실적 확인**, **수급·신호**, **밸류·목표가**, **종합·액션**
+            A2. (방어 모드와 핵심 차이) 개별 종목 매매 판단을 허용한다. 단 모든 매매 판단은 반드시 계산된 사실에 묶어라 — 평단 대비 손익, 손절·목표가까지 거리, 검증된 신호 승률, 밸류 밴드 위치, 수급 방향:
                - 보유 중이면: 평단 대비 손익과 손절·목표가 거리를 근거로 — "비중을 줄여라 / 분할 추가 여력을 써라 / 손절 라인을 지켜라 / 목표가에서 차익 실현하라".
                - 미보유면: 밸류 밴드·신호·수급을 근거로 — "이 가격대는 분할 진입 구간이다 / 지금은 관망하고 ~선까지 기다려라".
-            4. 결과를 확정하지 마라("반드시 오른다/떨어진다" 금지). 스탠스는 단호하게 내되, 미래 단정은 하지 마라.
-            5. "검증된 신호" 섹션이 있으면 "이 종목 과거 통계상" 같은 한정을 붙이고 표본이 작을 수 있음을 신중히 다뤄라. 승률과 평균이 어긋나면 그 의미(소수 급등일 영향)도 짚어라. 미래 수익을 단정하지 마라.
-            6. 가독성: 한 단락엔 한 주제만. 한 단락이 6문장을 넘으면 두 단락으로 쪼개라. 어려운 금융 영어는 한국어로 바꾸거나 괄호 설명을 붙여라.
-            7. 형식: 불릿·번호 목록, --- 구분선, ~~취소선~~ 금지(흐르는 문장으로). 각 단락 첫 줄에 **소제목**(예: **최근 흐름**, **실적 확인**, **수급·신호**, **밸류·목표가**, **종합·액션**)만 굵게 넣고, 그 다음 줄부터 본문. 소제목과 본문 사이, 단락과 단락 사이는 빈 줄 하나(\n\n).
-            8. 핵심 수치는 **굵게** 표시하라 — 등락률·주가·승률·목표주가·PER/PBR·평단 대비 손익 등. 문장 전체를 굵게 하지 말고 숫자/짧은 구절만.
-            9. 뉴스는 종목과 무관한 것이 섞일 수 있다. 관련 있어 보이는 것만 쓰고 억지로 연결하지 마라.
-            10. "현재 시장 상태"에 따라 가격 표현을 다르게 써라:
-                - "장 중": "현재 XXX원에 거래 중", "XXX원 수준" 등 실시간 표현
-                - "장 마감 후": "XXX원에 마감", "당일 XXX원으로 마감" 등 종가 표현
-                - "장 전" 또는 "주말(휴장)": "전일 XXX원에 마감" 등 전일 종가 표현
-            11. "임박 거시 이벤트" 섹션이 있으면, 그 일정이 이 종목·업종 변동성에 미칠 영향을 종합·액션 단락에서
+            A3. 레벨 앵커(중요): 진입·손절·차익 실현 가격을 제시할 때는 반드시 사실 데이터에 있는 가격(기술적 앵커의 최근 20거래일 저점/고점·20/60일 이동평균, 52주 고저, 최근 고점, 컨센서스 목표주가, 본인 목표가/손절가) 중에서 골라 쓰고, 괄호로 어떤 값인지 명시하라. 예: "손절은 **320,400원**(최근 20거래일 저점) 이탈 시". 사실 데이터에 없는 임의 가격대를 만들어내지 마라. 앵커로 쓸 값이 마땅치 않으면 가격 레벨 제시를 생략하고 조건("외국인 순매수 전환 확인 후" 등)으로 대신하라.
+            A4. 결과를 확정하지 마라("반드시 오른다/떨어진다" 금지). 스탠스는 단호하게 내되, 미래 단정은 하지 마라.
+            A5. "임박 거시 이벤트" 섹션이 있으면, 그 일정이 이 종목·업종 변동성에 미칠 영향을 종합·액션 단락에서
                 짚고 대응까지 못박아라(예: "D-2 FOMC 전까지 비중을 늘리지 말고 결과를 보고 대응하라"). 날짜·이벤트명은
                 사실대로, 결과 방향은 조건부로. 이 종목·업종과 무관한 일정은 억지로 엮지 말고 건너뛰어라.
-            12. 밸류에이션 해석 균형(중요): "역사적 상단권"·높은 PER/PBR 백분위를 그 자체로 "비싸다·매수하지 마라"로 단정하지 마라.
-                역사 밴드는 한 축일 뿐 — 실적 방향(매출·이익이 구조적으로 늘면 리레이팅이거나 이익 점프로 과거 밴드가 무의미), 컨센서스 목표가 상승여력·상향/하향 추세, 동종 상대 밸류(같은 업종 대비 낮음/높음), 밴드 표본·신뢰도를 함께 저울질해 스탠스를 정하라.
-                업종을 미리 단정하지 말고(반도체·조선·방산 불문) 사실로 판단하라. 단호한 결론을 내되, 역으로 싸 보여도 이익이 꺾이면 함정일 수 있다는 경계도 적용하라.
-            13. "투자유의" 항목이 있으면 거래소가 지정한 리스크 신호다(없으면 언급 금지). 종합·액션 단락에서 스탠스에 반영하라:
+            A6. "투자유의" 항목이 있으면 거래소가 지정한 리스크 신호다(없으면 언급 금지). 종합·액션 단락에서 스탠스에 반영하라:
                 "투자위험"·"정리매매"는 강한 경고 — 신규 진입을 말리거나 보유분 리스크 관리(비중 축소·손절 라인)를 분명히 권하라.
                 "투자경고"·"단기과열"·"VI"는 과열·변동성 신호로, 추격 매수를 경계하고 되돌림을 기다리라는 식으로 액션에 묶어라. 단 결과를 단정하지는 마라.
         """.trimIndent()
+
+        private val AGGRESSIVE_PROMPT = AGGRESSIVE_CORE + "\n\n" + COMMON_RULES + "\n\n" + FINAL_GUARD
     }
 }

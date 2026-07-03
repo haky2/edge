@@ -120,6 +120,8 @@ class CatalystService(
             val disclosuresD   = async { runCatching { dart.getDisclosures(code, days) }.getOrElse { emptyList() } }
             val barsD          = async { runCatching { kis.getDailyChart(code, bars = 10) }.getOrElse { emptyList() } }
             val valuationBandD = async { runCatching { valuationBandSvc.getValuationBand(code) }.getOrNull() }
+            // 연매출: 수주·계약 강도(상/중/하) 판정의 규모 기준. DART 캐시 재사용이라 가벼움.
+            val financialsD    = async { runCatching { dart.getFinancials(code) }.getOrNull() }
 
             val name = nameD.await()
             val newsD = async { runCatching { naver.search(name, display = 30) }.getOrElse { emptyList() } }
@@ -158,7 +160,8 @@ class CatalystService(
             var summary = cachedSummary ?: ""
             if (newMaterials.isNotEmpty() || cachedSummary == null) {
                 val model = modelRouter.modelFor(ModelRouter.CATALYST)
-                val userMsg = buildJudgeMessage(name, code, materials) { verdictStore.get(verdictKey(it)) }
+                val revenueEok = financialsD.await()?.revenue?.let { it / 100_000_000 }
+                val userMsg = buildJudgeMessage(name, code, materials, revenueEok) { verdictStore.get(verdictKey(it)) }
                 val raw = claude.complete(SYSTEM_PROMPT, userMsg, maxTokens = 2500, modelOverride = model)
                 val (parsedSummary, verdictsByIdx) = parseJudge(raw)
                 verdictsByIdx.forEach { (i, v) -> materials.getOrNull(i)?.let { verdictStore.put(verdictKey(it), v) } }
@@ -303,10 +306,16 @@ class CatalystService(
         name: String,
         code: String,
         materials: List<Material>,
+        revenueEok: Long?,
         cached: (Material) -> CatalystVerdict?,
     ): String {
         val sb = StringBuilder()
         sb.appendLine("종목: $name ($code)")
+        // 강도 판정의 규모 앵커. 없으면 모델이 학습 프라이어(낡았거나 중소형주는 아예 없음)로
+        // "매출 대비 큼"을 감으로 정하게 되므로, 있는 경우 반드시 준다.
+        if (revenueEok != null && revenueEok > 0) {
+            sb.appendLine("참고: 이 회사 최근 연간 매출액 약 ${"%,d".format(revenueEok)}억원 — 수주·계약 규모의 상대 크기 판단 기준으로만 사용하라.")
+        }
         sb.appendLine()
         sb.appendLine("[재료 목록]")
         materials.forEachIndexed { i, m ->
@@ -499,9 +508,11 @@ class CatalystService(
             }
 
             판정 규칙:
-            1. 재료 목록에 있는 사실만 근거로 삼아라. 없는 수치·내용을 지어내지 마라.
+            1. 재료 목록에 있는 사실만 근거로 삼아라. 없는 수치·내용을 지어내지 마라. 너의 학습 지식 속 이 회사의 매출·실적 기억은 낡았으니 쓰지 마라.
             2. 강도(상/중/하): 매출·실적·주가에 미치는 영향 크기로. 대규모 수주(기존 매출 대비 큼)·흑자전환·대형 계약=상,
                통상적 계약·소폭 변동=중, 관계 약하거나 단순 보도·일정성=하.
+               규모 판단은 "참고: 연간 매출액"이 주어졌으면 그 대비 비중으로 하라. 계약·수주 금액이 재료 텍스트에
+               없으면 규모를 알 수 없으므로 강도를 "상"으로 주지 마라(최대 "중").
             3. 종목과 무관해 보이는 뉴스(동명이인·다른 회사·시황 일반)는 sentiment="중립", strength="하", reason에 "종목 관련성 낮음".
             4. 유상증자·CB는 보통 주식가치 희석이라 악재 쪽이나, 시설투자·대형 수주 대응 목적이면 강도를 낮춰 신중히.
                정정 공시는 원 공시 방향에 따라가되 불확실하면 중립.

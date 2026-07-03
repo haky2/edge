@@ -3,18 +3,18 @@ package com.haky.edge.ai
 /**
  * AI 코멘트 호출의 트리거별 모델 라우팅.
  *
- * 정책(가치 축): 매일 보는 방향 판단·종목 기준점·급변 재생성은 Opus(판단력 우선),
- * 일상 수동 새로고침은 Sonnet(속도·비용). 트리거별 기본값:
- *   briefing               (시장 분위기, 1일 1회)         → Opus
- *   analysis_initial       (종목 최초 생성, 장 전 기준점)  → Opus
- *   analysis_auto_refresh  (급변 stale 자동 재생성)         → Opus
- *   analysis_manual        (사용자 수동 새로고침)            → Opus
+ * 정책(CLAUDE.md "facts 강화로 Sonnet 충분" 결정과 정합, 2026-07-03 재확정 — docs/decisions.md 참고):
+ * 판단력 프리미엄은 하루 기준점이 되는 곳에만 쓰고, 반복·볼륨 트리거는 Sonnet.
+ *   briefing               (시장 분위기, 1일 1회)          → Opus
+ *   analysis_initial       (종목 최초 생성, 하루 기준점)    → Opus
+ *   analysis_auto_refresh  (급변 stale 자동 재생성)          → Sonnet (볼륨 트리거)
+ *   analysis_manual        (사용자 수동 새로고침, 연타 가능)  → Sonnet
+ *   catalyst               (재료 JSON 분류 — 판단력 불필요)   → Sonnet
  *
  * 롤백/재튜닝은 코드 수정 없이 env `OPUS_TRIGGERS`(콤마 목록)로 제어:
  *   미설정                → 위 기본 정책
  *   `OPUS_TRIGGERS=`      → 전부 Sonnet (비용 즉시 절감)
- *   `briefing,analysis_initial` → 자동재생성만 Sonnet으로 (볼륨 큰 트리거 절감)
- *   `briefing,analysis_initial,analysis_auto_refresh,analysis_manual` → 전부 Opus
+ *   `briefing,analysis_initial,analysis_auto_refresh,analysis_manual,catalyst` → 전부 Opus
  *
  * 모델 ID는 `CLAUDE_MODEL`(Sonnet)·`CLAUDE_OPUS_MODEL`(Opus) env로 주입.
  */
@@ -34,8 +34,12 @@ class ModelRouter(
         const val ANALYSIS_MANUAL = "analysis_manual"
         const val CATALYST = "catalyst"
 
-        /** 기본 Opus 대상: 브리핑 + 종목 최초 생성 + 급변 자동 재생성 + 수동 새로고침 + 재료 판정(전부). */
-        val DEFAULT_OPUS_TRIGGERS = setOf(BRIEFING, ANALYSIS_INITIAL, ANALYSIS_AUTO_REFRESH, ANALYSIS_MANUAL, CATALYST)
+        /**
+         * 기본 Opus 대상: 브리핑 + 종목 최초 생성만. 나머지(자동 재생성·수동 새로고침·재료 판정)는
+         * Sonnet — 재료 판정은 JSON 분류라 판단력 프리미엄이 불필요하고, 수동/자동 재생성은 볼륨
+         * 트리거라 비용 대비 효용이 낮다(CLAUDE.md "facts 강화로 Sonnet 충분" 결정과 정합).
+         */
+        val DEFAULT_OPUS_TRIGGERS = setOf(BRIEFING, ANALYSIS_INITIAL)
 
         /**
          * env 문자열 → 트리거 집합.

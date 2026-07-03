@@ -136,6 +136,8 @@
 - [x] **거시 이벤트 캘린더 슬라이스 3 — 브리핑 노출** ✅ `MarketEvent` SharedLogic 모델 + `EdgeApi.getEvents()/syncEvents()` + BriefingView "이벤트 캘린더(30일)" 섹션. 빈 캐시 시 앱이 /events/sync 자동 호출. 카테고리 호재/주의/중립. 커밋 37a39d4(배포·시뮬 검증).
 - [x] **거시 이벤트 캘린더 슬라이스 4 — 코멘트에 녹이기(영향 해석, Opus)** ✅ `EventSyncService.upcomingFactsText(14일)` 헬퍼(날짜·이름=사실/카테고리만 힌트, 우리 impact 문구는 미주입→Claude 재해석·복붙방지, D-day 포함). 세 곳에 facts 주입 + 프롬프트 규칙: `AnalysisService`(종목 상세), `MarketMoodService`(브리핑 시장 분위기), `MacroImpactService`(브리핑 내 종목 영향 — 보유·관심 섹터 관련 일정만 마무리 문단에). 공통 원칙: 관련 일정만 조건부 해석, 무관하면 건너뜀, 별도 소제목 금지. 캐시키 불변(이벤트는 일 단위 안정). **curl 검증**: 시장 분위기 문단③ PPI(D-day)·FOMC(D-5) / SK하이닉스 종합 단락 FOMC(6/17)→반도체 변동성 / 내 종목 영향 마무리 FOMC(D-5)→금리민감 반도체 보유분 변동성. 무관 일정(한국PPI·Juneteenth·중국LPR) 자동 제외. iOS 코드 변경 없음(코멘트 텍스트만 풍부).
 
+- [x] **AI 코멘트 품질 개선 v1 (2026-07-03)** ✅ 리뷰에서 실사고 2건 발견(요약에 학습 프라이어 주가 누출·공격 모드 창작 매매 레벨) → ① 요약 한정 가격류 환각 가드+1회 재생성(`suspiciousSummaryPrices`+`SummaryPriceGuardTest`) ② 프롬프트 말미 FINAL_GUARD ③ facts "기술적 앵커"(20일 저점/고점·MA20/60)+공격 모드 레벨 앵커 규칙(A3) ④ PER "KIS 기준/자체 계산" 라벨 병기 ⑤ 뉴스 날짜 주입+신선도 규칙 ⑥ n<15 신호 과신 금지(C9) ⑦ 카탈리스트 판정에 연매출 앵커+"금액 없으면 강도 최대 中" ⑧ 방어/공격 프롬프트 COMMON_RULES 공통화(**소제목 형식=iOS 파싱 계약**) ⑨ Opus 기본={briefing, analysis_initial}로 축소+force 5분 쿨다운(decisions.md #10·#11). **검증 완료**: 유닛(가드 6/6·라우터 7/7) + 로컬 실호출(삼성·SK하이닉스 공격모드 — A3 레벨 앵커 괄호표기 작동, NumberGuard 발동 0=환각·오탐 모두 없음, ForceCooldown 캐시 반환 확인).
+
 ### Phase 4 — 학습 / 통계
 - [x] **행동 로그 통계 v1** — 관심종목 행동 로그(매수·매도·관심 등록) 집계 → 신호별 승률·내 패턴 통계 화면. Phase 1부터 `action_log`에 데이터 쌓임. ✅ StatsView(신호별 승률·손절익절규율·관심후미매수·사유태그·보유기간·AI적중률)
 - [x] 관심만 보이고 안 산 종목 이후 추이 ✅
