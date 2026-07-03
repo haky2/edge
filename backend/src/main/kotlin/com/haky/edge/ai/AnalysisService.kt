@@ -553,10 +553,14 @@ class AnalysisService(
             if (prev > 0) (day - prev).toDouble() / prev * 100 else 0.0
         }
 
-        // 최근 고점 대비 현재 낙폭(되돌림 폭)
+        // 최근 고점 대비 낙폭 + 저점 대비 반등폭 — 둘 다 항상 병기한다. 고점 프레임만 주면
+        // 모든 종목이 "고점에서 -x%"라는 하락 앵커로만 서술되는 비대칭이 생긴다(편향 리뷰 P2).
         val highIdx = closes.indices.minByOrNull { -closes[it] } ?: 0
         val high = closes[highIdx]
         val drawdown = if (high > 0) (cur - high).toDouble() / high * 100 else 0.0
+        val lowIdx = closes.indices.minByOrNull { closes[it] } ?: 0
+        val low = closes[lowIdx]
+        val rebound = if (low > 0) (cur - low).toDouble() / low * 100 else 0.0
 
         // 가장 최근일 부호 기준 연속 등락 일수
         val firstSign = rates.firstOrNull()?.let { if (it > 0) 1 else if (it < 0) -1 else 0 } ?: 0
@@ -570,17 +574,24 @@ class AnalysisService(
         // 연속 구간 누적 등락률
         val streakSum = rates.take(streak).sum()
 
+        // 급변 이벤트는 상승·하락 대칭으로 센다 — 급등만 세면 "하루 -20% 폭락 후 반등"의
+        // 폭락이 서사에서 사라지는 상승 편향이 생긴다(편향 리뷰 P2).
         val limitUps = rates.count { it >= 29.0 }  // 상한가 수준(+30% 제한 근처)
         val surges = rates.count { it in 15.0..29.0 } // 상한가는 아니지만 급등
+        val limitDowns = rates.count { it <= -29.0 } // 하한가 수준
+        val plunges = rates.count { it in -29.0..-15.0 } // 하한가는 아니지만 급락
 
         val sb = StringBuilder()
         sb.appendLine("최근 ${bars.size}거래일 가격 흐름:")
         sb.appendLine(
-            "  최근 고점 ${high}원(약 ${highIdx}거래일 전) 대비 현재 ${"%.1f".format(drawdown)}%"
+            "  최근 고점 ${high}원(약 ${highIdx}거래일 전) 대비 현재 ${"%.1f".format(drawdown)}%" +
+                " / 최근 저점 ${low}원(약 ${lowIdx}거래일 전) 대비 ${if (rebound >= 0) "+" else ""}${"%.1f".format(rebound)}%"
         )
         val moves = buildList {
             if (limitUps > 0) add("상한가 수준(+29% 이상) 급등 ${limitUps}회")
             if (surges > 0) add("+15~29% 급등 ${surges}회")
+            if (limitDowns > 0) add("하한가 수준(-29% 이하) 급락 ${limitDowns}회")
+            if (plunges > 0) add("-15~29% 급락 ${plunges}회")
             if (streak >= 2) add("최근 ${streak}거래일 연속 ${if (firstSign > 0) "상승" else "하락"}(누적 ${"%.1f".format(streakSum)}%)")
         }
         if (moves.isNotEmpty()) sb.appendLine("  " + moves.joinToString(", "))
@@ -1085,6 +1096,8 @@ class AnalysisService(
             Q5. "현재 시장 상태"에 맞는 가격 표현을 써라 — 장 중="현재 XXX원에 거래 중", 장 마감 후="XXX원에 마감", 장 전·휴장="전일 XXX원에 마감".
             Q6. "검증된 신호"·"수급-가격 민감도" 통계는 "이 종목 과거 통계상" 한정을 붙이고 표본 n을 함께 표기하라. n이 15 미만이면 "참고 수준"이라고 명시하라. 미래 수익을 단정하지 마라.
             Q7. "이전 문답"이 있으면 그 맥락을 이어서 답하라. 단 이전 답변과 사실 데이터가 충돌하면 사실 데이터를 우선하고, 필요하면 정정하라.
+            Q8. PER/PBR은 "KIS 시세 기준"과 "자체 계산" 두 값이 있을 수 있다(산식이 달라 값이 다름). 한 답변 안에서는 한 기준만 골라 일관되게 쓰고, 밴드 위치를 논할 땐 자체 계산 값을 써라. 두 값을 섞어 쓰지 마라.
+            Q9. "국면 판정(계산)" 항목이 있으면 그 프레임에 맞춰 답하라 — "리레이팅 국면"이면 과거 밴드·트레일링 PER 기준의 고평가 단정을 하지 말되 "이익이 계속 따라와야 유지되는 가격"이라는 조건을 명시하고, "디레이팅 경계"면 싸 보여도 밸류 함정 가능성을 우선 짚어라(항목이 없으면 이 규칙은 무시).
         """.trimIndent()
 
         private val ASK_DEFENSIVE_STANCE = """
