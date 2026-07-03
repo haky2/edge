@@ -56,6 +56,24 @@ data class Analysis(
     val numberWarning: Boolean = false, // facts에 없는 수치가 응답에서 발견됨
 )
 
+/** Q&A 한 턴(질문·답). 후속 질문 시 앱이 이전 문답을 history로 되보낸다(서버 무상태). */
+@Serializable
+data class AskTurn(val question: String, val answer: String)
+
+/** 종목 자유 질문(Q&A) 응답. 자유 질문이라 공유 캐시 없음 — 매 호출 생성. */
+@Serializable
+data class AskAnswer(
+    val code: String,
+    val name: String,
+    val date: String,       // 기준 거래일 (YYYY-MM-DD)
+    val question: String,
+    val answer: String,
+    val generatedAt: String, // 생성 시각 HH:mm (KST)
+)
+
+/** Q&A 일일 질문 한도 초과 — 라우트에서 429로 변환. */
+class AskDailyLimitException(message: String) : Exception(message)
+
 /** 개인 포지션 정보. avgPrice·qty 가 있을 때만 생성. targetPrice·stopPrice 는 0.0 = 미입력. */
 data class Position(
     val avgPrice: Double,
@@ -93,6 +111,7 @@ class AnalysisService(
     private val slack: SlackClient = SlackClient(""),
     private val aiCommentChannel: String = "",
     private val notifyScope: CoroutineScope? = null,
+    private val askDailyLimit: Int = 200,
 ) {
     private data class Cached(val analysis: Analysis)
     private val cache = ConcurrentHashMap<String, Cached>()
@@ -126,113 +145,171 @@ class AnalysisService(
             }
         }
 
-        // 사실 수집 — 독립 호출은 전부 병렬, name·quote 확보 후 의존 2건(뉴스·sectorRS) 합류.
+        // 사실 수집 — ask()와 공용인 collectFacts()가 병렬로 모은다.
         val t0 = System.currentTimeMillis()
-        return coroutineScope {
-            val quoteD          = async { kis.getPrice(code) }
-            val nameD           = async { master.findByCode(code)?.name ?: code }
-            val flowsD          = async { kis.getInvestorFlow(code, days = 5) }
-            // 60개: 최근 20일은 가격흐름 서사용, 전체 60개는 MA20/60·기술적 앵커(매매 레벨 근거) 계산용.
-            val barsD           = async { runCatching { kis.getDailyChart(code, bars = 60) }.getOrElse { emptyList() } }
-            val financialsD     = async { runCatching { dart.getFinancials(code) }.getOrNull() }
-            val consensusD      = async { runCatching { naverTargetPrice.getTargetPrice(code) }.getOrNull() }
-            val shortSellingD   = async { runCatching { krxShortSelling.getShortSelling(code) }.getOrNull() }
-            val valuationBandD  = async { runCatching { valuationBandSvc.getValuationBand(code) }.getOrNull() }
-            val peerValD        = async { runCatching { peerValuationSvc.getPeerValuation(code) }.getOrNull() }
-            val backtestD       = async { runCatching { backtestSvc.getBacktest(code) }.getOrNull() }
-            val flowSensD       = async { runCatching { backtestSvc.getFlowSensitivity(code) }.getOrNull() }
-            val quarterlyD      = async { runCatching { dart.getQuarterlyIncome(code) }.getOrNull() }
-            // 상장주식수: 연환산(포워드) PER 계산용. inquire-price 재호출이라 가벼움(캐시 대상).
-            val sharesD         = async { runCatching { kis.getListedShares(code) }.getOrNull() }
-            val warningsD       = async { runCatching { toss.getActiveWarnings(code) }.getOrElse { emptyList() } }
-            val calendarD       = async { runCatching { toss.getMarketCalendar() }.getOrNull() }
-
-            // sectorChangeRate=quote.sectorName 필요, 뉴스=name 필요 → 두 await 후 병렬 합류
-            val quote = quoteD.await()
-            val name  = nameD.await()
-            // 비슷한 뉴스가 도배되는 날이 많아, 넉넉히 받아 유사 건을 묶고 대표 N건만 쓴다.
-            val rawNewsD        = async { runCatching { naver.search(name, display = 30) }.getOrElse { emptyList() } }
-            val sectorRsD       = async { runCatching { macroImpact.sectorIndexChangeRate(code, name, quote.sectorName) }.getOrNull() }
-
-            val flows           = flowsD.await()
-            val bars            = barsD.await()
-            val financials      = financialsD.await()
-            val consensusTarget = consensusD.await()
-            // 오늘 목표가를 스냅샷 기록(주가 병기 — 돌파 이력용)하고 추세·이벤트 집계 산출(스냅샷 부족 시 null).
-            val targetTrend = runCatching { targetPriceLog.recordAndTrend(code, consensusTarget, quote.price) }.getOrNull()
-            val targetEvents = runCatching { targetPriceLog.events(code) }.getOrNull()
-            val shortSelling    = shortSellingD.await()
-            val valuationBand   = valuationBandD.await()
-            val peerValuation   = peerValD.await()
-            val backtest        = backtestD.await()
-            val flowSensitivity = flowSensD.await()
-            val quarterlyIncome = quarterlyD.await()
-            val listedShares    = sharesD.await()
-            val sectorChangeRate = sectorRsD.await()
-            val news            = dedupeNews(rawNewsD.await(), limit = 8)
-            println("[Timing] $code: facts=${System.currentTimeMillis() - t0}ms")
-
-            // 임박 거시 이벤트(향후 2주) — 파일 캐시 읽기라 가벼움. 없으면 null로 건너뜀.
-            val eventsText = runCatching { eventSync.upcomingFactsText() }.getOrNull()
-            // 투자유의(거래소 지정 시장경보·단기과열·정리매매·VI) — 발동 항목 라벨만. 없으면 null로 건너뜀.
-            val warningsText = warningsD.await()
-                .takeIf { it.isNotEmpty() }
-                ?.let { "투자유의(거래소 지정, 현재 발동 중): " + it.joinToString(", ") { w -> w.label } }
-            val calendar = calendarD.await()
-            val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position)
-            // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
-            val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
-            // 모델 라우팅(기본): 최초 생성·브리핑=Opus, 수동 새로고침·급변 자동 재생성=Sonnet.
-            // env OPUS_TRIGGERS 로 재조정 가능 — ModelRouter 참고.
-            val trigger = when {
-                force -> ModelRouter.ANALYSIS_MANUAL
-                isRefresh -> ModelRouter.ANALYSIS_AUTO_REFRESH
-                else -> ModelRouter.ANALYSIS_INITIAL
-            }
-            val model = modelRouter.modelFor(trigger)
-            val t1 = System.currentTimeMillis()
-            var rawComment = claude.complete(prompt, facts, maxTokens = 3500, modelOverride = model)
-            var (summary, comment) = parseSummaryFromComment(rawComment)
-            // 요약(핵심 요약) 가드: 앱 카드 최상단에 노출되는 블록이라 여기만 엄격 검증.
-            // facts에 없는 가격류(≥1000) 수치가 발견되면 같은 모델로 1회 재생성(실사고: 학습 프라이어
-            // 주가 "53,700원"이 요약에 누출된 건). 본문 전체는 가공·라운드 오탐이 많아 기존대로 로그만.
-            val suspicious = suspiciousSummaryPrices(facts, summary)
-            if (suspicious.isNotEmpty()) {
-                println("[NumberGuard] $code: 요약에 facts 외 가격류 ${suspicious.joinToString()} → 1회 재생성")
-                rawComment = claude.complete(prompt, facts, maxTokens = 3500, modelOverride = model)
-                val second = parseSummaryFromComment(rawComment)
-                summary = second.first
-                comment = second.second
-                val still = suspiciousSummaryPrices(facts, summary)
-                if (still.isNotEmpty()) println("[NumberGuard] $code: 재생성 후에도 의심 수치 잔존(${still.joinToString()}) — 로그만 남김")
-            }
-            println("[Timing] $code: claude=${System.currentTimeMillis() - t1}ms  total=${System.currentTimeMillis() - t0}ms")
-            // 본문 환각 의심 수치는 로그로만(모니터링용). UI 경고는 띄우지 않는다 —
-            // 단순 숫자 매칭이 "26만 주(2일 합산)"·"170만원대(손절 기준)" 같은 정당한
-            // 가공·라운드 표현을 환각으로 오탐해 신뢰를 깎았기 때문. 일반 면책으로 충분.
-            warnHallucinatedNumbers(code, facts, comment)
-
-            val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
-                .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
-            val richness = FactsRichness(
-                newsCount = news.size,
-                hasInvestorFlow = flows.isNotEmpty(),
-                hasFinancials = financials != null,
-                hasQuarterlyIncome = quarterlyIncome?.netIncome != null,
-                hasShortSelling = shortSelling != null,
-                hasValuationBand = valuationBand != null && valuationBand.yearsUsed > 0,
-                hasBacktest = backtest?.signals?.any { it.confident } == true,
-                hasFlowSensitivity = flowSensitivity?.items?.any { it.confident } == true,
-            )
-            val analysis = Analysis(code = code, name = name, date = today, comment = comment, summary = summary, generatedAt = now, generatedPrice = quote.price.toDouble(), factsRichness = richness, numberWarning = false)
-            cache[key] = Cached(analysis)
-            fileCache.put(key, analysis)
-            // S4: 공개 분석(포지션 없음)만 #ai코멘트 채널 아카이브. 포지션 포함은 개인정보라 skip.
-            if (position == null && aiCommentChannel.isNotBlank() && notifyScope != null) {
-                notifyScope.launch { slack.postMessage(aiCommentChannel, formatAiCommentMessage(analysis, mode, isRefresh)) }
-            }
-            analysis
+        val cf = collectFacts(code, position)
+        val facts = cf.facts
+        // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
+        val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
+        // 모델 라우팅(기본): 최초 생성·브리핑=Opus, 수동 새로고침·급변 자동 재생성=Sonnet.
+        // env OPUS_TRIGGERS 로 재조정 가능 — ModelRouter 참고.
+        val trigger = when {
+            force -> ModelRouter.ANALYSIS_MANUAL
+            isRefresh -> ModelRouter.ANALYSIS_AUTO_REFRESH
+            else -> ModelRouter.ANALYSIS_INITIAL
         }
+        val model = modelRouter.modelFor(trigger)
+        val t1 = System.currentTimeMillis()
+        var rawComment = claude.complete(prompt, facts, maxTokens = 3500, modelOverride = model)
+        var (summary, comment) = parseSummaryFromComment(rawComment)
+        // 요약(핵심 요약) 가드: 앱 카드 최상단에 노출되는 블록이라 여기만 엄격 검증.
+        // facts에 없는 가격류(≥1000) 수치가 발견되면 같은 모델로 1회 재생성(실사고: 학습 프라이어
+        // 주가 "53,700원"이 요약에 누출된 건). 본문 전체는 가공·라운드 오탐이 많아 기존대로 로그만.
+        val suspicious = suspiciousSummaryPrices(facts, summary)
+        if (suspicious.isNotEmpty()) {
+            println("[NumberGuard] $code: 요약에 facts 외 가격류 ${suspicious.joinToString()} → 1회 재생성")
+            rawComment = claude.complete(prompt, facts, maxTokens = 3500, modelOverride = model)
+            val second = parseSummaryFromComment(rawComment)
+            summary = second.first
+            comment = second.second
+            val still = suspiciousSummaryPrices(facts, summary)
+            if (still.isNotEmpty()) println("[NumberGuard] $code: 재생성 후에도 의심 수치 잔존(${still.joinToString()}) — 로그만 남김")
+        }
+        println("[Timing] $code: claude=${System.currentTimeMillis() - t1}ms  total=${System.currentTimeMillis() - t0}ms")
+        // 본문 환각 의심 수치는 로그로만(모니터링용). UI 경고는 띄우지 않는다 —
+        // 단순 숫자 매칭이 "26만 주(2일 합산)"·"170만원대(손절 기준)" 같은 정당한
+        // 가공·라운드 표현을 환각으로 오탐해 신뢰를 깎았기 때문. 일반 면책으로 충분.
+        warnHallucinatedNumbers(code, facts, comment)
+
+        val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+        val analysis = Analysis(code = code, name = cf.name, date = today, comment = comment, summary = summary, generatedAt = now, generatedPrice = cf.quote.price.toDouble(), factsRichness = cf.richness, numberWarning = false)
+        cache[key] = Cached(analysis)
+        fileCache.put(key, analysis)
+        // S4: 공개 분석(포지션 없음)만 #ai코멘트 채널 아카이브. 포지션 포함은 개인정보라 skip.
+        if (position == null && aiCommentChannel.isNotBlank() && notifyScope != null) {
+            notifyScope.launch { slack.postMessage(aiCommentChannel, formatAiCommentMessage(analysis, mode, isRefresh)) }
+        }
+        return analysis
+    }
+
+    /**
+     * 종목 자유 질문 Q&A(A1). analyze()와 같은 사실 데이터를 근거로 질문에만 답한다.
+     * 캐시 없음 — 질문이 자유 텍스트라 공유 캐시가 의미 없고, 사용자가 직접 물을 때만 호출되므로
+     * 비용은 질문 길이 제한(라우트) + 일일 상한(askDailyLimit)으로 방어.
+     * 후속 질문은 앱이 이전 문답을 history로 되보내는 단순 구조(서버 무상태 유지).
+     */
+    suspend fun ask(
+        code: String,
+        question: String,
+        position: Position? = null,
+        mode: AnalysisMode = AnalysisMode.DEFENSIVE,
+        history: List<AskTurn> = emptyList(),
+    ): AskAnswer {
+        tickAskLimit()
+        val t0 = System.currentTimeMillis()
+        val cf = collectFacts(code, position)
+        val userMessage = renderAskUserMessage(cf.facts, history, question)
+        // 대화형이라 지연 민감 + 볼륨 트리거 → 기본 Sonnet(ModelRouter.ASK). env OPUS_TRIGGERS로 조정.
+        val model = modelRouter.modelFor(ModelRouter.ASK)
+        val answer = claude.complete(askPrompt(mode), userMessage, maxTokens = 1500, modelOverride = model)
+        println("[Timing] $code: ask total=${System.currentTimeMillis() - t0}ms")
+        // 분석 본문과 동일 정책: facts 외 수치는 로그로만 모니터링(가공·라운드 오탐이 많아 UI 경고 없음).
+        warnHallucinatedNumbers(code, cf.facts, answer)
+        val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+        return AskAnswer(code = code, name = cf.name, date = effectiveMarketDate(), question = question.trim(), answer = answer, generatedAt = now)
+    }
+
+    // Q&A 일일 카운터 — 자유 질문은 캐시가 없어 호출당 풀 LLM 비용이라 폭주(연타·공유 배포)를 상한으로 방어.
+    private val askCount = java.util.concurrent.atomic.AtomicInteger(0)
+    @Volatile private var askCountDate = ""
+
+    /** 일일 질문 카운터 증가. 한도 초과 시 예외(라우트에서 429로 변환). 날짜는 KST 달력일. */
+    private fun tickAskLimit() {
+        val today = LocalDate.now(ZoneId.of("Asia/Seoul")).toString()
+        synchronized(askCount) {
+            if (askCountDate != today) { askCountDate = today; askCount.set(0) }
+        }
+        if (askCount.incrementAndGet() > askDailyLimit) {
+            askCount.decrementAndGet()
+            throw AskDailyLimitException("오늘 질문 한도(${askDailyLimit}건)를 모두 사용했습니다. 내일 다시 질문해 주세요.")
+        }
+    }
+
+    /** 사실 수집 결과 — analyze()(종합 코멘트)와 ask()(Q&A)가 같은 근거 데이터를 공유한다. */
+    private data class CollectedFacts(
+        val name: String,
+        val quote: Quote,
+        val facts: String,
+        val richness: FactsRichness,
+    )
+
+    /** 사실 수집 — 독립 호출은 전부 병렬, name·quote 확보 후 의존 2건(뉴스·sectorRS) 합류. */
+    private suspend fun collectFacts(code: String, position: Position?): CollectedFacts = coroutineScope {
+        val t0 = System.currentTimeMillis()
+        val quoteD          = async { kis.getPrice(code) }
+        val nameD           = async { master.findByCode(code)?.name ?: code }
+        val flowsD          = async { kis.getInvestorFlow(code, days = 5) }
+        // 60개: 최근 20일은 가격흐름 서사용, 전체 60개는 MA20/60·기술적 앵커(매매 레벨 근거) 계산용.
+        val barsD           = async { runCatching { kis.getDailyChart(code, bars = 60) }.getOrElse { emptyList() } }
+        val financialsD     = async { runCatching { dart.getFinancials(code) }.getOrNull() }
+        val consensusD      = async { runCatching { naverTargetPrice.getTargetPrice(code) }.getOrNull() }
+        val shortSellingD   = async { runCatching { krxShortSelling.getShortSelling(code) }.getOrNull() }
+        val valuationBandD  = async { runCatching { valuationBandSvc.getValuationBand(code) }.getOrNull() }
+        val peerValD        = async { runCatching { peerValuationSvc.getPeerValuation(code) }.getOrNull() }
+        val backtestD       = async { runCatching { backtestSvc.getBacktest(code) }.getOrNull() }
+        val flowSensD       = async { runCatching { backtestSvc.getFlowSensitivity(code) }.getOrNull() }
+        val quarterlyD      = async { runCatching { dart.getQuarterlyIncome(code) }.getOrNull() }
+        // 상장주식수: 연환산(포워드) PER 계산용. inquire-price 재호출이라 가벼움(캐시 대상).
+        val sharesD         = async { runCatching { kis.getListedShares(code) }.getOrNull() }
+        val warningsD       = async { runCatching { toss.getActiveWarnings(code) }.getOrElse { emptyList() } }
+        val calendarD       = async { runCatching { toss.getMarketCalendar() }.getOrNull() }
+
+        // sectorChangeRate=quote.sectorName 필요, 뉴스=name 필요 → 두 await 후 병렬 합류
+        val quote = quoteD.await()
+        val name  = nameD.await()
+        // 비슷한 뉴스가 도배되는 날이 많아, 넉넉히 받아 유사 건을 묶고 대표 N건만 쓴다.
+        val rawNewsD        = async { runCatching { naver.search(name, display = 30) }.getOrElse { emptyList() } }
+        val sectorRsD       = async { runCatching { macroImpact.sectorIndexChangeRate(code, name, quote.sectorName) }.getOrNull() }
+
+        val flows           = flowsD.await()
+        val bars            = barsD.await()
+        val financials      = financialsD.await()
+        val consensusTarget = consensusD.await()
+        // 오늘 목표가를 스냅샷 기록(주가 병기 — 돌파 이력용)하고 추세·이벤트 집계 산출(스냅샷 부족 시 null).
+        val targetTrend = runCatching { targetPriceLog.recordAndTrend(code, consensusTarget, quote.price) }.getOrNull()
+        val targetEvents = runCatching { targetPriceLog.events(code) }.getOrNull()
+        val shortSelling    = shortSellingD.await()
+        val valuationBand   = valuationBandD.await()
+        val peerValuation   = peerValD.await()
+        val backtest        = backtestD.await()
+        val flowSensitivity = flowSensD.await()
+        val quarterlyIncome = quarterlyD.await()
+        val listedShares    = sharesD.await()
+        val sectorChangeRate = sectorRsD.await()
+        val news            = dedupeNews(rawNewsD.await(), limit = 8)
+        println("[Timing] $code: facts=${System.currentTimeMillis() - t0}ms")
+
+        // 임박 거시 이벤트(향후 2주) — 파일 캐시 읽기라 가벼움. 없으면 null로 건너뜀.
+        val eventsText = runCatching { eventSync.upcomingFactsText() }.getOrNull()
+        // 투자유의(거래소 지정 시장경보·단기과열·정리매매·VI) — 발동 항목 라벨만. 없으면 null로 건너뜀.
+        val warningsText = warningsD.await()
+            .takeIf { it.isNotEmpty() }
+            ?.let { "투자유의(거래소 지정, 현재 발동 중): " + it.joinToString(", ") { w -> w.label } }
+        val calendar = calendarD.await()
+        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position)
+        val richness = FactsRichness(
+            newsCount = news.size,
+            hasInvestorFlow = flows.isNotEmpty(),
+            hasFinancials = financials != null,
+            hasQuarterlyIncome = quarterlyIncome?.netIncome != null,
+            hasShortSelling = shortSelling != null,
+            hasValuationBand = valuationBand != null && valuationBand.yearsUsed > 0,
+            hasBacktest = backtest?.signals?.any { it.confident } == true,
+            hasFlowSensitivity = flowSensitivity?.items?.any { it.confident } == true,
+        )
+        CollectedFacts(name = name, quote = quote, facts = facts, richness = richness)
     }
 
     /** 사실 데이터를 Claude 입력용 한국어 텍스트로 정리. 여기 있는 값만 근거로 쓰라고 시스템 프롬프트가 지시. */
@@ -964,5 +1041,68 @@ class AnalysisService(
         """.trimIndent()
 
         private val AGGRESSIVE_PROMPT = AGGRESSIVE_CORE + "\n\n" + COMMON_RULES + "\n\n" + FINAL_GUARD
+
+        // ── Q&A(ask) — 분석 코멘트와 달리 "### 핵심 요약"/소제목 형식 계약이 없다 ──────────
+        // 원칙은 동일(사실 한정·통계 한정·시장상태 표현)하되, "질문에 정면으로·짧게"가 형식의 전부.
+
+        const val ASK_MAX_QUESTION_CHARS = 300
+        private const val ASK_MAX_HISTORY_TURNS = 3
+        private const val ASK_HISTORY_ANSWER_CHARS = 600
+
+        /**
+         * Q&A user 메시지 조립: 사실 데이터 + (있으면) 이전 문답 + 이번 질문.
+         * 이전 문답은 최근 ASK_MAX_HISTORY_TURNS개만, 답변은 앞 ASK_HISTORY_ANSWER_CHARS자로 잘라
+         * 토큰 폭주를 막는다(사실 데이터만으로도 이미 크다).
+         */
+        internal fun renderAskUserMessage(facts: String, history: List<AskTurn>, question: String): String = buildString {
+            append(facts.trimEnd())
+            appendLine()
+            val turns = history.takeLast(ASK_MAX_HISTORY_TURNS)
+            if (turns.isNotEmpty()) {
+                appendLine()
+                appendLine("이전 문답(맥락 참고용, 오래된 것부터):")
+                turns.forEach { t ->
+                    appendLine("  Q: ${t.question.trim()}")
+                    val a = t.answer.trim()
+                    appendLine("  A: ${if (a.length > ASK_HISTORY_ANSWER_CHARS) a.take(ASK_HISTORY_ANSWER_CHARS) + " …(생략)" else a}")
+                }
+            }
+            appendLine()
+            append("사용자 질문: ${question.trim()}")
+        }
+
+        private val ASK_CORE = """
+            너는 한국 주식 투자 보조 앱의 Q&A 어시스턴트다.
+            사용자가 아래 "사실 데이터"가 딸린 특정 종목에 대해 자유 질문을 했다. 질문은 user 메시지 맨 끝 "사용자 질문:"에 있다.
+            독자는 주식에 관심이 있지만 전문 트레이더가 아닌 일반인이다. 전문 용어를 쓸 때는 괄호 안에 짧게 뜻을 달아준다.
+            예) PER(주가가 1년 순이익의 몇 배인지), 수급(외국인·기관·개인 중 누가 사고 파는지)
+
+            Q&A 규칙(반드시 지킬 것):
+            Q1. 질문에 정면으로 답하라 — 첫 문장이 곧 답이어야 한다. 묻지 않은 주제(수급·밸류 등)를 관성적으로 훑지 말고, 답의 근거가 되는 사실만 골라 써라.
+            Q2. 분량은 질문 크기에 맞춰라. 한두 문단이 기본, 길어도 네 문단. 소제목·불릿·번호 목록·구분선 없이 흐르는 문장으로만 쓴다.
+            Q3. 사실 데이터에 근거가 없는 질문(예: 미공개 계약 조건, 데이터에 없는 기간의 시세)은 "제공된 데이터로는 알 수 없다"고 먼저 말하고, 데이터에 있는 인접한 사실로 답할 수 있는 부분까지만 답하라. 학습 지식으로 빈칸을 메꾸지 마라.
+            Q4. 핵심 수치는 **굵게** 표시하라. 뉴스를 근거로 쓸 땐 날짜를 확인해 3일 이상 지난 기사를 오늘의 재료처럼 서술하지 마라.
+            Q5. "현재 시장 상태"에 맞는 가격 표현을 써라 — 장 중="현재 XXX원에 거래 중", 장 마감 후="XXX원에 마감", 장 전·휴장="전일 XXX원에 마감".
+            Q6. "검증된 신호"·"수급-가격 민감도" 통계는 "이 종목 과거 통계상" 한정을 붙이고 표본 n을 함께 표기하라. n이 15 미만이면 "참고 수준"이라고 명시하라. 미래 수익을 단정하지 마라.
+            Q7. "이전 문답"이 있으면 그 맥락을 이어서 답하라. 단 이전 답변과 사실 데이터가 충돌하면 사실 데이터를 우선하고, 필요하면 정정하라.
+        """.trimIndent()
+
+        private val ASK_DEFENSIVE_STANCE = """
+            스탠스(방어 모드): "지금 사라/팔라"처럼 매매를 지시하지 마라. 매매 판단을 묻는 질문에는 판단에 필요한 사실(밸류 위치, 수급 방향, 평단 대비 손익, 목표가까지 거리)을 정리해 주고, 어느 쪽 근거가 더 두터운지까지만 짚어라. 결론은 "~로 보인다" 수준으로 신중하게.
+        """.trimIndent()
+
+        private val ASK_AGGRESSIVE_STANCE = """
+            스탠스(공격 모드 — 사용자가 단호한 판단을 직접 요청해 켠 상태): 매매 판단을 물으면 에두르지 말고 사실에 묶인 결론을 딱 잘라 말하라. 진입·손절·차익 실현 가격을 제시할 때는 반드시 사실 데이터에 있는 값(기술적 앵커의 20거래일 저점/고점·20/60일 이동평균, 52주 고저, 최근 고점, 컨센서스 목표주가, 본인 목표가/손절가) 중에서 골라 쓰고 괄호로 어떤 값인지 명시하라. 앵커로 쓸 값이 마땅치 않으면 가격 레벨 대신 조건("외국인 순매수 전환 확인 후" 등)으로 답하라. 스탠스는 단호하되 결과("반드시 오른다/떨어진다")는 단정하지 마라.
+        """.trimIndent()
+
+        // FINAL_GUARD의 Q&A 변형 — "### 핵심 요약" 언급 대신 답 전체 검증으로.
+        private val ASK_FINAL_GUARD = """
+            마지막 경고(가장 중요): 너의 학습 지식 속 이 회사의 주가·시가총액·목표주가·과거 실적 수치는 전부 낡아서 틀렸다. 절대 사용하지 마라. 가격·수치는 위 "사실 데이터"에서 그대로 복사해서만 쓴다. 답을 보내기 전에 답 속 각 수치가 사실 데이터에 있는 값인지 스스로 확인하라.
+        """.trimIndent()
+
+        internal fun askPrompt(mode: AnalysisMode): String =
+            ASK_CORE + "\n\n" +
+                (if (mode == AnalysisMode.AGGRESSIVE) ASK_AGGRESSIVE_STANCE else ASK_DEFENSIVE_STANCE) +
+                "\n\n" + ASK_FINAL_GUARD
     }
 }

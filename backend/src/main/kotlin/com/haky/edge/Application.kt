@@ -31,6 +31,7 @@ import com.haky.edge.news.NaverTargetPriceClient
 import com.haky.edge.news.TargetPriceLogService
 import com.haky.edge.news.NewsException
 import com.haky.edge.routes.analysisRoutes
+import com.haky.edge.routes.askRoutes
 import com.haky.edge.routes.backtestRoutes
 import com.haky.edge.routes.catalystRoutes
 import com.haky.edge.routes.comparisonRoutes
@@ -207,7 +208,9 @@ fun Application.module() {
     val valuationBand = ValuationBandService(kis, dart)
     val peerValuation = PeerValuationService(kis, master, macroImpact)
     val backtest = BacktestService(kis)
-    val analysis = AnalysisService(kis, toss, naver, master, claude, dart, naverTargetPrice, targetPriceLog, macroImpact, krxShortSelling, valuationBand, peerValuation, backtest, eventSync, modelRouter, slack, aiCommentChannel, this)
+    val analysis = AnalysisService(kis, toss, naver, master, claude, dart, naverTargetPrice, targetPriceLog, macroImpact, krxShortSelling, valuationBand, peerValuation, backtest, eventSync, modelRouter, slack, aiCommentChannel, this,
+        // Q&A 일일 상한 — 자유 질문은 캐시가 없어 호출당 풀 LLM 비용. env로 재조정 가능.
+        askDailyLimit = System.getenv("ASK_DAILY_LIMIT")?.toIntOrNull() ?: 200)
     val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand)
     val moodLog = MarketMoodLogService()
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, modelRouter, moodLog, eventSync)
@@ -255,6 +258,7 @@ fun Application.module() {
             newsRoutes(naver)
             searchRoutes(master)
             analysisRoutes(analysis)
+            askRoutes(analysis)
             catalystRoutes(catalyst)
             dartRoutes(dart)
             earningsRoutes(dart)
