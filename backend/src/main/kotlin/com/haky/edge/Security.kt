@@ -28,12 +28,15 @@ val ApiRateLimit = RateLimitName("api")
 
 /**
  * 레이트리밋 키. Cloud Run은 GFE 뒤라 remoteHost 는 프록시 IP로 다 같아진다 →
- * 실제 클라이언트는 X-Forwarded-For 의 맨 앞 항목. 없으면(로컬·내부 헬스체크) remoteHost 폴백.
+ * 실제 클라이언트는 X-Forwarded-For 의 **맨 뒤** 항목(GFE가 검증된 접속 IP를 마지막에 덧붙인다).
+ * 앞쪽 항목들은 클라이언트가 임의로 넣을 수 있어, 맨 앞을 쓰면 요청마다 다른 위조 XFF로
+ * IP별 버킷을 무한 생성해 레이트리밋을 우회할 수 있다(2026-07 감사 H3).
+ * 헤더 없으면(로컬·내부 헬스체크) remoteHost 폴백.
  */
 private fun clientKey(call: ApplicationCall): String {
     val forwarded = call.request.headers["X-Forwarded-For"]
         ?.split(",")
-        ?.firstOrNull()
+        ?.lastOrNull()
         ?.trim()
     return if (!forwarded.isNullOrEmpty()) forwarded else call.request.origin.remoteHost
 }

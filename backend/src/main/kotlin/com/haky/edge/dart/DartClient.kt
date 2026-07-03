@@ -331,8 +331,11 @@ class DartClient(private val apiKey: String) {
                 listOf("당기순이익", "분기순이익", "반기순이익").any { r.accountName.replace(" ", "").contains(it) }
             } ?: continue
 
-            val ni = net.thisAmount()
-            val niPrev = net.prevAmount()
+            // 누적 기준(thstrm_add_amount)으로 읽는다 — label("반기"/"3분기")과 forwardPerLine 의
+            // 연환산 배수(반기×2·3분기×4/3)가 전부 "누적" 전제라, 3개월치(thstrm_amount)를 쓰면
+            // 포워드 PER이 반기 2배·3분기 3배 부풀려진다. YoY도 누적 vs 전년 동기 누적으로 정합.
+            val ni = net.thisCumulative()
+            val niPrev = net.prevCumulative()
             val yoy = if (ni != null && niPrev != null && niPrev != 0L)
                 (ni - niPrev).toDouble() / kotlin.math.abs(niPrev) * 100
             else null
@@ -505,16 +508,29 @@ private data class DartFinanceResponse(
 )
 
 @Serializable
-private data class DartFinanceRow(
-    @SerialName("fs_div")          val fsDiv: String = "",        // CFS=연결, OFS=별도
-    @SerialName("sj_div")          val sjDiv: String = "",        // BS/IS/CIS/CF
-    @SerialName("account_nm")      val accountName: String = "",  // "매출액","영업이익","당기순이익"
-    @SerialName("thstrm_amount")   val thisAmount: String = "",   // 당기금액
-    @SerialName("frmtrm_amount")   val prevAmount: String = "",   // 전기금액
+internal data class DartFinanceRow(
+    @SerialName("fs_div")            val fsDiv: String = "",        // CFS=연결, OFS=별도
+    @SerialName("sj_div")            val sjDiv: String = "",        // BS/IS/CIS/CF
+    @SerialName("account_nm")        val accountName: String = "",  // "매출액","영업이익","당기순이익"
+    @SerialName("thstrm_amount")     val thisAmount: String = "",   // 당기금액
+    @SerialName("frmtrm_amount")     val prevAmount: String = "",   // 전기금액
+    // ⚠️ 반기·3분기 보고서의 손익 계정에서 thstrm_amount 는 해당 3개월치이고, 누적은 이 add 필드에 온다
+    // (예: 삼성전자 2025 반기 — thstrm 5.1조=2Q 3개월, add 13.3조=상반기 누적. 2026-07 감사 H2).
+    // 1분기는 두 값이 같고, 연간(11011)·BS 계정엔 add 필드가 없다(빈값 → 아래 폴백).
+    @SerialName("thstrm_add_amount") val thisAddAmount: String = "", // 당기 누적금액(분기/반기 IS 전용)
+    @SerialName("frmtrm_add_amount") val prevAddAmount: String = "", // 전년 동기 누적금액
 ) {
     // DART 금액은 콤마 포함 문자열("1,234,567"), 음수·빈값 가능 → 안전 파싱.
-    fun thisAmount(): Long? = thisAmount.replace(",", "").trim().toLongOrNull()
-    fun prevAmount(): Long? = prevAmount.replace(",", "").trim().toLongOrNull()
+    fun thisAmount(): Long? = thisAmount.parseAmount()
+    fun prevAmount(): Long? = prevAmount.parseAmount()
+
+    /** 당기 누적. add 필드가 없으면(연간 보고서 등) thstrm_amount 폴백. */
+    fun thisCumulative(): Long? = thisAddAmount.parseAmount() ?: thisAmount()
+
+    /** 전년 동기 누적. 폴백 동일. */
+    fun prevCumulative(): Long? = prevAddAmount.parseAmount() ?: prevAmount()
+
+    private fun String.parseAmount(): Long? = replace(",", "").trim().toLongOrNull()
 }
 
 // ── 분기 실적 요약(분석 facts용, 내부 사용) ────────────────────────────────────

@@ -194,12 +194,16 @@ class KisClient(
      * 장후 확정 일별값(CLAUDE.md). getPrice 와 같은 동시성 제한 + rt_cd 백오프 재시도를 적용.
      */
     suspend fun getInvestorFlow(code: String, days: Int = 5): List<InvestorFlow> {
+        // 캐시 키에 장마감 전/후 버킷을 넣는다 — 확정 수급은 장후(~16시대)에 갱신되는데, 날짜만으로
+        // 키를 잡으면 아침 프리웜(08:45) 캐시가 저녁 신호 스캔(18:00)·분석까지 하루 종일 물고 있어
+        // "오늘 확정 수급"이 다음 날에야 보이는 하루 지연이 생긴다(2026-07 감사 H1).
         val today = com.haky.edge.ai.effectiveMarketDate() // KST 거래일 — FileCache KST 검증과 통일
-        val cacheKey = "$today|$code"
+        val postClose = isPostClose()
+        val cacheKey = if (postClose) "$today|post|$code" else "$today|pre|$code"
         investorCache[cacheKey]?.let { cached ->
             return if (days <= cached.size) cached.take(days) else cached
         }
-        // 콜드 스타트 직후: 당일 확정값이면 GCS 파일에서 재사용(인메모리에도 올림).
+        // 콜드 스타트 직후: 같은 버킷의 GCS 파일에서 재사용(인메모리에도 올림).
         investorFileCache.get(cacheKey)?.let { cached ->
             investorCache[cacheKey] = cached
             return if (days <= cached.size) cached.take(days) else cached
@@ -216,8 +220,14 @@ class KisClient(
                     .map { it.toInvestorFlow() }
                     .filter { it.foreign != 0L || it.institution != 0L || it.individual != 0L }
                     .take(30) // 당일 캐시 목적으로 넉넉히 보관
-                investorCache[cacheKey] = flows
-                investorFileCache.put(cacheKey, flows) // 콜드 스타트 재사용용 GCS 영속
+                // 마감 후(post) 버킷은 "오늘 확정 행"이 실제로 도착했을 때만 캐시한다 —
+                // 마감 직후 아직 미확정이면(최신 행=전일) 캐시 없이 반환해 다음 요청이 재조회하게.
+                // 주말은 오늘 행이 영영 없으므로(직전 영업일이 최신) 그대로 캐시. 평일 공휴일은
+                // 캘린더 없이 구분 불가라 저녁 요청이 캐시 없이 재조회될 수 있는데, 호출량이 작아 감수.
+                if (isCacheableInvestorFlows(postClose, flows, today)) {
+                    investorCache[cacheKey] = flows
+                    investorFileCache.put(cacheKey, flows) // 콜드 스타트 재사용용 GCS 영속
+                }
                 return flows.take(days)
             }
             lastMsg = resp.msg1.ifBlank { "rt_cd=${resp.rtCd}" }
@@ -479,6 +489,27 @@ class KisClient(
     companion object {
         private const val MAX_ATTEMPTS = 4
         private const val BACKOFF_MS = 250L
+
+        // 확정 수급이 갱신되기 시작하는 장후 시각(보수적으로 16:00 KST부터 post 버킷).
+        // post 버킷은 "오늘 행 도착" 검증(isCacheableInvestorFlows)이 있어 이르게 잡아도 안전하다.
+        private val INVESTOR_POST_CLOSE = java.time.LocalTime.of(16, 0)
+
+        /** 지금이 장마감 후(post) 수급 버킷 시간대인지. */
+        internal fun isPostClose(now: java.time.LocalTime = java.time.LocalTime.now(KST)): Boolean =
+            now >= INVESTOR_POST_CLOSE
+
+        /**
+         * 수급 응답을 캐시해도 되는지. pre 버킷=항상. post 버킷=최신 행이 오늘(거래일)일 때만 —
+         * 단 주말은 오늘 행이 원래 없으므로(직전 영업일이 최신) 항상 캐시.
+         * effectiveDate 는 effectiveMarketDate()(YYYY-MM-DD), 수급 행 date 는 YYYYMMDD.
+         */
+        internal fun isCacheableInvestorFlows(postClose: Boolean, flows: List<InvestorFlow>, effectiveDate: String): Boolean {
+            if (!postClose) return true
+            val d = java.time.LocalDate.parse(effectiveDate)
+            if (d.dayOfWeek == java.time.DayOfWeek.SATURDAY || d.dayOfWeek == java.time.DayOfWeek.SUNDAY) return true
+            val todayCompact = effectiveDate.replace("-", "")
+            return flows.firstOrNull()?.date == todayCompact
+        }
     }
 }
 
