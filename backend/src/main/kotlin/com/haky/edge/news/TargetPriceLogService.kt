@@ -10,9 +10,22 @@ import java.io.File
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
-/** 특정 일자에 관측한 컨센서스 목표주가 한 점. */
+/** 특정 일자에 관측한 컨센서스 목표주가 한 점. price=그날 주가(돌파 이력용, 구 기록엔 없음 → null). */
 @Serializable
-data class TargetSnapshot(val date: String, val target: Long)
+data class TargetSnapshot(val date: String, val target: Long, val price: Long? = null)
+
+/**
+ * 목표가 이벤트 집계(최근 90일 스냅샷 기준). "매주 목표가가 올라간다"·"주가가 목표가를 뚫었다"
+ * 같은 리레이팅 정황을 정량 사실로 만든다. 스냅샷이 쌓여야 의미가 생긴다(초기엔 대부분 0).
+ */
+@Serializable
+data class TargetPriceEvents(
+    val raisesIn90d: Int,        // 연속 스냅샷 대비 +1% 이상 상향된 횟수
+    val cutsIn90d: Int,          // -1% 이상 하향된 횟수
+    val breakthroughDays: Int,   // 주가 ≥ 목표가로 관측된 스냅샷 일수
+    val avgRaiseGapDays: Int?,   // 돌파 관측 → 다음 상향까지 평균 일수(둘 다 있을 때만)
+    val snapshotCount: Int,      // 집계에 쓴 스냅샷 수
+)
 
 /**
  * 컨센서스 목표가의 상향/하향 추세. 과거 스냅샷이 1개 이상 쌓여야 산출(없으면 null).
@@ -46,7 +59,7 @@ class TargetPriceLogService {
      * 과거(오늘이 아닌) 스냅샷이 최근 [TREND_WINDOW_DAYS]일 내에 없으면 null(추세 산출 불가).
      */
     @Synchronized
-    fun recordAndTrend(code: String, current: Long?): TargetPriceTrend? {
+    fun recordAndTrend(code: String, current: Long?, price: Long? = null): TargetPriceTrend? {
         if (current == null || current <= 0) return null
         val todayStr = LocalDate.now(KST).toString()
         val today = LocalDate.parse(todayStr)
@@ -54,7 +67,8 @@ class TargetPriceLogService {
         val all = loadLog().toMutableMap()
         val list = all[code]?.toMutableList() ?: mutableListOf()
         val idx = list.indexOfFirst { it.date == todayStr }
-        if (idx >= 0) list[idx] = TargetSnapshot(todayStr, current) else list.add(TargetSnapshot(todayStr, current))
+        val snap = TargetSnapshot(todayStr, current, price?.takeIf { it > 0 })
+        if (idx >= 0) list[idx] = snap else list.add(snap)
 
         // 날짜 오름차순 정렬 + 오래된 기록(PRUNE_DAYS 초과) 제거로 파일 크기 제한.
         val pruneCutoff = today.minusDays(PRUNE_DAYS)
@@ -89,6 +103,14 @@ class TargetPriceLogService {
         )
     }
 
+    /** 최근 90일 스냅샷에서 목표가 이벤트 집계. 스냅샷 2개 미만이면 null. */
+    @Synchronized
+    fun events(code: String): TargetPriceEvents? {
+        val today = LocalDate.now(KST)
+        val snapshots = loadLog()[code] ?: return null
+        return computeEvents(snapshots, today)
+    }
+
     private fun parseOrNull(date: String): LocalDate? = runCatching { LocalDate.parse(date) }.getOrNull()
 
     private fun loadLog(): Map<String, List<TargetSnapshot>> {
@@ -104,5 +126,49 @@ class TargetPriceLogService {
         private const val TREND_WINDOW_DAYS = 30L  // 추세 비교 창(최근 N일)
         private const val PRUNE_DAYS = 180L         // 보관 기간
         private const val MOVE_THRESHOLD = 1.0      // ±1% 미만은 "유지"(노이즈 컷)
+        private const val EVENTS_WINDOW_DAYS = 90L  // 이벤트 집계 창
+
+        /**
+         * 이벤트 집계 순수 함수(테스트 대상). 최근 [EVENTS_WINDOW_DAYS]일 스냅샷을 날짜순으로 보고
+         * ① 연속 쌍 대비 ±1% 이상 변화 = 상향/하향 이벤트 ② price ≥ target = 돌파 관측일
+         * ③ 각 돌파일 이후 첫 상향까지의 간격 평균. 스냅샷 2개 미만이면 null.
+         */
+        internal fun computeEvents(snapshots: List<TargetSnapshot>, today: LocalDate): TargetPriceEvents? {
+            val cutoff = today.minusDays(EVENTS_WINDOW_DAYS)
+            val window = snapshots
+                .filter { runCatching { LocalDate.parse(it.date) }.getOrNull()?.isAfter(cutoff.minusDays(1)) ?: false }
+                .sortedBy { it.date }
+            if (window.size < 2) return null
+
+            var raises = 0
+            var cuts = 0
+            val raiseDates = mutableListOf<LocalDate>()
+            window.zipWithNext { prev, cur ->
+                if (prev.target > 0) {
+                    val chg = (cur.target - prev.target).toDouble() / prev.target * 100
+                    if (chg >= MOVE_THRESHOLD) { raises++; raiseDates.add(LocalDate.parse(cur.date)) }
+                    if (chg <= -MOVE_THRESHOLD) cuts++
+                }
+            }
+
+            val breakthroughDates = window
+                .filter { it.price != null && it.target > 0 && it.price >= it.target }
+                .mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() }
+
+            // 돌파 → 그 이후 첫 상향까지의 간격. 상향이 먼저 오고 돌파가 나중이면 해당 돌파는 미집계.
+            val gaps = breakthroughDates.mapNotNull { b ->
+                raiseDates.filter { it.isAfter(b) }.minOrNull()
+                    ?.let { ChronoUnit.DAYS.between(b, it).toInt() }
+            }
+            val avgGap = if (gaps.isEmpty()) null else gaps.average().toInt()
+
+            return TargetPriceEvents(
+                raisesIn90d = raises,
+                cutsIn90d = cuts,
+                breakthroughDays = breakthroughDates.size,
+                avgRaiseGapDays = avgGap,
+                snapshotCount = window.size,
+            )
+        }
     }
 }

@@ -142,6 +142,8 @@ class AnalysisService(
             val backtestD       = async { runCatching { backtestSvc.getBacktest(code) }.getOrNull() }
             val flowSensD       = async { runCatching { backtestSvc.getFlowSensitivity(code) }.getOrNull() }
             val quarterlyD      = async { runCatching { dart.getQuarterlyIncome(code) }.getOrNull() }
+            // 상장주식수: 연환산(포워드) PER 계산용. inquire-price 재호출이라 가벼움(캐시 대상).
+            val sharesD         = async { runCatching { kis.getListedShares(code) }.getOrNull() }
             val warningsD       = async { runCatching { toss.getActiveWarnings(code) }.getOrElse { emptyList() } }
             val calendarD       = async { runCatching { toss.getMarketCalendar() }.getOrNull() }
 
@@ -156,14 +158,16 @@ class AnalysisService(
             val bars            = barsD.await()
             val financials      = financialsD.await()
             val consensusTarget = consensusD.await()
-            // 오늘 목표가를 스냅샷 기록하고 과거 대비 상향/하향 추세를 산출(스냅샷 부족 시 null).
-            val targetTrend = runCatching { targetPriceLog.recordAndTrend(code, consensusTarget) }.getOrNull()
+            // 오늘 목표가를 스냅샷 기록(주가 병기 — 돌파 이력용)하고 추세·이벤트 집계 산출(스냅샷 부족 시 null).
+            val targetTrend = runCatching { targetPriceLog.recordAndTrend(code, consensusTarget, quote.price) }.getOrNull()
+            val targetEvents = runCatching { targetPriceLog.events(code) }.getOrNull()
             val shortSelling    = shortSellingD.await()
             val valuationBand   = valuationBandD.await()
             val peerValuation   = peerValD.await()
             val backtest        = backtestD.await()
             val flowSensitivity = flowSensD.await()
             val quarterlyIncome = quarterlyD.await()
+            val listedShares    = sharesD.await()
             val sectorChangeRate = sectorRsD.await()
             val news            = dedupeNews(rawNewsD.await(), limit = 8)
             println("[Timing] $code: facts=${System.currentTimeMillis() - t0}ms")
@@ -175,7 +179,7 @@ class AnalysisService(
                 .takeIf { it.isNotEmpty() }
                 ?.let { "투자유의(거래소 지정, 현재 발동 중): " + it.joinToString(", ") { w -> w.label } }
             val calendar = calendarD.await()
-            val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, eventsText, warningsText, calendar, position)
+            val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position)
             // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
             val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
             // 모델 라우팅(기본): 최초 생성·브리핑=Opus, 수동 새로고침·급변 자동 재생성=Sonnet.
@@ -242,6 +246,7 @@ class AnalysisService(
         news: List<NewsCluster>,
         consensusTarget: Long?,
         targetTrend: TargetPriceTrend?,
+        targetEvents: com.haky.edge.news.TargetPriceEvents?,
         sectorChangeRate: Double?,
         shortSelling: ShortSellingSummary?,
         valuationBand: ValuationBand?,
@@ -249,6 +254,7 @@ class AnalysisService(
         backtest: Backtest?,
         flowSensitivity: FlowSensitivity?,
         quarterlyIncome: QuarterlyIncome?,
+        listedShares: Long?,
         eventsText: String?,
         warningsText: String?,
         calendar: com.haky.edge.toss.MarketCalendar?,
@@ -273,6 +279,17 @@ class AnalysisService(
         sb.appendLine("현재가: ${q.price}원 (전일대비 ${q.change}, ${q.changeRate}%)")
         // 투자유의는 리스크 신호라 상단에 배치(거래소 지정 시장경보·단기과열·정리매매·VI).
         if (warningsText != null) sb.appendLine(warningsText)
+        // 국면 판정(계산) — 리레이팅/디레이팅을 룰로 감지해 해석 프레임을 지정(C11).
+        // 상단 배치: 아래 밸류·실적을 읽기 전에 프레임이 잡혀야 "과거 밴드 기준 고평가" 관성 판정을 막는다.
+        RegimeDetector.detect(
+            price = q.price,
+            consensusTarget = consensusTarget,
+            targetTrend = targetTrend,
+            quarterlyYoyPct = quarterlyIncome?.yoyPct,
+            perPercentile = valuationBand?.perPercentile,
+        )?.let { regime ->
+            sb.appendLine("국면 판정(계산): ${regime.label} — 근거: ${regime.signals.joinToString("; ")}")
+        }
         if (sectorChangeRate != null) {
             val rs = q.changeRate - sectorChangeRate
             val label = when {
@@ -318,6 +335,9 @@ class AnalysisService(
                         "$signed, 스냅샷 ${targetTrend.snapshotCount}개 기준)"
                 )
             }
+            // 목표가 이벤트 이력 — "매주 목표가가 올라간다"·"주가가 목표가를 뚫었다" 같은 리레이팅
+            // 정황을 정량 사실로. 우리 스냅샷 누적 기준이라 초기엔 비어 있다가 시간이 지나며 차오른다.
+            targetEventsLine(targetEvents)?.let { sb.appendLine(it) }
         }
         if (q.high52w > q.low52w && q.high52w > 0) {
             val pos = (q.price - q.low52w).toDouble() / (q.high52w - q.low52w) * 100
@@ -331,6 +351,9 @@ class AnalysisService(
         // 값이 다를 수 있음). 라벨 없이 병기하면 모델이 날마다 다른 값을 집어 코멘트 PER이 튀는 실사고가
         // 있었음(6/15 43.4배 → 6/17 52.7배, 주가는 +2.7%). 라벨로 구분하고 일관 사용은 프롬프트가 지시.
         if (q.per > 0) sb.appendLine("PER(KIS 시세 기준) ${q.per} / PBR(KIS 시세 기준) ${q.pbr}")
+        // 연환산(포워드) PER — 트레일링 PER은 작년 이익 기준이라 이익 급증 종목을 구조적으로
+        // "고평가"로 보이게 한다. 최근 분기 누적을 연환산한 추정 PER을 병기해 그 편향을 사실로 보정.
+        forwardPerLine(q.price, quarterlyIncome, listedShares)?.let { sb.appendLine(it) }
         if (valuationBand != null && valuationBand.yearsUsed > 0) {
             // 적자 연도는 PER 히스토리에서 제외되므로(턴어라운드 종목) 표본이 적을 수 있다. 적으면 신뢰도 경고.
             val sampleNote = if (valuationBand.yearsUsed < 3)
@@ -696,6 +719,43 @@ class AnalysisService(
         private const val FORCE_COOLDOWN_MINUTES = 5L    // 수동 새로고침(force) 연타 가드(분)
 
         /**
+         * 연환산(포워드) PER 한 줄. 최근 분기 누적 순이익을 단순 연환산(1분기×4, 반기×2, 3분기×4/3)해
+         * 추정 EPS를 만들고 현재가와 비교한다. 적자·데이터 부족·이상치(500배 초과)는 null(줄 생략).
+         * 계절성 미반영 단순 추정이라는 한계를 텍스트에 명시 — 판단은 Claude/사용자 몫.
+         */
+        internal fun forwardPerLine(price: Long, quarterly: QuarterlyIncome?, listedShares: Long?): String? {
+            val ni = quarterly?.netIncome ?: return null
+            if (ni <= 0 || listedShares == null || listedShares <= 0 || price <= 0) return null
+            val multiplier = when {
+                quarterly.label.contains("1분기") -> 4.0
+                quarterly.label.contains("반기")  -> 2.0
+                quarterly.label.contains("3분기") -> 4.0 / 3.0
+                else -> return null
+            }
+            val annualized = ni * multiplier
+            val eps = annualized / listedShares
+            if (eps <= 0) return null
+            val forwardPer = price / eps
+            if (forwardPer <= 0 || forwardPer > 500) return null
+            val annualizedEok = (annualized / 100_000_000).toLong()
+            return "연환산(포워드) PER: 약 ${"%.1f".format(forwardPer)}배 — ${quarterly.label} 누적 순이익을 연환산(${"%,d".format(annualizedEok)}억)한 추정치(단순 연환산, 계절성 미반영). 트레일링 PER과 차이가 크면 이익이 급변 중이라는 뜻."
+        }
+
+        /** 목표가 이벤트 이력 한 줄. 이벤트가 하나도 없으면 null(줄 생략). */
+        internal fun targetEventsLine(e: com.haky.edge.news.TargetPriceEvents?): String? {
+            if (e == null) return null
+            if (e.raisesIn90d == 0 && e.cutsIn90d == 0 && e.breakthroughDays == 0) return null
+            val parts = buildList {
+                if (e.raisesIn90d > 0) add("상향 ${e.raisesIn90d}회")
+                if (e.cutsIn90d > 0) add("하향 ${e.cutsIn90d}회")
+                if (e.breakthroughDays > 0) add("주가≥목표가 관측 ${e.breakthroughDays}일")
+                if (e.avgRaiseGapDays != null) add("돌파→상향 평균 ${e.avgRaiseGapDays}일")
+            }
+            return "  └ 목표가 이벤트(우리 스냅샷 ${e.snapshotCount}개 기준, 최근 90일): ${parts.joinToString(", ")}" +
+                " — 상향이 반복되고 주가가 목표가를 앞서가면 애널리스트가 주가를 쫓아 올리는 리레이팅 정황."
+        }
+
+        /**
          * "### 핵심 요약" 블록 전용 가격류 환각 검사. 앱 카드 최상단이라 여기만 엄격하게 본다.
          * 요약 속 수치 중 ≥1000(원 단위 가격·금액·수량류)이면서 facts 어느 값과도 ±5% 안에 없는 것을 반환.
          * <1000(퍼센트·배수·건수·연도 일부)은 가공 표현 오탐이 많아 제외 — 연도(2026 등)는 facts에 항상 존재.
@@ -814,6 +874,10 @@ class AnalysisService(
                 - 동종 상대 밸류: "동종 상대 밸류" 섹션이 있으면 같은 업종 경쟁사 중앙값과 비교한 위치다. 역사적 상단권이어도 동종 대비 낮으면 상대적으로 싼 편이고(리레이팅 국면에서 특히 의미 있다), 동종 대비 높으면 그 프리미엄을 정당화할 실적·성장 근거가 있는지 짚어라.
                 - 표본·신뢰도: 밴드에 "신뢰도 낮음/표본 적음" 표시가 있으면 밴드 결론을 약하게 다뤄라.
                 업종을 미리 단정하지 말고(반도체든 조선·방산이든) 위 사실로 판단하라. 반대로 역사적으로 싸 보여도 이익이 꺾이는 중이면 함정일 수 있다는 양방향 경계를 똑같이 적용하라.
+            C11. "국면 판정(계산)" 항목이 있으면 해석 프레임을 그에 맞춰라(항목이 없으면 이 규칙은 무시):
+                - "리레이팅 국면": 과거 밴드·트레일링 PER 기준의 고평가 단정을 하지 마라. 대신 이익 추정 속도(연환산 PER·분기 YoY)와 주가 속도 중 무엇이 빠른지, 목표가 추세, 수급으로 판단하라. 단 낙관 단정도 금지 — "이익이 계속 따라와야 유지되는 가격"이라는 조건을 반드시 명시하고, 이익 추정이 꺾이면 되돌림 폭이 클 수 있다는 리스크를 함께 짚어라.
+                - "디레이팅 경계": 역사적으로 싸 보여도 이익·목표가가 꺾이는 중이면 밸류 함정일 수 있음을 우선 짚어라. "싸니까 기회"로 시작하지 마라.
+                국면 판정은 룰 계산 결과이며 근거가 함께 적혀 있다 — 근거를 코멘트에서 재확인하며 쓰되, 판정과 실제 데이터가 어긋나 보이면 판정을 무시하지 말고 그 어긋남 자체를 짚어라.
         """.trimIndent()
 
         // 말미 재강조 — 거대 프롬프트에서 지시 준수율은 서두보다 말미가 높다.
