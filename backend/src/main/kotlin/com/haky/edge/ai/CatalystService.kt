@@ -144,7 +144,7 @@ class CatalystService(
             val now = nowKstHm()
             if (materials.isEmpty()) {
                 val empty = CatalystReport(code, name, today, now, "중립", "최근 ${days}일 새 재료(공시·뉴스)가 없습니다.")
-                cache[key] = empty; fileCache.put(key, empty)
+                putReportCaches(key, lastKey(today, days, code), empty)
                 return@coroutineScope empty
             }
 
@@ -186,10 +186,18 @@ class CatalystService(
             val finalSummary = appendPreReflectedCaveat(summary, items, netBias)
 
             val report = CatalystReport(code, name, today, now, netBias, finalSummary, items)
-            cache[key] = report; fileCache.put(key, report)
+            putReportCaches(key, lastKey(today, days, code), report)
             report
         }
     }
+
+    /** 30분 버킷 키와 "당일 마지막 리포트" 키에 함께 저장 — 후자는 peekCached의 버킷 경과 폴백용. */
+    private fun putReportCaches(bucketKey: String, lastKey: String, report: CatalystReport) {
+        cache[bucketKey] = report; fileCache.put(bucketKey, report)
+        cache[lastKey] = report; fileCache.put(lastKey, report)
+    }
+
+    private fun lastKey(today: String, days: Int, code: String) = "$today|last|$days|$code"
 
     /** 인덱싱용 내부 재료(우리 데이터 정본). ruleCat=공시 룰 분류 힌트, extra=뉴스 요약. */
     private data class Material(
@@ -419,7 +427,12 @@ class CatalystService(
         val today = effectiveMarketDate()
         val key = "$today|${System.currentTimeMillis() / 1_800_000}|$days|$code"
         cache[key]?.let { return it }
-        return fileCache.get(key)?.also { cache[key] = it }
+        fileCache.get(key)?.also { cache[key] = it }?.let { return it }
+        // 현재 30분 버킷에 없어도 오늘 만들어진 마지막 리포트로 폴백 — 같은 버킷 내 조회에만
+        // 의존하면 브리핑 "테마별 재료 동향"이 사실상 늘 비게 된다(2026-07 감사 M3).
+        val lk = lastKey(today, days, code)
+        cache[lk]?.let { return it }
+        return fileCache.get(lk)?.also { cache[lk] = it }
     }
 
     /**

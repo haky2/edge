@@ -65,13 +65,25 @@ class KrxShortSellingClient {
         val today = LocalDate.now(KST).toString()
         dataCache["$code:$today"]?.let { return it }
 
-        ensureSession(code)
-        val isin = resolveIsin(code) ?: return null
-        val entries = fetchEntries(isin, code).takeIf { it.isNotEmpty() } ?: return null
+        var entries = fetchAll(code)
+        if (entries.isEmpty()) {
+            // KRX 세션(JSESSIONID)이 만료되면 빈 응답이 조용히 온다 — 세션을 버리고 새로 받아 1회 재시도.
+            // (기존엔 프로세스 수명 내 1회 발급이라, 만료 후엔 재시작까지 공매도 데이터가 소실 — 2026-07 감사 M4)
+            jsessionId = null
+            entries = fetchAll(code)
+        }
+        if (entries.isEmpty()) return null
 
         val summary = buildSummary(code, entries)
         dataCache["$code:$today"] = summary
         return summary
+    }
+
+    /** 세션 확보 → ISIN 해석 → 일별 데이터 조회. 어느 단계든 실패하면 빈 리스트. */
+    private suspend fun fetchAll(code: String): List<ShortSellingEntry> {
+        ensureSession(code)
+        val isin = resolveIsin(code) ?: return emptyList()
+        return fetchEntries(isin, code)
     }
 
     // 처음 한 번만 KRX srtLoader 페이지를 방문해 JSESSIONID 쿠키를 확보한다.

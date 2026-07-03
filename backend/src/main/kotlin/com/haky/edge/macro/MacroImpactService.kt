@@ -62,7 +62,8 @@ data class HoldingPosition(val avgPrice: Double, val qty: Long)
  *  - 각 종목의 "오늘 영향 방향"은 [민감도 부호 × 지표 등락 부호]로 계산해 사실로 제공.
  *  - Claude 는 그 사실을 받아 "그래서 오늘 어떻게 봐야 하나"만 서술(수치 날조 금지, 참고용).
  *
- * 비용: (날짜 + 종목집합 + 지표 등락 0.5%반올림) 캐시. 같은 입력이면 1회만 생성.
+ * 비용: (날짜 + 종목집합 + 모드) 캐시 — 당일 1회 생성 후 전 유저 공유(지표가 장중 변해도 재생성 안 함,
+ * 수동 갱신은 refresh=true). 캐시 적중 시 외부 지표 호출도 건너뛴다.
  */
 class MacroImpactService(
     private val kis: KisClient,
@@ -87,18 +88,19 @@ class MacroImpactService(
     ): MacroImpact {
         // 주말 통합 거래일: 일요일은 토요일로 접어 재사용(데이터 동일). 평일·토요일은 당일.
         val today = effectiveMarketDate()
-        val kisIndicators = kis.getMacroIndicators()
-        // usdjpy·copper·rate3y는 방향 계산 대상(buildStockImpact). fear_greed·tnx·dxy·vix·nikkei는 맥락용(방향 계산 제외).
-        val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get()) + yahoo.get()
-        val indicators = kisIndicators + extras
 
         // 키 = 날짜 + 종목집합 + 모드. 포지션(평단·수량)은 키에 넣지 않음 — 하루 1회 공유 원칙 유지.
-        // force=true면 캐시 건너뜀(수동 재생성).
+        // force=true면 캐시 건너뜀(수동 재생성). 지표 수집은 캐시 미스일 때만(적중 시 외부 5소스 호출 낭비 방지).
         val cacheKey = buildKey(today, holdings, watchlist, mode)
         if (!force) {
             cache[cacheKey]?.let { return it }
             fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
         }
+
+        val kisIndicators = kis.getMacroIndicators()
+        // usdjpy·copper·rate3y는 방향 계산 대상(buildStockImpact). fear_greed·tnx·dxy·vix·nikkei는 맥락용(방향 계산 제외).
+        val extras = listOfNotNull(copper.get(), fearGreed.get(), ecos.get()) + yahoo.get()
+        val indicators = kisIndicators + extras
 
         val holdingImpacts = holdings.map { buildStockImpact(it, indicators) }
         val watchImpacts = watchlist.map { buildStockImpact(it, indicators) }

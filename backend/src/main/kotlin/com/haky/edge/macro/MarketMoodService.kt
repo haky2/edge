@@ -42,7 +42,8 @@ enum class AnalysisMode {
  * 새 데이터 소스 없이 /macro 지표만 재사용 → 추가 외부 API 비용 없음.
  *
  * 사실(지표 방향) → Claude 해석 분리 원칙은 MacroImpactService와 동일.
- * 캐시 키: date + 주요 지표 등락 0.5% 반올림 (의미 있는 변화 시에만 재생성).
+ * 캐시 키: 거래일 + 모드 — 당일 1회 생성 후 공유(장중 지표가 변해도 재생성 안 함, 수동은 force).
+ * 지표 수집은 캐시와 무관하게 매번 수행한다 — moodLog(방향 예측 기록·채점)의 입력이라 생략 불가.
  */
 class MarketMoodService(
     private val kis: KisClient,

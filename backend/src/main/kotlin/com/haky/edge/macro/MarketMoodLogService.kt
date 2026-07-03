@@ -110,7 +110,11 @@ class MarketMoodLogService {
         val canScore = !isToday || marketClosed
 
         val kospiChange = indicators.find { it.key == "kospi" }?.changeRate
-        val hasActualData = canScore && kospiChange != null && kotlin.math.abs(kospiChange) >= 0.1
+        // 마감 후에는 0%대 보합 마감도 실제 결과로 채점한다. 예전 |변화|≥0.1% 게이트는 "장 전
+        // 전일값 오채점" 방지용이었는데 시간 게이트(canScore)가 그 역할을 대체했고, 보합일을
+        // 영구 PENDING으로 남겨 NEUTRAL 적중일이 표본에서 계통 제외되는 편향이 있었다(감사 M5).
+        // 한계: 평일 공휴일은 KIS가 직전 거래일 등락을 돌려줘 오채점 여지 — 개장 캘린더 미도입으로 감수.
+        val hasActualData = canScore && kospiChange != null
         val actualDirection = if (hasActualData && kospiChange != null) classifyActual(kospiChange) else null
         val isCorrect = actualDirection?.let { it == direction }
 
