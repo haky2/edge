@@ -30,6 +30,7 @@ import com.haky.edge.news.NaverNewsClient
 import com.haky.edge.news.NaverTargetPriceClient
 import com.haky.edge.news.TargetPriceLogService
 import com.haky.edge.news.NewsException
+import com.haky.edge.routes.analogRoutes
 import com.haky.edge.routes.analysisRoutes
 import com.haky.edge.routes.askRoutes
 import com.haky.edge.routes.portfolioReviewRoutes
@@ -219,6 +220,9 @@ fun Application.module() {
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, modelRouter, moodLog, eventSync)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
     val catalyst = CatalystService(kis, naver, master, claude, dart, valuationBand, macroImpact, modelRouter)
+    // F1 유사 국면 통계 — 장기 일봉 이력(페이지네이션+파일 캐시) 위 기저율 계산. LLM 0.
+    val dailyHistory = com.haky.edge.ai.DailyHistoryService(kis)
+    val analog = com.haky.edge.ai.AnalogService(dailyHistory, master)
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
     val costSummary = CostSummaryService(slack, costChannel, usageTracker)
@@ -263,6 +267,7 @@ fun Application.module() {
             analysisRoutes(analysis)
             askRoutes(analysis)
             catalystRoutes(catalyst)
+            analogRoutes(analog)
             dartRoutes(dart)
             earningsRoutes(dart)
             sectorRoutes(kis)

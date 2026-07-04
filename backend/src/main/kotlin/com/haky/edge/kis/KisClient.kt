@@ -328,12 +328,44 @@ class KisClient(
         }.body()
     }
 
+    /**
+     * 기간 지정 일봉(YYYYMMDD, 수정주가). 유사 국면 통계(F1)의 과거 이력 페이지네이션용 —
+     * 한투 단일 응답 최대 ~100건이라 500거래일은 end를 뒤로 옮겨가며 여러 번 부른다(DailyHistoryService).
+     */
+    suspend fun getDailyChartRange(code: String, startYmd: String, endYmd: String): List<DailyBar> {
+        val accessToken = token()
+        var lastMsg = ""
+        repeat(MAX_ATTEMPTS) { attempt ->
+            val resp = rateLimiter.withPermit { requestDailyChart(code, accessToken, startYmd, endYmd) }
+            if (resp.rtCd == "0") {
+                return resp.output2.map {
+                    DailyBar(
+                        date = it.date,
+                        open = it.open.toLongSafe(),
+                        high = it.high.toLongSafe(),
+                        low = it.low.toLongSafe(),
+                        close = it.close.toLongSafe(),
+                        volume = it.volume.toLongSafe(),
+                    )
+                }.filter { it.close > 0 && it.date.isNotBlank() }
+            }
+            lastMsg = resp.msg1.ifBlank { "rt_cd=${resp.rtCd}" }
+            if (attempt < MAX_ATTEMPTS - 1) delay(BACKOFF_MS * (attempt + 1))
+        }
+        throw KisException("한투 기간 일봉 조회 실패($code, $startYmd~$endYmd): $lastMsg")
+    }
+
     /** 일봉 HTTP 호출 1회. period_div_code=D, adj_prc_div=1(수정주가). */
-    private suspend fun requestDailyChart(code: String, accessToken: String): KisDailyResponse {
+    private suspend fun requestDailyChart(
+        code: String,
+        accessToken: String,
+        startYmd: String? = null,
+        endYmd: String? = null,
+    ): KisDailyResponse {
         // start/end: 한투는 최근일 기준으로 내려주므로 end=오늘, start=충분히 과거로 둔다.
         // 차트 기간 토글(1개월/3개월/전체)용으로 넉넉히 7개월(한투 단일 응답 최대 ~100건) 요청.
-        val today = java.time.LocalDate.now(KST).toString().replace("-", "")
-        val startDate = java.time.LocalDate.now(KST).minusMonths(7).toString().replace("-", "")
+        val today = endYmd ?: java.time.LocalDate.now(KST).toString().replace("-", "")
+        val startDate = startYmd ?: java.time.LocalDate.now(KST).minusMonths(7).toString().replace("-", "")
         return http.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice") {
             header("authorization", "Bearer $accessToken")
             header("appkey", appKey)
