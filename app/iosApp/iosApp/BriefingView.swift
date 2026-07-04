@@ -48,6 +48,7 @@ struct BriefingView: View {
     // 실적 일정
     @State private var earningsLoading = false
     @State private var earningsItems: [EarningsEntry] = []
+    @State private var earningsPreviews: [String: EarningsPreview] = [:]  // F3: D-7 이내 프리뷰
 
     // 거시 이벤트 캘린더
     @State private var eventsLoading = false
@@ -649,20 +650,36 @@ struct BriefingView: View {
 
     private func earningsRow(_ e: EarningsEntry) -> some View {
         let days = Int(e.daysUntil)  // Kotlin Int → Swift Int32 → Int
-        return HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(e.corpName).font(.body)
-                Text(e.reportName).font(.caption2).foregroundColor(.secondary)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(e.corpName).font(.body)
+                    Text(e.reportName).font(.caption2).foregroundColor(.secondary)
+                }
+                Spacer()
+                Text(ddayLabel(days))
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(ddayColor(days).opacity(0.15))
+                    .foregroundColor(ddayColor(days))
+                    .clipShape(Capsule())
             }
-            Spacer()
-            Text(ddayLabel(days))
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 8).padding(.vertical, 3)
-                .background(ddayColor(days).opacity(0.15))
-                .foregroundColor(ddayColor(days))
-                .clipShape(Capsule())
+            // F3 프리뷰: D-7 이내 임박 종목만 붙는다(run-rate·과거 반응 — 전부 계산치)
+            if let p = earningsPreviews[e.code] { earningsPreviewLines(p) }
         }
         .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func earningsPreviewLines(_ p: EarningsPreview) -> some View {
+        if let yoy = p.runRateYoYPct {
+            Text("현재 속도(연환산) 유지 시 작년 연간 대비 \(String(format: "%+.1f", yoy.doubleValue))%")
+                .font(.caption2).foregroundColor(yoy.doubleValue >= 0 ? .red : .blue)
+        }
+        if let r = p.pastReactions {
+            Text("과거 \(r.n)번 발표: 익일 평균 \(String(format: "%+.2f", r.day1AvgPct))% · 5일 \(String(format: "%+.2f", r.day5AvgPct))% · 익일 상승 \(Int(r.day1WinRatePct))% (참고용)")
+                .font(.caption2).foregroundColor(.secondary)
+        }
     }
 
     private func ddayLabel(_ days: Int) -> String {
@@ -1515,6 +1532,19 @@ struct BriefingView: View {
         defer { earningsLoading = false }
         guard let items = try? await api.getEarnings(codes: codes) else { return }
         earningsItems = items
+        // F3: D-7 이내 임박 종목만 프리뷰(run-rate YoY·과거 발표 반응) 병렬 로드
+        let imminent = items.filter { (0...7).contains(Int($0.daysUntil)) }.map { $0.code }
+        guard !imminent.isEmpty else { return }
+        var found: [String: EarningsPreview] = [:]
+        await withTaskGroup(of: (String, EarningsPreview?).self) { group in
+            for code in imminent {
+                group.addTask { (code, try? await api.getEarningsPreview(code: code)) }
+            }
+            for await (code, preview) in group {
+                if let p = preview { found[code] = p }
+            }
+        }
+        earningsPreviews = found
     }
 
     private func buildEvents() async {

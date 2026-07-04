@@ -2,6 +2,7 @@ package com.haky.edge.api
 
 import com.haky.edge.model.AnalogReport
 import com.haky.edge.model.Analysis
+import com.haky.edge.model.EarningsPreview
 import com.haky.edge.model.StanceStats
 import com.haky.edge.model.AskAnswer
 import com.haky.edge.model.AskRequest
@@ -404,6 +405,12 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getStanceStats(): StanceStats? = runCatching {
         client.get("$baseUrl/stance-stats").body<StanceStats>()
+    }.getOrNull()
+
+    /** 실적 발표 프리뷰(F3): run-rate 유지 시 YoY + 과거 발표일 반응 통계. 오류 시 null. */
+    @Throws(Exception::class)
+    suspend fun getEarningsPreview(code: String): EarningsPreview? = runCatching {
+        client.get("$baseUrl/earnings-preview/$code").body<EarningsPreview>()
     }.getOrNull()
 
     /**

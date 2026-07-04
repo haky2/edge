@@ -79,6 +79,8 @@ import com.haky.edge.ui.theme.ChangeUp
 import com.haky.edge.ui.theme.EdgeTheme
 import com.haky.edge.ui.theme.OrangeAccent
 import com.haky.edge.ui.theme.PurpleAccent
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import java.text.DecimalFormat
@@ -170,6 +172,7 @@ fun BriefingScreen(
 
     var earningsLoading by remember { mutableStateOf(false) }
     var earningsItems by remember { mutableStateOf<List<EarningsEntry>>(emptyList()) }
+    var earningsPreviews by remember { mutableStateOf<Map<String, com.haky.edge.model.EarningsPreview>>(emptyMap()) } // F3
 
     // quotes 로드 후 저장 (spotlight 행에서 재사용)
     var allItemsLoaded by remember { mutableStateOf<List<WatchItem>>(emptyList()) }
@@ -205,6 +208,15 @@ fun BriefingScreen(
     suspend fun buildEarnings(codes: List<String>) {
         try {
             runCatching { api.getEarnings(codes) }.getOrNull()?.let { earningsItems = it }
+            // F3: D-7 이내 임박 종목만 프리뷰 병렬 로드
+            val imminent = earningsItems.filter { it.daysUntil in 0..7 }.map { it.code }
+            if (imminent.isNotEmpty()) {
+                earningsPreviews = coroutineScope {
+                    imminent.map { code ->
+                        async { code to runCatching { api.getEarningsPreview(code) }.getOrNull() }
+                    }.awaitAll().mapNotNull { (c, p) -> p?.let { c to it } }.toMap()
+                }
+            }
         } finally { earningsLoading = false }
     }
     suspend fun buildEvents() {
@@ -617,7 +629,7 @@ fun BriefingScreen(
                                 else if (earningsLoading) LoadingRow("확인 중…")
                                 else if (earningsItems.isEmpty()) EmptyRow("90일 이내 예정된 실적이 없어요")
                                 else earningsItems.forEachIndexed { i, e ->
-                                    EarningsRowView(e)
+                                    EarningsRowView(e, earningsPreviews[e.code])
                                     if (i < earningsItems.size - 1) HorizontalDivider()
                                 }
                             }
@@ -883,14 +895,27 @@ private fun SpotlightRowView(s: SpotlightStock, quote: Quote?, onClick: () -> Un
 
 // ── 실적 일정 행 ──
 @Composable
-private fun EarningsRowView(e: EarningsEntry) {
+private fun EarningsRowView(e: EarningsEntry, preview: com.haky.edge.model.EarningsPreview? = null) {
     val days = e.daysUntil
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(e.corpName, style = MaterialTheme.typography.bodyMedium)
-            Text(e.reportName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(e.corpName, style = MaterialTheme.typography.bodyMedium)
+                Text(e.reportName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Pill(ddayLabel(days), ddayColor(days))
         }
-        Pill(ddayLabel(days), ddayColor(days))
+        // F3 프리뷰: D-7 이내 임박 종목만 붙는다(run-rate·과거 반응 — 전부 계산치)
+        preview?.runRateYoYPct?.let { yoy ->
+            Text("현재 속도(연환산) 유지 시 작년 연간 대비 %+.1f%%".format(yoy),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (yoy >= 0) ChangeUp else ChangeDown)
+        }
+        preview?.pastReactions?.let { r ->
+            Text("과거 ${r.n}번 발표: 익일 평균 %+.2f%% · 5일 %+.2f%% · 익일 상승 ${r.day1WinRatePct.toInt()}%% (참고용)".format(r.day1AvgPct, r.day5AvgPct),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

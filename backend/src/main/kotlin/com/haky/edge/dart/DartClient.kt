@@ -158,6 +158,47 @@ class DartClient(private val apiKey: String) {
         return entry
     }
 
+    // 과거 정기공시 접수일 캐시(F3 실적 반응 통계용). key="date|code".
+    private val filingDatesCache = ConcurrentHashMap<String, List<String>>()
+
+    /**
+     * 최근 18개월 정기공시(분기/반기/사업보고서) 접수일(YYYYMMDD) 목록, 최신순.
+     * F3 실적 프리뷰의 "과거 발표일 반응 통계"에 일봉을 조인하기 위한 입력.
+     * 매핑 없음·API 실패 시 빈 목록.
+     */
+    suspend fun getPeriodicFilingDates(stockCode: String): List<String> {
+        if (apiKey.isBlank()) return emptyList()
+        val today = LocalDate.now(KST).toString()
+        val cacheKey = "$today|$stockCode"
+        filingDatesCache[cacheKey]?.let { return it }
+
+        ensureCorpCodeMap()
+        val corpCode = corpCodeMap?.get(stockCode) ?: return emptyList()
+
+        val bgn = LocalDate.now(KST).minusMonths(18).format(DateTimeFormatter.BASIC_ISO_DATE)
+        val end = LocalDate.now(KST).format(DateTimeFormatter.BASIC_ISO_DATE)
+        val resp: DartListResponse = runCatching {
+            http.get("https://opendart.fss.or.kr/api/list.json") {
+                parameter("crtfc_key", apiKey)
+                parameter("corp_code", corpCode)
+                parameter("pblntf_ty", "A")
+                parameter("bgn_de", bgn)
+                parameter("end_de", end)
+                parameter("page_count", "20")
+            }.body<DartListResponse>()
+        }.getOrNull() ?: return emptyList()
+        if (resp.status != "000" && resp.status != "013") return emptyList()
+
+        val dates = (resp.list ?: emptyList())
+            .filter { isPeriodicReport(it.reportName) }
+            .map { it.rceptDt }
+            .filter { it.length == 8 }
+            .distinct()
+            .sortedDescending()
+        filingDatesCache[cacheKey] = dates
+        return dates
+    }
+
     // 재무 요약 캐시. 연간 재무는 거의 안 바뀌므로 날짜 단위로 캐싱.
     private val financialsCache = ConcurrentHashMap<String, FinancialSummary>() // "date|code" → summary
 
@@ -347,6 +388,45 @@ class DartClient(private val apiKey: String) {
 
         quarterlyIncomeCache[cacheKey] = Optional(null)
         return null
+    }
+
+    // 특정 (연도, 보고서)의 누적 순이익 캐시(F3 실적 리뷰용). key="date|code|year|reprt".
+    private val cumulativeNetCache = ConcurrentHashMap<String, Optional<Long>>()
+
+    /**
+     * 특정 (사업연도, reprt_code)의 당기순이익 *누적*(원). F3 실적 리뷰에서
+     * "새 보고서 실제치 vs 직전 보고서 run-rate 예상"을 계산할 때 양쪽을 명시 조회한다.
+     * 11013=1분기, 11012=반기, 11014=3분기, 11011=사업보고서(연간). 없으면 null.
+     */
+    suspend fun getCumulativeNetIncome(stockCode: String, year: Int, reprtCode: String): Long? {
+        if (apiKey.isBlank()) return null
+        val today = LocalDate.now(KST).toString()
+        val cacheKey = "$today|$stockCode|$year|$reprtCode"
+        cumulativeNetCache[cacheKey]?.let { return it.value }
+
+        ensureCorpCodeMap()
+        val corpCode = corpCodeMap?.get(stockCode)
+        if (corpCode == null) { cumulativeNetCache[cacheKey] = Optional(null); return null }
+
+        val resp = runCatching {
+            http.get("https://opendart.fss.or.kr/api/fnlttSinglAcnt.json") {
+                parameter("crtfc_key", apiKey)
+                parameter("corp_code", corpCode)
+                parameter("bsns_year", year.toString())
+                parameter("reprt_code", reprtCode)
+            }.body<DartFinanceResponse>()
+        }.getOrNull()
+        val rows = resp?.takeIf { it.status == "000" }?.list
+        if (rows == null) { cumulativeNetCache[cacheKey] = Optional(null); return null }
+
+        val consolidated = rows.any { it.fsDiv == "CFS" }
+        val scoped = rows.filter { it.fsDiv == (if (consolidated) "CFS" else "OFS") }
+        val net = scoped.firstOrNull { r ->
+            listOf("당기순이익", "분기순이익", "반기순이익").any { r.accountName.replace(" ", "").contains(it) }
+        }
+        val value = net?.thisCumulative()
+        cumulativeNetCache[cacheKey] = Optional(value)
+        return value
     }
 
     // ConcurrentHashMap은 null value를 넣을 수 없어 Optional로 감싼다.

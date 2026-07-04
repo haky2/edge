@@ -41,6 +41,7 @@ class SignalService(
     private val signalChannel: String,
     private val codes: List<String>,
     private val backtest: com.haky.edge.ai.BacktestService? = null, // F4 필터·근거용(없으면 전환 신호 skip)
+    private val earningsPreview: com.haky.edge.ai.EarningsPreviewService? = null, // F3 리뷰용(없으면 skip)
 ) {
     private val dataDir = File(System.getenv("DATA_DIR") ?: ".data").also { it.mkdirs() }
     private val stateFile = File(dataDir, "signal_state.json")
@@ -59,6 +60,7 @@ class SignalService(
     private data class DisclosureSignal(val code: String, val name: String, val title: String, val url: String, val rceptNo: String)
     private data class ValuationSignal(val code: String, val name: String, val perCurrent: Double, val percentile: Int)
     private data class ReversalSignal(val code: String, val name: String, val type: FlowType, val toBuy: Boolean, val prevStreak: Int, val todayQty: Long, val backtestNote: String?)
+    private data class EarningsReviewSignal(val code: String, val name: String, val review: com.haky.edge.ai.EarningsPreviewService.EarningsReview)
 
     internal enum class FlowType(val label: String) { FOREIGN("외국인"), INSTITUTION("기관") }
 
@@ -73,6 +75,7 @@ class SignalService(
         val disclosureSignals = mutableListOf<DisclosureSignal>()
         val valuationSignals = mutableListOf<ValuationSignal>()
         val reversalSignals = mutableListOf<ReversalSignal>()
+        val reviewSignals = mutableListOf<EarningsReviewSignal>()
 
         for (code in codes) {
             val name = runCatching { master.findByCode(code)?.name }.getOrNull() ?: code
@@ -109,7 +112,8 @@ class SignalService(
             }
 
             // 2. 신규 공시 — 중요 유형만, 이미 알린 rceptNo는 skip.
-            runCatching { dart.getDisclosures(code, days = 2) }.getOrNull()?.let { discs ->
+            val discsOrNull = runCatching { dart.getDisclosures(code, days = 2) }.getOrNull()
+            discsOrNull?.let { discs ->
                 val key = "DISC:$code"
                 val seen = state[key]?.split(",")?.filter { it.isNotBlank() }?.toMutableSet() ?: mutableSetOf()
                 val fresh = mutableListOf<DisclosureSignal>()
@@ -125,6 +129,23 @@ class SignalService(
                     // 최근 50개만 유지(무한 증가 방지). 접수번호는 시간순 증가라 큰 값이 최신.
                     state[key] = seen.sortedDescending().take(50).joinToString(",")
                 }
+            }
+
+            // 5. 실적 리뷰(F3 3c) — 새 정기보고서 접수 감지 → 실제 누적 순이익 vs 직전 run-rate 예상.
+            val ep = earningsPreview
+            if (discsOrNull != null && ep != null) {
+                val key = "EREV:$code"
+                val seen = state[key]?.split(",")?.filter { it.isNotBlank() }?.toMutableSet() ?: mutableSetOf()
+                for (d in discsOrNull) {
+                    if (!isPeriodicName(d.reportName) || d.reportName.contains("정정")) continue
+                    val rceptNo = extractRceptNo(d.url) ?: continue
+                    if (rceptNo in seen) continue
+                    seen += rceptNo
+                    runCatching { ep.review(code, d.reportName) }.getOrNull()?.let { rv ->
+                        reviewSignals += EarningsReviewSignal(code, name, rv)
+                    }
+                }
+                if (seen.isNotEmpty()) state[key] = seen.sortedDescending().take(10).joinToString(",")
             }
 
             // 3. 밸류밴드 저평가 진입 — 상태 전이(저평가 아님→저평가)일 때만. 상태는 매 스캔 갱신.
@@ -143,11 +164,12 @@ class SignalService(
         val descriptions = flowSignals.map { "${it.name}(${it.code}) ${it.type.label} ${it.streak}일 연속 순매수" } +
             disclosureSignals.map { "${it.name}(${it.code}) 공시: ${it.title}" } +
             valuationSignals.map { "${it.name}(${it.code}) 밸류 저평가(PER 하위 ${it.percentile}%)" } +
-            reversalSignals.map { "${it.name}(${it.code}) ${it.type.label} ${if (it.toBuy) "매수" else "매도"} 전환(직전 ${it.prevStreak}일 반대)" }
+            reversalSignals.map { "${it.name}(${it.code}) ${it.type.label} ${if (it.toBuy) "매수" else "매도"} 전환(직전 ${it.prevStreak}일 반대)" } +
+            reviewSignals.map { "${it.name}(${it.code}) 실적 리뷰: ${it.review.periodLabel} run-rate ${it.review.verdict}" }
 
         var posted = false
         if (descriptions.isNotEmpty()) {
-            posted = slack.postMessage(signalChannel, formatMessage(flowSignals, disclosureSignals, valuationSignals, reversalSignals))
+            posted = slack.postMessage(signalChannel, formatMessage(flowSignals, disclosureSignals, valuationSignals, reversalSignals, reviewSignals))
         }
         saveState(state)   // 밸류밴드 상태 추적 위해 항상 저장(발화 없어도 전이 기준 갱신)
         return ScanResult(scanned = codes.size, fired = descriptions, posted = posted)
@@ -189,12 +211,17 @@ class SignalService(
     private val FlowType.corrLabel: String
         get() = when (this) { FlowType.FOREIGN -> "외인"; FlowType.INSTITUTION -> "기관" }
 
+    /** 정기보고서(분기/반기/사업) 여부 — F3 리뷰 대상 판별. */
+    private fun isPeriodicName(name: String) =
+        name.contains("분기보고서") || name.contains("반기보고서") || name.contains("사업보고서")
+
     /** 종류별 섹션으로 한 메시지 구성. (mrkdwn 정규화는 SlackClient가 일괄 처리) */
     private fun formatMessage(
         flows: List<FlowSignal>,
         discs: List<DisclosureSignal>,
         vals: List<ValuationSignal>,
         reversals: List<ReversalSignal> = emptyList(),
+        reviews: List<EarningsReviewSignal> = emptyList(),
     ): String = buildString {
         appendLine("🔔 *오늘의 관심종목 신호*")
         appendLine()
@@ -228,6 +255,15 @@ class SignalService(
                 appendLine("• *${r.name}* (${r.code}) — ${r.type.label} ${r.prevStreak}일 연속 $dir (${if (r.toBuy) "+" else "-"}${qty}주)")
                 r.backtestNote?.let { appendLine("  _${it}_") }
             }
+            appendLine()
+        }
+        if (reviews.isNotEmpty()) {
+            appendLine("📊 *실적 리뷰 — run-rate 대비*")
+            reviews.forEach { s ->
+                val rv = s.review
+                appendLine("• *${s.name}* (${s.code}) — ${rv.periodLabel} 누적 순이익 *${"%,d".format(rv.actualEok)}억*, 직전 속도 예상(${"%,d".format(rv.expectedEok)}억) 대비 *${"%+.1f".format(rv.diffPct)}% ${rv.verdict}*")
+            }
+            appendLine("  _단순 연환산 예상 대비이며 컨센서스가 아닙니다_")
             appendLine()
         }
         append("_장 마감 후 확정 데이터 기준 · 참고용_")

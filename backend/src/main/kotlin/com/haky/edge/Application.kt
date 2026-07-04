@@ -41,6 +41,7 @@ import com.haky.edge.routes.comparisonRoutes
 import com.haky.edge.routes.eventRoutes
 import com.haky.edge.routes.chartRoutes
 import com.haky.edge.routes.dartRoutes
+import com.haky.edge.routes.earningsPreviewRoutes
 import com.haky.edge.routes.earningsRoutes
 import com.haky.edge.routes.investorRoutes
 import com.haky.edge.routes.macroImpactRoutes
@@ -229,11 +230,13 @@ fun Application.module() {
     val analog = com.haky.edge.ai.AnalogService(dailyHistory, master)
     // F6 채점 — 스탠스 로그 × 일봉 이력(F1 캐시 재사용) 20거래일 후 수익률 대조.
     val stanceStats = com.haky.edge.ai.StanceStatsService(stanceLog, dailyHistory)
+    // F3 실적 프리뷰 — run-rate YoY + 과거 발표 반응 통계(DART 접수일 × F1 일봉 캐시).
+    val earningsPreview = com.haky.edge.ai.EarningsPreviewService(dart, dailyHistory, master)
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
     val costSummary = CostSummaryService(slack, costChannel, usageTracker)
-    // S3a/b+F4 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가·수급 전환점 → #알림-신호 채널. 신호별 디듀프로 도배 방지.
-    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes, backtest)
+    // S3a/b+F4+F3 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가·수급 전환점·실적 리뷰 → #알림-신호 채널. 신호별 디듀프로 도배 방지.
+    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes, backtest, earningsPreview)
     // S7·S8 슬래시 명령 + 라운지 명령어. 서명검증 + 멀티 커맨드 라우팅.
     val slackVerifier = SlackSignatureVerifier(System.getenv("SLACK_SIGNING_SECRET").orEmpty())
     val slackCommand = SlackCommandService(analysis, master, slack, kis, marketMood, eventSync, comparison)
@@ -277,6 +280,7 @@ fun Application.module() {
             stanceStatsRoutes(stanceStats)
             dartRoutes(dart)
             earningsRoutes(dart)
+            earningsPreviewRoutes(earningsPreview)
             sectorRoutes(kis)
             sectorBriefingRoutes(sectorBriefing)
             shortSellingRoutes(krxShortSelling)
