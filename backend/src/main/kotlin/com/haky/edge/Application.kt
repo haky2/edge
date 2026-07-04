@@ -32,6 +32,7 @@ import com.haky.edge.news.TargetPriceLogService
 import com.haky.edge.news.NewsException
 import com.haky.edge.routes.analysisRoutes
 import com.haky.edge.routes.askRoutes
+import com.haky.edge.routes.portfolioReviewRoutes
 import com.haky.edge.routes.backtestRoutes
 import com.haky.edge.routes.catalystRoutes
 import com.haky.edge.routes.comparisonRoutes
@@ -212,6 +213,8 @@ fun Application.module() {
         // Q&A 일일 상한 — 자유 질문은 캐시가 없어 호출당 풀 LLM 비용. env로 재조정 가능.
         askDailyLimit = System.getenv("ASK_DAILY_LIMIT")?.toIntOrNull() ?: 200)
     val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand)
+    // 포트폴리오 종합 진단(B) — 집중도·매크로 노출·밸류 분포는 계산, Claude는 구조 해석만.
+    val portfolioReview = com.haky.edge.ai.PortfolioReviewService(kis, master, macroImpact, valuationBand, claude, modelRouter)
     val moodLog = MarketMoodLogService()
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, modelRouter, moodLog, eventSync)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
@@ -270,6 +273,7 @@ fun Application.module() {
             peerValuationRoutes(peerValuation)
             backtestRoutes(backtest)
             comparisonRoutes(comparison)
+            portfolioReviewRoutes(portfolioReview)
             eventRoutes(eventSync)
             webSearchTestRoutes(claude)
             prewarmRoutes(kis, dart)

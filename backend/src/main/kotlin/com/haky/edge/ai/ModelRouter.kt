@@ -34,6 +34,7 @@ class ModelRouter(
         const val ANALYSIS_MANUAL = "analysis_manual"
         const val CATALYST = "catalyst"
         const val ASK = "ask" // 종목 자유 질문 Q&A — 대화형(지연 민감)·볼륨 트리거라 기본 Sonnet
+        const val PORTFOLIO = "portfolio" // 포트폴리오 종합 진단 — facts가 전부 계산값이라 기본 Sonnet(env로 승격 가능)
 
         /**
          * 기본 Opus 대상: 브리핑 + 종목 최초 생성만. 나머지(자동 재생성·수동 새로고침·재료 판정)는
