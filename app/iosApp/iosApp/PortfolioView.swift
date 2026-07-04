@@ -8,8 +8,14 @@ struct PortfolioView: View {
     private let api = Db.api
     @State private var rows: [HoldingRow] = []
     @State private var sectorClassify: [String: String] = [:]  // code → sectorLabel (백엔드)
+    @State private var portfolioReview: PortfolioReview? = nil
+    @State private var reviewLoading = false
+    @State private var reviewExpanded = true
+    @State private var reviewCommentExpanded = false
     @State private var loading = false
     @State private var lastUpdated: Date?
+    @AppStorage(analysisModeKey) private var modeRaw = AnalysisMode.defensive.rawValue
+    private var analysisMode: AnalysisMode { AnalysisMode(rawValue: modeRaw) ?? .defensive }
 
     // 도넛·레전드 공용 팔레트. 인덱스로 색을 고정한다.
     private static let sliceColors: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .mint, .cyan, .yellow]
@@ -71,6 +77,10 @@ struct PortfolioView: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .onChange(of: modeRaw) {
+            portfolioReview = nil
+            Task { await loadPortfolioReview(force: false) }
+        }
     }
 
     // 보유 종목 리스트 + 상단 집계 카드
@@ -78,6 +88,12 @@ struct PortfolioView: View {
         List {
             Section {
                 summaryCard
+            }
+
+            if portfolioReview != nil || reviewLoading {
+                Section {
+                    portfolioReviewCard
+                }
             }
 
             Section("보유 종목 \(rows.count)개") {
@@ -241,6 +257,153 @@ struct PortfolioView: View {
         }
     }
 
+    // MARK: - 포트폴리오 종합 진단 카드
+
+    @ViewBuilder
+    private var portfolioReviewCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles").foregroundColor(.purple)
+                Text("포트폴리오 종합 진단").font(.subheadline.weight(.semibold))
+                if analysisMode == .aggressive {
+                    Text("⚔️ 공격적")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.15))
+                        .foregroundColor(.orange)
+                        .clipShape(Capsule())
+                }
+                Spacer()
+                if reviewLoading { ProgressView().scaleEffect(0.8) }
+                Image(systemName: reviewExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { reviewExpanded.toggle() } }
+
+            if reviewExpanded {
+                if let rev = portfolioReview {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 12) {
+                        // 핵심 요약
+                        if let summary = rev.summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "pin.fill").font(.caption2)
+                                    Text("핵심 요약").font(.caption.weight(.bold))
+                                }
+                                .foregroundColor(.purple)
+                                Text(summary)
+                                    .font(.callout)
+                                    .lineSpacing(5)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.purple.opacity(0.08))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+
+                        // 코멘트
+                        let commentBlocks = rev.comment
+                            .components(separatedBy: "\n\n")
+                            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                            .filter { !$0.isEmpty && $0 != "---" }
+                        let visibleBlocks = reviewCommentExpanded ? commentBlocks : Array(commentBlocks.prefix(2))
+                        HStack(alignment: .top, spacing: 10) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.purple.opacity(0.35))
+                                .frame(width: 3)
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(Array(visibleBlocks.enumerated()), id: \.offset) { _, block in
+                                    Text(block)
+                                        .font(.callout)
+                                        .lineSpacing(5)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                        }
+                        if commentBlocks.count > 2 {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) { reviewCommentExpanded.toggle() }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text(reviewCommentExpanded ? "접기" : "더보기")
+                                    Image(systemName: reviewCommentExpanded ? "chevron.up" : "chevron.down")
+                                }
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.purple)
+                            }
+                        }
+
+                        // 노출 요약 (상위 2개)
+                        let topExposures = rev.exposures.filter { $0.favorablePct > 0 || $0.adversePct > 0 }.prefix(2)
+                        if !topExposures.isEmpty {
+                            Divider()
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("주요 매크로 노출").font(.caption).foregroundColor(.secondary)
+                                ForEach(Array(topExposures.enumerated()), id: \.offset) { _, ex in
+                                    HStack(spacing: 6) {
+                                        Text(ex.label).font(.caption2).foregroundColor(.secondary).lineLimit(1)
+                                        Spacer()
+                                        if ex.favorablePct > 0 {
+                                            Text("수혜 \(Int(ex.favorablePct))%")
+                                                .font(.caption2.monospacedDigit())
+                                                .foregroundColor(.red)
+                                        }
+                                        if ex.adversePct > 0 {
+                                            Text("부담 \(Int(ex.adversePct))%")
+                                                .font(.caption2.monospacedDigit())
+                                                .foregroundColor(.blue)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 생성 정보 + 재생성 버튼
+                        HStack {
+                            let todayStr: String = {
+                                let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+                                f.timeZone = TimeZone(identifier: "Asia/Seoul")
+                                return f.string(from: Date())
+                            }()
+                            let label = rev.generatedAt.isEmpty ? "참고용 · \(rev.date) 기준"
+                                : (rev.date == todayStr ? "참고용 · 오늘 \(rev.generatedAt) 생성" : "참고용 · \(rev.date) \(rev.generatedAt) 생성")
+                            Text(label).font(.caption2).foregroundColor(.secondary)
+                            Spacer()
+                            if reviewLoading {
+                                ProgressView().scaleEffect(0.7)
+                            } else {
+                                Button {
+                                    Task { await loadPortfolioReview(force: true) }
+                                } label: {
+                                    Label("재생성", systemImage: "arrow.clockwise")
+                                        .font(.caption2)
+                                        .foregroundColor(.purple)
+                                }
+                            }
+                        }
+                        Text("투자 판단과 책임은 본인에게 있습니다")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    .padding(.top, 8).padding(.bottom, 4)
+                } else if reviewLoading {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("포트폴리오 구조 분석 중…").font(.footnote).foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     // MARK: - 섹터 비중 + 집중도 경고
 
     private func sectorWeightView(totalEval: Double) -> some View {
@@ -375,10 +538,30 @@ struct PortfolioView: View {
         lastUpdated = Date()
         loading = false
 
-        // 섹터 분류는 7일 캐시라 별도 비동기 로드 (화면 표시 차단 없이)
+        // 섹터 분류 + 포트폴리오 진단은 화면 표시 차단 없이 별도 비동기 로드
         if let entries = try? await api.getSectorClassify(codes: codes) {
             sectorClassify = Dictionary(uniqueKeysWithValues: entries.map { ($0.code, $0.sectorLabel) })
         }
+        await loadPortfolioReview(force: false)
+    }
+
+    private func loadPortfolioReview(force: Bool) async {
+        guard !rows.isEmpty else { return }
+        reviewLoading = true
+        if force { portfolioReview = nil; reviewCommentExpanded = false }
+        var positions: [String: KotlinPair<KotlinDouble, KotlinLong>] = [:]
+        for row in rows {
+            positions[row.item.code] = KotlinPair(
+                first: KotlinDouble(value: row.avg),
+                second: KotlinLong(value: Int64(row.qty))
+            )
+        }
+        portfolioReview = try? await api.getPortfolioReview(
+            positions: positions,
+            mode: analysisMode.rawValue,
+            refresh: force
+        )
+        reviewLoading = false
     }
 
     // MARK: - 포맷 헬퍼

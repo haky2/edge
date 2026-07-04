@@ -50,6 +50,7 @@ struct StockDetailView: View {
     @State private var loading = false
     @State private var showEdit = false
     @State private var showLogSheet = false
+    @State private var showAskSheet = false
     @State private var showComparePicker = false
     @State private var compareTarget: WatchItem? = nil
     @State private var showComparison = false
@@ -106,6 +107,10 @@ struct StockDetailView: View {
                     .help("다른 종목과 비교")
             }
             ToolbarItem(placement: .topBarTrailing) {
+                Button { showAskSheet = true } label: { Image(systemName: "questionmark.bubble") }
+                    .help("이 종목에 질문하기")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { showLogSheet = true } label: { Image(systemName: "flag") }
                     .help("매매 기록")
             }
@@ -132,6 +137,9 @@ struct StockDetailView: View {
             Task { await loadAnalysis() }
         }
         .onAppear { loadLogs() }
+        .sheet(isPresented: $showAskSheet) {
+            StockAskSheetView(item: item, api: api, mode: analysisMode)
+        }
         .sheet(isPresented: $showEdit) {
             PositionEditView(item: item) { updated in item = updated }
         }
@@ -2252,6 +2260,157 @@ private extension View {
             .padding(.vertical, 6)
             .background(Color(.secondarySystemBackground))
             .cornerRadius(12)
+    }
+}
+
+// 종목 Q&A 시트 — 사실 데이터를 근거로 자유 질문에 답한다.
+// history는 시트 내 세션 단위로 유지(닫으면 리셋). 서버는 무상태라 앱이 이전 턴을 매번 전송.
+struct StockAskSheetView: View {
+    let item: WatchItem
+    let api: EdgeApi
+    let mode: AnalysisMode
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var turns: [AskTurn] = []
+    @State private var inputText = ""
+    @State private var sending = false
+    @State private var errorMsg: String? = nil
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 16) {
+                            if turns.isEmpty && !sending {
+                                VStack(spacing: 8) {
+                                    Image(systemName: "questionmark.bubble")
+                                        .font(.system(size: 32))
+                                        .foregroundColor(.purple.opacity(0.5))
+                                    Text("\(item.name)에 대해 무엇이든 물어보세요")
+                                        .font(.callout.weight(.semibold))
+                                    Text("뉴스·수급·PER·밸류 등 현재 데이터를 기반으로 답변해요")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .multilineTextAlignment(.center)
+                                .padding(.top, 48)
+                                .padding(.horizontal, 24)
+                            }
+                            ForEach(Array(turns.enumerated()), id: \.offset) { idx, turn in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    // 질문 (오른쪽 정렬)
+                                    HStack {
+                                        Spacer()
+                                        Text(turn.question)
+                                            .font(.callout)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(Color.purple.opacity(0.12))
+                                            .cornerRadius(12)
+                                    }
+                                    // 답변 (왼쪽 정렬)
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Image(systemName: "sparkles")
+                                            .font(.caption)
+                                            .foregroundColor(.purple)
+                                            .padding(.top, 2)
+                                        Text(turn.answer)
+                                            .font(.callout)
+                                            .lineSpacing(5)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                        Spacer()
+                                    }
+                                }
+                                .id(idx)
+                            }
+                            if sending {
+                                HStack(spacing: 8) {
+                                    ProgressView().scaleEffect(0.8)
+                                    Text("답변 생성 중…").font(.caption).foregroundColor(.secondary)
+                                    Spacer()
+                                }
+                                .id("loading")
+                            }
+                            if let err = errorMsg {
+                                Text(err).font(.caption).foregroundColor(.red).padding(.top, 2)
+                            }
+                            Color.clear.frame(height: 1).id("bottom")
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                    }
+                    .onChange(of: turns.count) { withAnimation { proxy.scrollTo("bottom") } }
+                    .onChange(of: sending) { withAnimation { proxy.scrollTo("bottom") } }
+                }
+
+                Divider()
+                HStack(spacing: 8) {
+                    TextField("질문 입력 (최대 300자)", text: $inputText, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1...4)
+                        .disabled(sending)
+                    Button {
+                        Task { await sendQuestion() }
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 30))
+                            .foregroundColor(canSend ? .purple : Color(.systemFill))
+                    }
+                    .disabled(!canSend)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color(.systemBackground))
+            }
+            .navigationTitle("\(item.name) Q&A")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("닫기") { dismiss() }
+                }
+                if mode == .aggressive {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Text("⚔️ 공격적")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.15))
+                            .foregroundColor(.orange)
+                            .clipShape(Capsule())
+                    }
+                }
+            }
+        }
+    }
+
+    private var canSend: Bool {
+        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !sending
+    }
+
+    private func sendQuestion() async {
+        let q = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return }
+        errorMsg = nil
+        sending = true
+        inputText = ""
+        do {
+            let ans = try await api.ask(
+                code: item.code,
+                question: q,
+                avgPrice: item.avgPrice,
+                qty: item.qty,
+                targetPrice: item.targetPrice,
+                stopPrice: item.stopPrice,
+                mode: mode.rawValue,
+                history: turns
+            )
+            turns.append(AskTurn(question: q, answer: ans.answer))
+        } catch {
+            errorMsg = "답변을 불러오지 못했어요. 다시 시도해 주세요."
+            inputText = q
+        }
+        sending = false
     }
 }
 

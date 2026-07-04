@@ -17,13 +17,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,6 +71,7 @@ import androidx.compose.ui.unit.sp
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.ActionLogRepository
 import com.haky.edge.db.WatchlistRepository
+import com.haky.edge.model.AskTurn
 import com.haky.edge.model.Quote
 import com.haky.edge.model.WatchItem
 import androidx.compose.runtime.ReadOnlyComposable
@@ -113,6 +119,7 @@ fun StockDetailScreen(
     var indicatorHelpExpanded by remember { mutableStateOf(false) }
     var logEntries by remember { mutableStateOf<List<ActionLogEntry>>(emptyList()) }
     var showLogSheet by remember { mutableStateOf(false) }
+    var showAskSheet by remember { mutableStateOf(false) }
     val technical = remember(dailyBars) {
         if (dailyBars.isNotEmpty()) com.haky.edge.analysis.TechnicalIndicators.calculate(dailyBars) else null
     }
@@ -209,6 +216,9 @@ fun StockDetailScreen(
                             Icon(Icons.AutoMirrored.Filled.CompareArrows, contentDescription = "종목 비교")
                         }
                     }
+                    IconButton(onClick = { showAskSheet = true }) {
+                        Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "질문하기")
+                    }
                     IconButton(onClick = { showLogSheet = true }) {
                         Icon(Icons.Filled.Flag, contentDescription = "매매 기록")
                     }
@@ -294,6 +304,15 @@ fun StockDetailScreen(
                 },
             )
         }
+    }
+
+    if (showAskSheet) {
+        StockAskSheet(
+            item = watchItem,
+            api = api,
+            mode = AppPrefs.getMode(context),
+            onDismiss = { showAskSheet = false },
+        )
     }
 
     if (showLogSheet) {
@@ -1274,6 +1293,205 @@ private fun ActionLogSheet(
                     )
                     onSaved()
                 }) { Text("저장") }
+            }
+        }
+    }
+}
+
+// ─── 종목 Q&A 시트 ──────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StockAskSheet(
+    item: WatchItem,
+    api: EdgeApi,
+    mode: String,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+
+    var turns by remember { mutableStateOf<List<AskTurn>>(emptyList()) }
+    var inputText by remember { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(turns.size, sending) {
+        if (turns.isNotEmpty()) listState.animateScrollToItem(turns.size - 1)
+    }
+
+    fun sendQuestion() {
+        val q = inputText.trim()
+        if (q.isEmpty()) return
+        errorMsg = null
+        sending = true
+        val savedInput = q
+        inputText = ""
+        scope.launch {
+            try {
+                val ans = api.ask(
+                    code = item.code,
+                    question = q,
+                    avgPrice = item.avgPrice,
+                    qty = item.qty,
+                    targetPrice = item.targetPrice ?: 0.0,
+                    stopPrice = item.stopPrice ?: 0.0,
+                    mode = mode,
+                    history = turns,
+                )
+                turns = turns + AskTurn(question = q, answer = ans.answer)
+            } catch (_: Exception) {
+                errorMsg = "답변을 불러오지 못했어요. 다시 시도해 주세요."
+                inputText = savedInput
+            }
+            sending = false
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // 헤더
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "${item.name} Q&A",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                if (mode == "aggressive") {
+                    Text(
+                        "⚔️ 공격적",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = OrangeAccent,
+                        modifier = Modifier
+                            .background(OrangeAccent.copy(alpha = 0.12f), RoundedCornerShape(50))
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                }
+            }
+            HorizontalDivider()
+
+            // 대화 목록
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp),
+            ) {
+                if (turns.isEmpty() && !sending) {
+                    item {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(top = 32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Chat,
+                                contentDescription = null,
+                                modifier = Modifier.size(36.dp),
+                                tint = PurpleAccent.copy(alpha = 0.4f),
+                            )
+                            Text(
+                                "${item.name}에 대해 무엇이든 물어보세요",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                "뉴스·수급·PER·밸류 등 현재 데이터를 기반으로 답변해요",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
+                }
+                items(turns) { turn ->
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        // 질문 (오른쪽 정렬)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            Text(
+                                turn.question,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier
+                                    .background(PurpleAccent.copy(alpha = 0.1f), RoundedCornerShape(12.dp, 12.dp, 2.dp, 12.dp))
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                            )
+                        }
+                        // 답변 (왼쪽 정렬)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            Text("✦", color = PurpleAccent, style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(top = 2.dp))
+                            Text(
+                                turn.answer,
+                                style = MaterialTheme.typography.bodyMedium,
+                                lineHeight = 22.sp,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+                if (sending) {
+                    item {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = PurpleAccent)
+                            Text("답변 생성 중…", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                errorMsg?.let { msg ->
+                    item {
+                        Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+
+            // 입력창
+            HorizontalDivider()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = { if (it.length <= 300) inputText = it },
+                    placeholder = { Text("질문 입력 (최대 300자)", style = MaterialTheme.typography.bodySmall) },
+                    modifier = Modifier.weight(1f),
+                    enabled = !sending,
+                    maxLines = 4,
+                    shape = RoundedCornerShape(12.dp),
+                )
+                IconButton(
+                    onClick = { sendQuestion() },
+                    enabled = inputText.trim().isNotEmpty() && !sending,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Chat,
+                        contentDescription = "전송",
+                        tint = if (inputText.trim().isNotEmpty() && !sending) PurpleAccent
+                               else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                    )
+                }
             }
         }
     }

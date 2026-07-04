@@ -1,6 +1,9 @@
 package com.haky.edge.api
 
 import com.haky.edge.model.Analysis
+import com.haky.edge.model.AskAnswer
+import com.haky.edge.model.AskRequest
+import com.haky.edge.model.AskTurn
 import com.haky.edge.model.CatalystBriefReport
 import com.haky.edge.model.CatalystReport
 import com.haky.edge.model.Comparison
@@ -28,6 +31,7 @@ import com.haky.edge.model.TargetPriceInfo
 import com.haky.edge.model.MarketEvent
 import com.haky.edge.model.MoodAccuracyReport
 import com.haky.edge.model.PeerValuation
+import com.haky.edge.model.PortfolioReview
 import com.haky.edge.model.ValuationBand
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -38,6 +42,9 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
@@ -381,6 +388,45 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getMoodAccuracy(): MoodAccuracyReport =
         client.get("$baseUrl/market-mood-log").body()
+
+    /**
+     * 종목 자유 질문 Q&A. analyze()와 같은 사실 데이터를 근거로 질문에만 답한다.
+     * history: 이전 대화 턴(서버 무상태 — 앱이 직전 3턴을 되보냄).
+     * avgPrice·qty 있으면 내 포지션 기준 해석 포함.
+     */
+    @Throws(Exception::class)
+    suspend fun ask(
+        code: String,
+        question: String,
+        avgPrice: Double? = null,
+        qty: Long? = null,
+        targetPrice: Double? = null,
+        stopPrice: Double? = null,
+        mode: String = "defensive",
+        history: List<AskTurn> = emptyList(),
+    ): AskAnswer = client.post("$baseUrl/ask/$code") {
+        contentType(ContentType.Application.Json)
+        setBody(AskRequest(question, avgPrice, qty, targetPrice, stopPrice, mode, history))
+    }.body()
+
+    /**
+     * 포트폴리오 종합 진단. 보유 전체 구조 분석(집중도·매크로 노출·밸류 분포 + Claude 해석).
+     * positions: code → (avgPrice, qty). 개인별 캐시(날짜+포지션집합+모드).
+     */
+    @Throws(Exception::class)
+    suspend fun getPortfolioReview(
+        positions: Map<String, Pair<Double, Long>>,
+        mode: String = "defensive",
+        refresh: Boolean = false,
+    ): PortfolioReview = client.get("$baseUrl/portfolio-review") {
+        if (positions.isNotEmpty()) {
+            parameter("positions", positions.entries.joinToString(",") { (code, pos) ->
+                "$code:${pos.first.toLong()}:${pos.second}"
+            })
+        }
+        if (mode != "defensive") parameter("mode", mode)
+        if (refresh) parameter("refresh", "true")
+    }.body()
 
     /** 향후 N일 거시 이벤트 목록(CPI·FOMC·한은·MSCI·동시만기일 등). 기본 30일. */
     @Throws(Exception::class)

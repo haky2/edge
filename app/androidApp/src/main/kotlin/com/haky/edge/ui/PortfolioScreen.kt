@@ -1,6 +1,7 @@
 package com.haky.edge.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,15 +47,19 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.WatchlistRepository
+import com.haky.edge.model.PortfolioReview
 import com.haky.edge.model.Quote
 import com.haky.edge.model.WatchItem
+import com.haky.edge.ui.theme.PurpleAccent
 import com.haky.edge.ui.theme.ChangeDown
 import com.haky.edge.ui.theme.ChangeUp
 import com.haky.edge.ui.theme.OrangeAccent
@@ -110,7 +117,10 @@ fun PortfolioScreen(
 ) {
     var rows by remember { mutableStateOf<List<HoldingRow>>(emptyList()) }
     var sectorMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var portfolioReview by remember { mutableStateOf<PortfolioReview?>(null) }
+    var reviewLoading by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
 
     suspend fun load() {
@@ -133,10 +143,17 @@ fun PortfolioScreen(
             HoldingRow(item, quote, avg, qty, price)
         }
         loading = false
-        // 섹터 분류는 화면 표시 차단 없이 별도 로드
+        // 섹터 분류 + 포트폴리오 진단은 화면 표시 차단 없이 별도 로드
         runCatching { api.getSectorClassify(codes) }.getOrNull()?.let { entries ->
             sectorMap = entries.associate { it.code to it.sectorLabel }
         }
+        loadPortfolioReview(rows, api, AppPrefs.getMode(context), false) { portfolioReview = it; reviewLoading = false }
+    }
+
+    suspend fun loadReview(force: Boolean) {
+        reviewLoading = true
+        if (force) portfolioReview = null
+        loadPortfolioReview(rows, api, AppPrefs.getMode(context), force) { portfolioReview = it; reviewLoading = false }
     }
 
     LaunchedEffect(Unit) { load() }
@@ -171,7 +188,18 @@ fun PortfolioScreen(
                     }
                 }
                 rows.isEmpty() -> EmptyPortfolio()
-                else -> HoldingsList(rows, sectorMap)
+                else -> HoldingsList(
+                    rows = rows,
+                    sectorRows = run {
+                        val map = mutableMapOf<String, Double>()
+                        for (row in rows) map[sectorMap[row.item.code] ?: "기타"] =
+                            (map[sectorMap[row.item.code] ?: "기타"] ?: 0.0) + row.evaluated
+                        map.entries.sortedByDescending { it.value }.map { it.key to it.value }
+                    },
+                    review = portfolioReview,
+                    reviewLoading = reviewLoading,
+                    onReviewRefresh = { scope.launch { loadReview(true) } },
+                )
             }
         }
     }
@@ -212,20 +240,23 @@ private fun EmptyPortfolio() {
 // ── 보유 종목 리스트 ─────────────────────────────────────────────────────────
 
 @Composable
-private fun HoldingsList(rows: List<HoldingRow>, sectorMap: Map<String, String>) {
-    val sectorRows = run {
-        val map = mutableMapOf<String, Double>()
-        for (row in rows) {
-            val sector = sectorMap[row.item.code] ?: "기타"
-            map[sector] = (map[sector] ?: 0.0) + row.evaluated
-        }
-        map.entries.sortedByDescending { it.value }.map { it.key to it.value }
-    }
-
+private fun HoldingsList(
+    rows: List<HoldingRow>,
+    sectorRows: List<Pair<String, Double>>,
+    review: PortfolioReview?,
+    reviewLoading: Boolean,
+    onReviewRefresh: () -> Unit,
+) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
             SummaryCard(rows = rows, sectorRows = sectorRows)
             Spacer(Modifier.height(8.dp))
+        }
+        if (review != null || reviewLoading) {
+            item {
+                PortfolioReviewCard(review = review, loading = reviewLoading, onRefresh = onReviewRefresh)
+                Spacer(Modifier.height(8.dp))
+            }
         }
         item {
             Surface(
@@ -566,4 +597,186 @@ private fun HoldingRowItem(row: HoldingRow) {
             )
         }
     }
+}
+
+// ── 포트폴리오 종합 진단 카드 ────────��────────────────────────────────────────
+
+@Composable
+private fun PortfolioReviewCard(
+    review: PortfolioReview?,
+    loading: Boolean,
+    onRefresh: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(true) }
+    var commentExpanded by remember { mutableStateOf(false) }
+
+    Surface(
+        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("✦", color = PurpleAccent, style = MaterialTheme.typography.bodySmall)
+                    Text("포트폴리오 종합 진단", style = MaterialTheme.typography.titleSmall)
+                    if (loading) CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = PurpleAccent)
+                }
+                Icon(
+                    if (expanded) Icons.Filled.KeyboardArrowUp
+                    else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp).clickable { expanded = !expanded },
+                )
+            }
+
+            if (expanded && review != null) {
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(12.dp))
+
+                // 핵심 요약
+                review.summary?.takeIf { it.isNotBlank() }?.let { summary ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(PurpleAccent.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("📌", style = MaterialTheme.typography.labelSmall)
+                            Text("핵심 요약", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = PurpleAccent)
+                        }
+                        Text(summary, style = MaterialTheme.typography.bodyMedium, lineHeight = 22.sp)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+
+                // 코멘트
+                val blocks = review.comment.split("\n\n")
+                    .map { it.trim() }.filter { it.isNotEmpty() && it != "---" }
+                val visible = if (commentExpanded) blocks else blocks.take(2)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(3.dp)
+                            .height(if (visible.size > 1) 100.dp else 40.dp)
+                            .background(PurpleAccent.copy(alpha = 0.35f), RoundedCornerShape(2.dp)),
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.weight(1f)) {
+                        visible.forEach { block ->
+                            Text(block, style = MaterialTheme.typography.bodyMedium, lineHeight = 22.sp)
+                        }
+                    }
+                }
+                if (blocks.size > 2) {
+                    Spacer(Modifier.height(4.dp))
+                    androidx.compose.material3.TextButton(
+                        onClick = { commentExpanded = !commentExpanded },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                    ) {
+                        Text(
+                            if (commentExpanded) "접기" else "더보기",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = PurpleAccent,
+                        )
+                    }
+                }
+
+                // 주요 매크로 노출
+                val topExposures = review.exposures.filter { it.favorablePct > 0 || it.adversePct > 0 }.take(2)
+                if (topExposures.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
+                    Text("주요 매크로 노출", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(4.dp))
+                    topExposures.forEach { ex ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(ex.label, style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (ex.favorablePct > 0)
+                                    Text("수혜 ${ex.favorablePct.toInt()}%", style = MaterialTheme.typography.labelSmall, color = ChangeUp)
+                                if (ex.adversePct > 0)
+                                    Text("부담 ${ex.adversePct.toInt()}%", style = MaterialTheme.typography.labelSmall, color = ChangeDown)
+                            }
+                        }
+                    }
+                }
+
+                // 생성 시각 + 재생성
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val label = if (review.generatedAt.isEmpty()) "참고용 · ${review.date} 기준"
+                                else "참고용 · 오늘 ${review.generatedAt} 생성"
+                    Text(label, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (loading) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = PurpleAccent)
+                    } else {
+                        androidx.compose.material3.TextButton(
+                            onClick = onRefresh,
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                        ) {
+                            Text("재생성", style = MaterialTheme.typography.labelSmall, color = PurpleAccent)
+                        }
+                    }
+                }
+                Text("투자 판단과 책임은 본인에게 있습니다",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else if (expanded && loading) {
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = PurpleAccent)
+                    Text("포트폴리오 구조 분석 중…", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+// 포지션 → portfolio-review 호출. 콜백으로 결과 전달.
+private suspend fun loadPortfolioReview(
+    rows: List<HoldingRow>,
+    api: EdgeApi,
+    mode: String,
+    refresh: Boolean,
+    onResult: (PortfolioReview?) -> Unit,
+) {
+    if (rows.isEmpty()) { onResult(null); return }
+    val positions = rows.associate { row ->
+        row.item.code to Pair(row.avg, row.qty.toLong())
+    }
+    val result = runCatching { api.getPortfolioReview(positions, mode, refresh) }.getOrNull()
+    onResult(result)
 }
