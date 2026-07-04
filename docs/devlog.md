@@ -6,6 +6,62 @@
 
 ---
 
+## 2026-07-04 (8) — F6 AI 스탠스 적중률 6a+6b+6c (Fable)
+
+**한 일**
+- **6a**: 종목 분석 프롬프트 말미 `STANCE_TAG_INSTRUCTION`(COMMON_RULES와 분리된 후처리 지시, "판단이 서지 않으면 중립") → `parseStanceTag`가 `[스탠스: 긍정|중립|부정]` 줄 파싱 후 본문에서 제거(iOS 계약 불변, 실패=미상+원본 폴백). 생성분만 `{DATA_DIR}/stance_log.jsonl` append(캐시 적중 기록 없음). regime 필드도 기록(facts의 국면 판정 라벨 추출 — 레짐별 편향 집계용 스키마 선반영).
+- **6b**: `StanceStatsService` + `GET /stance-stats` — 20거래일 경과 건에 실제 수익률 조인(F1 `DailyHistoryService` 캐시 재사용), 긍정→상승/부정→하락/중립→±3% 채점, 전체·스탠스·모드·레짐별 집계. (code,date,mode) 중복은 마지막만. **스펙의 주 1회 배치 대신 조회 시 계산+당일 캐시** — 로그·일봉이 정본이라 저장할 상태가 없음(멱등).
+- **6c**: 내 패턴 탭 "종목 코멘트 적중률" 섹션(iOS+Android) — 전체/스탠스별 정확도·채점 대기 건수, 행동 로그 없어도 표시, "시장 방향 적중률과 다른 지표" 명시.
+- **테스트 함정 수정(중요)**: `fun x() = runBlocking { … }`이 Boolean 반환이 되면 JUnit이 **조용히 제외** — CatalystEventLogTest 4건이 실행된 적 없었음(테스트 리포트 XML로 발견). `: Unit` 명시로 수정 + 전 테스트 파일 전수 확인. **교훈: 새 테스트는 리포트에서 개수 확인.**
+- 검증: StanceTest 13(태그 파싱 6·레짐 추출 1·로그 1·채점 5) + 전체 테스트 + iOS/Android BUILD. 커밋 9bc45f7·68500d0.
+
+**다음 할 일**
+- 평일: 실호출로 스탠스 태그 출력 품질 확인(태그가 코멘트 톤에 영향 없는지) + F1/2-0/portfolio-review e2e 일괄.
+- 남은 스펙: F4(수급 전환점 알림) → F3(실적 프리뷰) → F5(프리모템) → F2-1~3(백필·통계·카드). 배포는 사용자 지시대로 작업 마무리 후 일괄.
+
+## 2026-07-04 (7) — F1 유사 국면 통계 1a+1b+1c (Fable)
+
+**한 일**
+- **1a**: `KisClient.getDailyChartRange`(기간 지정 일봉) + `DailyHistoryService` — 500거래일 페이지네이션(단일 응답 ~100건 제한, end를 뒤로 옮기며 최대 8페이지) + 종목별 파일 캐시(당일 히트=KIS 0콜, 당일 첫 조회=최신 1콜 증분 병합). **수정주가 함정 처리**: FID_ORG_ADJ_PRC=1은 분할·감자 시 과거 전체 재계산 → 겹치는 날짜 종가 불일치면 전체 리페치(스펙의 "불변 영구 캐시" 가정 보정).
+- **1b**: `AnalogService` + `GET /analog/{code}` — 상태 벡터 4피처(52주 위치·20일 수익률·거래량 비율·RSI14 Wilder=sharedLogic 산식 일치, v1 수급 제외) → 자기 분포 z-정규화 유클리드 거리 하위 30 → ±5거래일 클러스터(같은 국면 중복 집계 방지) → 5/20/60일 forward return 분포(승률·중앙값·평균·범위). look-ahead 금지, 최근 60일(미확정) 제외, 피처 동일 가중 고정. LLM 0, 당일 캐시.
+- **1c**: iOS `analogCard` + Android `AnalogCard`(ProbabilityBar 재사용, 50% 기준선) — '검증된 신호' 아래 접이식. SharedLogic `AnalogReport` + `EdgeApi.getAnalog()`(null=카드 숨김).
+- 검증: AnalogTest 14케이스(병합·수정주가 감지·RSI sharedLogic 일치·look-ahead·클러스터 간격·분산0·n<15 문구) + 전체 테스트 + iOS/Android BUILD 통과. 커밋 63ad0f8(백엔드)·47610f6(클라).
+
+**막힌 점**
+- KIS 주말 점검 지속 → `/analog` 실호출·시뮬 시각 확인 불가. **평일 체크리스트**: ① /analog/005930 첫 호출(페이지네이션 ~5콜, 500봉) ② 재호출 캐시 히트 ③ 시뮬 카드 표시 ④ /portfolio-review 실포지션 ⑤ 운영 catalyst_events.jsonl 누적 확인.
+
+**다음 할 일**
+- 배포(2-0+F1 백엔드 일괄). 이후 1d(peer 표본 확장, 옵션) 또는 F6 스탠스 로그.
+
+## 2026-07-04 (6) — 예측 보조 F2 슬라이스 2-0: 재료 이벤트 로그 (Fable)
+
+**한 일**
+- `docs/prediction-features-spec.md`(예측 보조 6종 작업분석서) 기준 착수. 2-0 = 이벤트 로그가 순서 무관 최우선(데이터는 지금부터 쌓여야 함).
+- `CatalystEventLog`: append-only jsonl(`{DATA_DIR}/catalyst_events.jsonl`) — {code, date(재료 날짜), source, category, sentiment, strength, preReflected, url, judgedAt}. PersistentMap(전체 재직렬화)이 아닌 줄 단위 append, 손상 줄은 읽기에서 skip.
+- `CatalystService.catalysts()` 훅: **이번에 처음 판정된 재료만** append(verdictStore 존재 여부가 중복 게이트). 판정 파싱 실패분(중립 폴백)은 verdictStore 미기록이라 다음 성공 판정 때 남음. preReflected는 판정 시점 룰 값.
+- `CatalystEventLogTest` 4케이스(왕복·빈 append·손상 줄 스킵·파일 없음) + 전체 테스트 통과. 커밋 924f4cf, push 완료.
+
+**막힌 점**
+- KIS 주말 점검(OAuth 타임아웃)으로 `/catalysts` 로컬 실호출 e2e 불가 — 훅 실동작 확인은 배포 후 평일 운영 jsonl 확인으로 갈음.
+- 로컬 백엔드 기동 시 8080 포트에 이전 인스턴스 잔존 → kill 후 재기동.
+
+**다음 할 일**
+- **미배포** — 배포해야 운영에서 월요일부터 이벤트가 쌓임(2-0의 취지). 사용자 확인 대기.
+- 이후: F1 유사 국면 통계(1a 일봉 이력 확장부터) 또는 F6 스탠스 로그(일찍 깔수록 데이터 쌓임).
+
+## 2026-07-04 (5) — A2+B 클라이언트 배치 (iOS + Android) (Fable)
+
+**한 일**
+- **종목 Q&A 시트(A2)**: iOS `StockAskSheetView` + Android `StockAskSheet(ModalBottomSheet)` — `POST /ask/{code}` 호출, chat history 클라이언트 보관·서버 매 요청 전달. 상세화면 툴바에 questionmark.bubble / Chat 아이콘.
+- **포트폴리오 진단 카드(B)**: iOS `portfolioReviewCard` + Android `PortfolioReviewCard` — `GET /portfolio-review`, 요약 박스·코멘트 접기/펼치기·매크로 노출 표 + 새로고침. 모드 변경 시 자동 재조회.
+- **SharedLogic**: `AskAnswer`/`AskRequest`/`AskTurn`, `PortfolioReview`/`SectorWeight`/`MacroExposure`/`ValuationBucket` 모델 추가. `EdgeApi.ask()`, `getPortfolioReview()` 추가.
+- Android 빌드 오류 3종 수정: `Icons.Filled.KeyboardArrowUp/Down`(패키지 경로 표현식 → 올바른 참조), `background`·`sp` import 누락. iOS 오류: `KotlinDouble?` 매개변수에 `.doubleValue`(unwrap) 전달 → 박싱값 직접 전달로 수정. `ModalBottomSheet(windowInsets=)` 파라미터 버전 불일치 → 제거.
+- 커밋: e0349a4, push 완료.
+
+**다음 할 일**
+- KIS 평일 e2e 테스트: `/portfolio-review` 실 포지션으로 호출 확인.
+- Batch F(릴리스): 앱 아이콘·다크모드·아이콘 시스템 등 그래픽 배치 (graphic-design-batch 메모리 참고).
+
 ## 2026-07-04 (4) — 포트폴리오 종합 진단 B 백엔드 (Fable)
 
 **한 일**
