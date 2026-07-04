@@ -32,6 +32,7 @@ struct StockDetailView: View {
     @State private var peerExpanded = false
     @State private var backtest: Backtest?          // 신호별 익일 적중률(검증된 신호)
     @State private var flowSensitivity: FlowSensitivity?  // 수급-가격 민감도
+    @State private var analog: AnalogReport?        // 유사 국면 통계(F1)
     @State private var earningsExpanded = false
     @State private var signalExpanded = false
     @State private var indicatorHelpExpanded = false
@@ -39,6 +40,7 @@ struct StockDetailView: View {
     @State private var analysisExpanded = false      // 지표 해석 (기본 접힘)
     @State private var valuationExpanded = false     // 밸류에이션 히스토리 (기본 접힘)
     @State private var backtestExpanded = false      // 검증된 신호 (기본 접힘)
+    @State private var analogExpanded = false        // 유사 국면 통계 (기본 접힘)
     @State private var flowSensExpanded = false      // 수급-가격 민감도 (기본 접힘)
     @State private var shortSellingExpanded = false  // 공매도 동향 (기본 접힘)
     @State private var chartPeriod: ChartPeriod = .m3   // 가격 차트 기간 토글
@@ -86,6 +88,7 @@ struct StockDetailView: View {
                     if let band = valuationBand { valuationBandCard(band) }
                     if let pv = peerValuation { peerValuationCard(pv) }
                     if let bt = backtest { backtestCard(bt) }
+                    if let an = analog, an.n > 0 { analogCard(an) }
                     if let fs = flowSensitivity { flowSensitivityCard(fs) }
                     if let ss = shortSelling { shortSellingCard(ss) }
                 } else if loading {
@@ -1584,6 +1587,75 @@ struct StockDetailView: View {
         .opacity(confident ? 1.0 : 0.6)
     }
 
+    // 유사 국면 통계 카드(F1) — 오늘 상태와 비슷했던 과거 시점들의 이후 실제 수익률 분포
+    private func analogCard(_ an: AnalogReport) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("유사 국면 통계").font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("과거 \(an.n)개 국면 실측").font(.caption2).foregroundColor(.secondary)
+                Image(systemName: analogExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { analogExpanded.toggle() } }
+            if analogExpanded {
+                Divider()
+                VStack(alignment: .leading, spacing: 12) {
+                    if let v = an.vectorToday {
+                        Text("오늘 상태: 52주 \(Int(v.pos52w))% · 20일 \(String(format: "%+.1f", v.ret20))% · 거래량 \(String(format: "%.1f", v.volumeRatio))배 · RSI \(Int(v.rsi14))")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    ForEach(Array(an.horizons.enumerated()), id: \.offset) { idx, h in
+                        if idx > 0 { Divider() }
+                        analogHorizonRow(h)
+                    }
+                    Text(an.caveat)
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                .padding(.top, 8).padding(.bottom, 4)
+            }
+        }
+        .cardStyle()
+    }
+
+    private func analogHorizonRow(_ h: AnalogHorizon) -> some View {
+        let win = Int(h.winRate)
+        let up = h.median >= 0
+        let accent: Color = up ? .red : .blue
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("\(h.days)일 후").font(.caption.weight(.semibold))
+                Spacer()
+                Text("중앙값 \(String(format: "%+.1f", h.median))%")
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(accent.opacity(0.15)).foregroundColor(accent).cornerRadius(8)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.gray.opacity(0.18)).frame(height: 6)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(accent.opacity(0.7))
+                        .frame(width: geo.size.width * CGFloat(win) / 100.0, height: 6)
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.5))
+                        .frame(width: 1.5, height: 10)
+                        .offset(x: geo.size.width * 0.5 - 0.75, y: -2)
+                }
+            }
+            .frame(height: 10)
+            HStack {
+                Text("상승 확률 \(win)%").font(.caption2)
+                Spacer()
+                Text("평균 \(String(format: "%+.1f", h.avg))% · 범위 \(String(format: "%.1f", h.min))~\(String(format: "%+.1f", h.max))%")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+        }
+    }
+
     // 수급-가격 민감도 카드 — 외인/기관 순매수량 vs 당일 등락률 Pearson 상관
     private func flowSensitivityCard(_ fs: FlowSensitivity) -> some View {
         let shown = fs.items.filter { $0.n > 0 }
@@ -2212,6 +2284,7 @@ struct StockDetailView: View {
         async let peerValuationTask = api.getPeerValuation(code: item.code)
         async let backtestTask          = api.getBacktest(code: item.code)
         async let flowSensitivityTask   = api.getFlowSensitivity(code: item.code)
+        async let analogTask            = api.getAnalog(code: item.code)
         earningsEntry   = (try? await earnsTask)?.first
         stockSignal     = try? await signalTask
         shortSelling    = try? await shortSellingTask
@@ -2219,6 +2292,7 @@ struct StockDetailView: View {
         peerValuation   = try? await peerValuationTask
         backtest        = try? await backtestTask
         flowSensitivity = try? await flowSensitivityTask
+        analog          = try? await analogTask
     }
 
     private func loadAnalysis(force: Bool = false) async {

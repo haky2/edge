@@ -105,6 +105,7 @@ fun StockDetailScreen(
     var valuationBand by remember { mutableStateOf<com.haky.edge.model.ValuationBand?>(null) }
     var peerValuation by remember { mutableStateOf<com.haky.edge.model.PeerValuation?>(null) }
     var backtest by remember { mutableStateOf<com.haky.edge.model.Backtest?>(null) }
+    var analog by remember { mutableStateOf<com.haky.edge.model.AnalogReport?>(null) }
     var flowSensitivity by remember { mutableStateOf<com.haky.edge.model.FlowSensitivity?>(null) }
     var earnings by remember { mutableStateOf<com.haky.edge.model.EarningsEntry?>(null) }
     var stockSignal by remember { mutableStateOf<com.haky.edge.model.StockImpact?>(null) }
@@ -193,6 +194,7 @@ fun StockDetailScreen(
         try { valuationBand = api.getValuationBand(code) } catch (_: Exception) {}
         try { peerValuation = api.getPeerValuation(code) } catch (_: Exception) {}
         try { backtest = api.getBacktest(code) } catch (_: Exception) {}
+        try { analog = api.getAnalog(code) } catch (_: Exception) {}
         try { flowSensitivity = api.getFlowSensitivity(code) } catch (_: Exception) {}
         try { earnings = api.getEarnings(listOf(code)).firstOrNull() } catch (_: Exception) {}
         try { stockSignal = api.getStockSignals(code) } catch (_: Exception) {}
@@ -292,6 +294,7 @@ fun StockDetailScreen(
             valuationBand?.let { ValuationBandCard(it) }
             peerValuation?.let { PeerValuationCard(it) }
             backtest?.let { BacktestCard(it) }
+            analog?.let { AnalogCard(it) }
             flowSensitivity?.let { FlowSensitivityCard(it) }
             shortSelling?.let { ShortSellingCard(it) }
             earnings?.let { EarningsCard(it) }

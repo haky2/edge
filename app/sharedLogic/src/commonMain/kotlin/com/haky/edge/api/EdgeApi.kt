@@ -1,5 +1,6 @@
 package com.haky.edge.api
 
+import com.haky.edge.model.AnalogReport
 import com.haky.edge.model.Analysis
 import com.haky.edge.model.AskAnswer
 import com.haky.edge.model.AskRequest
@@ -382,6 +383,15 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getFlowSensitivity(code: String): FlowSensitivity? = runCatching {
         client.get("$baseUrl/flow-sensitivity/$code").body<FlowSensitivity>()
+    }.getOrNull()
+
+    /**
+     * 유사 국면 통계(F1). 오늘 상태와 유사했던 과거 시점들의 이후 5/20/60거래일
+     * 실제 수익률 분포 — 과거 기저율이지 예측이 아님. 이력 부족·오류 시 null(카드 숨김).
+     */
+    @Throws(Exception::class)
+    suspend fun getAnalog(code: String): AnalogReport? = runCatching {
+        client.get("$baseUrl/analog/$code").body<AnalogReport>()
     }.getOrNull()
 
     /** AI 시장 방향 예측 적중률 리포트. 예측(미국 지수·환율) vs 실제(코스피) 채점 결과. */

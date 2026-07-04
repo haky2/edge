@@ -51,6 +51,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.haky.edge.model.AnalogHorizon
+import com.haky.edge.model.AnalogReport
 import com.haky.edge.model.Analysis
 import com.haky.edge.model.Backtest
 import com.haky.edge.model.CatalystItem
@@ -490,6 +492,56 @@ private fun ProbabilityBar(winFraction: Float, baselineFraction: Float, color: C
         drawRoundRect(color.copy(alpha = if (dimmed) 0.4f else 0.7f), Offset(0f, trackY), Size(size.width * winFraction.coerceIn(0f, 1f), trackH), CornerRadius(3.dp.toPx()))
         val bx = (size.width * baselineFraction).coerceIn(0f, size.width - 1.5.dp.toPx())
         drawRect(baselineColor.copy(alpha = 0.5f), Offset(bx, size.height / 2f - 5.dp.toPx()), Size(1.5.dp.toPx(), 10.dp.toPx()))
+    }
+}
+
+// ─── 유사 국면 통계 (F1) ─────────────────────────────────
+
+@Composable
+internal fun AnalogCard(an: AnalogReport) {
+    if (an.n <= 0) return
+    CollapsibleCard(
+        title = "유사 국면 통계",
+        trailing = { Text("과거 ${an.n}개 국면 실측", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            an.vectorToday?.let { v ->
+                Text(
+                    "오늘 상태: 52주 ${v.pos52w.toInt()}% · 20일 %+.1f%% · 거래량 %.1f배 · RSI ${v.rsi14.toInt()}".format(v.ret20, v.volumeRatio),
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            an.horizons.forEachIndexed { idx, h ->
+                if (idx > 0) HorizontalDivider()
+                AnalogHorizonRow(h)
+            }
+            Text(an.caveat, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun AnalogHorizonRow(h: AnalogHorizon) {
+    val up = h.median >= 0
+    val accent = if (up) ChangeUp else ChangeDown
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("${h.days}일 후", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f))
+            BadgePill("중앙값 %+.1f%%".format(h.median), accent)
+        }
+        ProbabilityBar(
+            winFraction = (h.winRate / 100f).toFloat(),
+            baselineFraction = 0.5f,
+            color = accent,
+            dimmed = false,
+            baselineColor = onSurface,
+            modifier = Modifier.fillMaxWidth().height(10.dp),
+        )
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("상승 확률 ${h.winRate.toInt()}%", style = MaterialTheme.typography.labelSmall, color = onSurface)
+            Text("평균 %+.1f%% · 범위 %.1f~%+.1f%%".format(h.avg, h.min, h.max), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
