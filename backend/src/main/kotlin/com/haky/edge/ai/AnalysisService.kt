@@ -192,7 +192,7 @@ class AnalysisService(
         cache[key] = Cached(analysis)
         fileCache.put(key, analysis)
         // F6: 생성분만 스탠스 기록(캐시 적중은 위에서 이미 반환됨 — 중복 없음). "미상"도 기록(채점 제외용).
-        stanceLog.append(StanceEntry(code, today, mode.name.lowercase(), stance, cf.quote.price.toDouble(), now))
+        stanceLog.append(StanceEntry(code, today, mode.name.lowercase(), stance, cf.quote.price.toDouble(), now, extractRegime(facts)))
         // S4: 공개 분석(포지션 없음)만 #ai코멘트 채널 아카이브. 포지션 포함은 개인정보라 skip.
         if (position == null && aiCommentChannel.isNotBlank() && notifyScope != null) {
             notifyScope.launch { slack.postMessage(aiCommentChannel, formatAiCommentMessage(analysis, mode, isRefresh)) }
@@ -954,6 +954,10 @@ class AnalysisService(
             if (matches.isEmpty()) return "미상" to raw
             return matches.last().groupValues[1] to lineRegex.replace(raw, "").trimEnd()
         }
+
+        /** facts 텍스트에서 국면 판정 라벨(짧은 형태)만 추출 — 스탠스 로그의 레짐별 집계용. */
+        internal fun extractRegime(facts: String): String? =
+            Regex("""국면 판정\(계산\): (리레이팅 국면|디레이팅 경계)""").find(facts)?.groupValues?.get(1)
 
         // ── 시스템 프롬프트(캐시 대상) ────────────────────────────────────────
         // 방어/공격 공통 규칙은 COMMON_RULES 한 곳에만 둔다 — 두 프롬프트가 80% 복제였던

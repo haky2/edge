@@ -19,6 +19,7 @@ data class StanceEntry(
     val stance: String,        // "긍정" | "중립" | "부정" | "미상"(태그 파싱 실패 — 채점 제외)
     val priceAtGen: Double,    // 생성 시점 주가 — 20거래일 후 수익률 채점 기준
     val generatedAt: String = "", // HH:mm(KST)
+    val regime: String? = null,   // facts의 국면 판정 라벨(리레이팅/디레이팅, 없으면 null) — 레짐별 편향 집계용
 )
 
 /** append-only jsonl({DATA_DIR}/stance_log.jsonl). 손상 줄은 읽기에서 건너뛴다. */

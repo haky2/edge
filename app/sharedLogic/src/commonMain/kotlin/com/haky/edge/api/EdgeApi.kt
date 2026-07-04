@@ -2,6 +2,7 @@ package com.haky.edge.api
 
 import com.haky.edge.model.AnalogReport
 import com.haky.edge.model.Analysis
+import com.haky.edge.model.StanceStats
 import com.haky.edge.model.AskAnswer
 import com.haky.edge.model.AskRequest
 import com.haky.edge.model.AskTurn
@@ -398,6 +399,12 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getMoodAccuracy(): MoodAccuracyReport =
         client.get("$baseUrl/market-mood-log").body()
+
+    /** 종목 코멘트 스탠스 적중률(F6). 시장 방향 예측과 별도 지표. 오류 시 null(항목 숨김). */
+    @Throws(Exception::class)
+    suspend fun getStanceStats(): StanceStats? = runCatching {
+        client.get("$baseUrl/stance-stats").body<StanceStats>()
+    }.getOrNull()
 
     /**
      * 종목 자유 질문 Q&A. analyze()와 같은 사실 데이터를 근거로 질문에만 답한다.

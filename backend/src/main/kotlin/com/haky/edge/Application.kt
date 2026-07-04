@@ -32,6 +32,7 @@ import com.haky.edge.news.TargetPriceLogService
 import com.haky.edge.news.NewsException
 import com.haky.edge.routes.analogRoutes
 import com.haky.edge.routes.analysisRoutes
+import com.haky.edge.routes.stanceStatsRoutes
 import com.haky.edge.routes.askRoutes
 import com.haky.edge.routes.portfolioReviewRoutes
 import com.haky.edge.routes.backtestRoutes
@@ -210,9 +211,12 @@ fun Application.module() {
     val valuationBand = ValuationBandService(kis, dart)
     val peerValuation = PeerValuationService(kis, master, macroImpact)
     val backtest = BacktestService(kis)
+    // F6: 스탠스 로그는 기록(AnalysisService)과 채점(StanceStatsService)이 같은 파일을 봐야 해서 공유.
+    val stanceLog = com.haky.edge.ai.StanceLog()
     val analysis = AnalysisService(kis, toss, naver, master, claude, dart, naverTargetPrice, targetPriceLog, macroImpact, krxShortSelling, valuationBand, peerValuation, backtest, eventSync, modelRouter, slack, aiCommentChannel, this,
         // Q&A 일일 상한 — 자유 질문은 캐시가 없어 호출당 풀 LLM 비용. env로 재조정 가능.
-        askDailyLimit = System.getenv("ASK_DAILY_LIMIT")?.toIntOrNull() ?: 200)
+        askDailyLimit = System.getenv("ASK_DAILY_LIMIT")?.toIntOrNull() ?: 200,
+        stanceLog = stanceLog)
     val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand)
     // 포트폴리오 종합 진단(B) — 집중도·매크로 노출·밸류 분포는 계산, Claude는 구조 해석만.
     val portfolioReview = com.haky.edge.ai.PortfolioReviewService(kis, master, macroImpact, valuationBand, claude, modelRouter)
@@ -223,6 +227,8 @@ fun Application.module() {
     // F1 유사 국면 통계 — 장기 일봉 이력(페이지네이션+파일 캐시) 위 기저율 계산. LLM 0.
     val dailyHistory = com.haky.edge.ai.DailyHistoryService(kis)
     val analog = com.haky.edge.ai.AnalogService(dailyHistory, master)
+    // F6 채점 — 스탠스 로그 × 일봉 이력(F1 캐시 재사용) 20거래일 후 수익률 대조.
+    val stanceStats = com.haky.edge.ai.StanceStatsService(stanceLog, dailyHistory)
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
     val costSummary = CostSummaryService(slack, costChannel, usageTracker)
@@ -268,6 +274,7 @@ fun Application.module() {
             askRoutes(analysis)
             catalystRoutes(catalyst)
             analogRoutes(analog)
+            stanceStatsRoutes(stanceStats)
             dartRoutes(dart)
             earningsRoutes(dart)
             sectorRoutes(kis)

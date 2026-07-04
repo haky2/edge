@@ -154,6 +154,7 @@ fun StatsScreen(
     var positionMap by remember { mutableStateOf<Map<String, WatchItem>>(emptyMap()) }
     var missedRows by remember { mutableStateOf<List<MissedRow>>(emptyList()) }
     var missedLoading by remember { mutableStateOf(false) }
+    var stanceStats by remember { mutableStateOf<com.haky.edge.model.StanceStats?>(null) } // 종목 코멘트 적중률(F6)
 
     // 접기/펼치기 — SharedPrefs 영속
     var recentExpanded by remember { mutableStateOf(AppPrefs.getStatsExpanded(ctx, AppPrefs.STATS_RECENT)) }
@@ -195,6 +196,9 @@ fun StatsScreen(
         nameMap = resolved
         positionMap = watchItems.associateBy { it.code }
 
+        // 종목 코멘트 적중률(서버 집계, 행동 로그와 무관)
+        try { stanceStats = api.getStanceStats() } catch (_: Exception) {}
+
         // 놓친 종목 비동기 로드
         missedLoading = true
         missedRows = loadMissed(entries, nameMap, api)
@@ -204,7 +208,8 @@ fun StatsScreen(
     Scaffold(
         topBar = { CompactHeader(title = "내 패턴") }
     ) { innerPadding ->
-        if (entries.isEmpty() && !missedLoading) {
+        val hasStance = stanceStats?.let { it.scored > 0 || it.pending > 0 } == true
+        if (entries.isEmpty() && !missedLoading && !hasStance) {
             EmptyStats(modifier = Modifier.fillMaxSize().padding(innerPadding))
             return@Scaffold
         }
@@ -481,6 +486,46 @@ fun StatsScreen(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
+                }
+            }
+
+            // ── 종목 코멘트 적중률 (F6, 서버 집계) ──
+            if (hasStance) {
+                item {
+                    val ss = stanceStats!!
+                    SectionCard(
+                        header = "종목 코멘트 적중률",
+                        footer = "종목 분석 코멘트의 시각(긍정/중립/부정)이 ${ss.horizonDays}거래일 뒤 실제 수익률과 맞았는지예요. 브리핑의 시장 방향 적중률과는 다른 지표예요.",
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+                            ss.overall?.let { o ->
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Text("전체", style = MaterialTheme.typography.bodyMedium)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Text("${o.accuracyPct.toInt()}%", style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (o.accuracyPct >= 50) ChangeUp else ChangeDown)
+                                        Text("(${o.correct}/${o.n})", style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                ss.byStance.forEach { b ->
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text(b.label, style = MaterialTheme.typography.labelSmall)
+                                        Text("${b.accuracyPct.toInt()}% (${b.correct}/${b.n})",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                            if (ss.pending > 0) {
+                                Text("채점 대기 ${ss.pending}건 (생성 후 ${ss.horizonDays}거래일 경과 시 채점)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
                 }
             }
         }

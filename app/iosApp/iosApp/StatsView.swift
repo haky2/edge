@@ -13,6 +13,7 @@ struct StatsView: View {
     @State private var positionMap: [String: WatchItem] = [:]  // code → stop/target
     @State private var missedRows: [MissedRow] = []
     @State private var missedLoading = false
+    @State private var stanceStats: StanceStats?   // 종목 코멘트 적중률(F6, 시장 방향 예측과 별도)
     // 접기/펼치기 상태 (앱 재시작 시 유지)
     @AppStorage("statsRecentExpanded") private var recentExpanded = false
     @AppStorage("statsCodeExpanded")   private var codeExpanded   = false
@@ -36,6 +37,8 @@ struct StatsView: View {
                     codeSection
                     if avgHoldDays != nil || !pairRows.isEmpty { holdSection }
                 }
+                // 종목 코멘트 적중률은 행동 로그와 무관(서버 집계)이라 로그가 비어도 표시
+                if let ss = stanceStats, ss.scored > 0 || ss.pending > 0 { stanceSection(ss) }
             }
             .contentMargins(.top, 0, for: .scrollContent)
             .navigationTitle("내 패턴")
@@ -56,6 +59,40 @@ struct StatsView: View {
             recentSection
             codeSection
             if avgHoldDays != nil || !pairRows.isEmpty { holdSection }
+        }
+    }
+
+    // MARK: - 섹션: 종목 코멘트 적중률 (F6)
+
+    private func stanceSection(_ ss: StanceStats) -> some View {
+        Section {
+            if let overall = ss.overall {
+                HStack {
+                    Text("전체").font(.subheadline)
+                    Spacer()
+                    Text("\(Int(overall.accuracyPct))%")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundColor(overall.accuracyPct >= 50 ? .red : .blue)
+                    Text("(\(overall.correct)/\(overall.n))")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                ForEach(Array(ss.byStance.enumerated()), id: \.offset) { _, b in
+                    HStack {
+                        Text(b.label).font(.caption)
+                        Spacer()
+                        Text("\(Int(b.accuracyPct))% (\(b.correct)/\(Int(b.n)))")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                }
+            }
+            if ss.pending > 0 {
+                Text("채점 대기 \(ss.pending)건 (생성 후 \(ss.horizonDays)거래일 경과 시 채점)")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            Text("종목 분석 코멘트의 시각(긍정/중립/부정)이 \(ss.horizonDays)거래일 뒤 실제 수익률과 맞았는지예요. 브리핑의 시장 방향 적중률과는 다른 지표예요.")
+                .font(.caption2).foregroundColor(.secondary)
+        } header: {
+            Text("종목 코멘트 적중률")
         }
     }
 
@@ -639,6 +676,10 @@ struct StatsView: View {
         nameMap = resolved
         positionMap = Dictionary(uniqueKeysWithValues: watchItems.map { ($0.code, $0) })
         Task { await loadMissed() }
+        Task {
+            let ss = try? await api.getStanceStats()
+            await MainActor.run { stanceStats = ss }
+        }
         // 3) 여전히 모르는 코드는 검색 API로 조회 → 메인 스레드에서 일괄 반영
         let unknownCodes = Set(entries.map { $0.code }).subtracting(resolved.keys)
         if !unknownCodes.isEmpty {
