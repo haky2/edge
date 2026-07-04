@@ -96,6 +96,7 @@ class CatalystService(
     private val valuationBandSvc: ValuationBandService,
     private val macroImpact: MacroImpactService,
     private val modelRouter: ModelRouter,
+    private val eventLog: CatalystEventLog = CatalystEventLog(),
 ) {
     // 30분 버킷 빠른 경로(재료 묶음 + 룰 결과 스냅샷). 같은 30분 내 재호출은 즉시.
     private val cache = ConcurrentHashMap<String, CatalystReport>()
@@ -158,6 +159,7 @@ class CatalystService(
             val cachedSummary = summaryStore.get(setKey)
 
             var summary = cachedSummary ?: ""
+            var newlyJudgedUrls: Set<String> = emptySet()
             if (newMaterials.isNotEmpty() || cachedSummary == null) {
                 val model = modelRouter.modelFor(ModelRouter.CATALYST)
                 val revenueEok = financialsD.await()?.revenue?.let { it / 100_000_000 }
@@ -165,6 +167,7 @@ class CatalystService(
                 val raw = claude.complete(SYSTEM_PROMPT, userMsg, maxTokens = 2500, modelOverride = model)
                 val (parsedSummary, verdictsByIdx) = parseJudge(raw)
                 verdictsByIdx.forEach { (i, v) -> materials.getOrNull(i)?.let { verdictStore.put(verdictKey(it), v) } }
+                newlyJudgedUrls = verdictsByIdx.keys.mapNotNull { materials.getOrNull(it)?.url }.toSet()
                 if (parsedSummary.isNotBlank()) summary = parsedSummary
                 summaryStore.put(setKey, summary)
                 verdictStore.persist(); summaryStore.persist()
@@ -182,6 +185,19 @@ class CatalystService(
                     preReflected = pre, preReflectedNote = note, url = m.url, date = m.date,
                 )
             }
+            // 이벤트 로그: 이번에 "처음" 판정된 재료만 append(중복 없음 — verdictStore 존재 여부가 게이트).
+            // 판정 파싱 실패분(중립 폴백)은 verdictStore 미기록이라 다음 성공 판정 때 남는다.
+            if (newlyJudgedUrls.isNotEmpty()) {
+                val judgedAt = nowKstIso()
+                eventLog.append(items.filter { it.url in newlyJudgedUrls }.map {
+                    CatalystEvent(
+                        code = code, date = it.date, source = it.source, category = it.category,
+                        sentiment = it.sentiment, strength = it.strength,
+                        preReflected = it.preReflected, url = it.url, judgedAt = judgedAt,
+                    )
+                })
+            }
+
             val netBias = netBiasRule(items)
             val finalSummary = appendPreReflectedCaveat(summary, items, netBias)
 
@@ -392,6 +408,10 @@ class CatalystService(
     private fun nowKstHm(): String =
         java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+
+    private fun nowKstIso(): String =
+        java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul"))
+            .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
 
     /**
      * 작은 영속 맵(code|key → V). 인메모리 + 단일 JSON 파일(CACHE_DIR).
