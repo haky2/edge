@@ -15,16 +15,19 @@ import java.io.File
  * 신호 알림 푸시(S3) — 관심종목을 순회하며 의미 있는 신호가 *새로* 발생했을 때만 Slack 채널에 알린다.
  * 무료 푸시 대체의 메인 가치([[edge-slack-slices]] S3). 앱은 pull, 이건 백엔드가 능동 push.
  *
- * 신호 3종(전부 기존 데이터 재사용, 새 API 0):
+ * 신호 4종(전부 기존 데이터 재사용, 새 API 0):
  *  1. 연속 순매수 — 외국인/기관 N일 연속(/investor).
  *  2. 신규 공시 — 중요 유형(수주·증자·자사주·합병·실적 등) DART 공시(/dart).
  *  3. 밸류밴드 저평가 진입 — 역사적 PER 하위 구간 진입(valuation-band).
+ *  4. 수급 전환점(F4) — 5일 연속 순매도 후 첫 순매수(반대 방향 대칭). #1은 추세 확인, 이건 변곡 감지.
+ *     수급이 가격을 실제로 움직이는 종목만(flow-sensitivity r≥0.3·confident) — 소음 필터.
  *
  * 도배 방지(핵심) — 신호마다 디듀프 패턴이 다르고, 상태를 {DATA_DIR}/signal_state.json에 영속한다
  *   (`.cache/`(날짜 자동 stale)와 달리 삭제 대상 아님. GCS edge-app-data 볼륨이라 콜드 스타트에도 유지):
  *   - 순매수: key="code:FOREIGN" → 마지막 발화 streak 시작일. 같은 streak는 1번, 끊겼다 재시작하면 재발화.
  *   - 공시:   key="DISC:code"    → 이미 알린 rceptNo 목록(최근 N개). 새 접수번호만 발화.
  *   - 밸류:   key="VALUE:code"   → 마지막 본 perLabel. "저평가 아님→저평가" 전이일 때만 발화(상태는 매번 갱신).
+ *   - 전환:   key="REV:code:주체:방향" → 마지막 발화일. 같은 방향 전환은 7일 내 재알림 금지.
  *
  * 발송: 발생 신호를 종류별 섹션으로 묶어 한 메시지로 한 번만 발송(종목마다 따로 보내 도배하지 않는다).
  *   채널/토큰 미설정(로컬)이면 SlackClient가 no-op — 평가 로직은 그대로 돌아 라우트 응답으로 검증 가능.
@@ -37,6 +40,7 @@ class SignalService(
     private val valuationBand: ValuationBandService,
     private val signalChannel: String,
     private val codes: List<String>,
+    private val backtest: com.haky.edge.ai.BacktestService? = null, // F4 필터·근거용(없으면 전환 신호 skip)
 ) {
     private val dataDir = File(System.getenv("DATA_DIR") ?: ".data").also { it.mkdirs() }
     private val stateFile = File(dataDir, "signal_state.json")
@@ -54,27 +58,53 @@ class SignalService(
     private data class FlowSignal(val code: String, val name: String, val type: FlowType, val streak: Int, val startDate: String, val cumulative: Long)
     private data class DisclosureSignal(val code: String, val name: String, val title: String, val url: String, val rceptNo: String)
     private data class ValuationSignal(val code: String, val name: String, val perCurrent: Double, val percentile: Int)
+    private data class ReversalSignal(val code: String, val name: String, val type: FlowType, val toBuy: Boolean, val prevStreak: Int, val todayQty: Long, val backtestNote: String?)
 
-    private enum class FlowType(val label: String) { FOREIGN("외국인"), INSTITUTION("기관") }
+    internal enum class FlowType(val label: String) { FOREIGN("외국인"), INSTITUTION("기관") }
 
-    /** 관심종목 순회 → 3종 신호 평가 → 디듀프 통과분만 한 메시지로 발송. */
+    /** 수급 전환 감지 결과(4a 순수 함수 출력). toBuy=순매도→순매수 전환. */
+    internal data class Reversal(val toBuy: Boolean, val prevStreak: Int, val todayQty: Long)
+
+    /** 관심종목 순회 → 4종 신호 평가 → 디듀프 통과분만 한 메시지로 발송. */
     suspend fun scan(): ScanResult {
         val state = loadState()
+        val today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Seoul")).toString()
         val flowSignals = mutableListOf<FlowSignal>()
         val disclosureSignals = mutableListOf<DisclosureSignal>()
         val valuationSignals = mutableListOf<ValuationSignal>()
+        val reversalSignals = mutableListOf<ReversalSignal>()
 
         for (code in codes) {
             val name = runCatching { master.findByCode(code)?.name }.getOrNull() ?: code
 
             // 1. 연속 순매수 — 미확정(전부 0)일은 getInvestorFlow가 이미 제외함.
-            runCatching { kis.getInvestorFlow(code, days = 10) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { flows ->
+            val flowsOrNull = runCatching { kis.getInvestorFlow(code, days = 10) }.getOrNull()?.takeIf { it.isNotEmpty() }
+            flowsOrNull?.let { flows ->
                 for (type in FlowType.entries) {
                     val sig = evalFlow(code, name, type, flows) ?: continue
                     val key = "$code:${type.name}"
                     if (state[key] == sig.startDate) continue   // 같은 streak → skip
                     state[key] = sig.startDate
                     flowSignals += sig
+                }
+            }
+
+            // 4. 수급 전환점(F4) — 5일 연속 한 방향 후 첫 반대 방향. 수급 데이터는 #1과 공유.
+            val bt = backtest
+            if (flowsOrNull != null && bt != null) {
+                val sensitivity = runCatching { bt.getFlowSensitivity(code) }.getOrNull()
+                for (type in FlowType.entries) {
+                    val net = flowsOrNull.map { if (type == FlowType.FOREIGN) it.foreign else it.institution }
+                    val rev = detectReversal(net) ?: continue
+                    // 소음 필터: 이 주체 수급이 가격과 같은 방향으로 움직여온 종목만(r≥0.3·confident).
+                    val corr = sensitivity?.items?.firstOrNull { it.investor == type.corrLabel }
+                    if (corr == null || !corr.confident || corr.r < REVERSAL_MIN_CORR) continue
+                    val dirLabel = if (rev.toBuy) "BUY" else "SELL"
+                    val key = "REV:$code:${type.name}:$dirLabel"
+                    if (withinCooldown(state[key], today, REVERSAL_COOLDOWN_DAYS)) continue
+                    state[key] = today
+                    reversalSignals += ReversalSignal(code, name, type, rev.toBuy, rev.prevStreak, rev.todayQty,
+                        backtestNote = if (rev.toBuy) backtestNote(code, type) else null)
                 }
             }
 
@@ -112,11 +142,12 @@ class SignalService(
 
         val descriptions = flowSignals.map { "${it.name}(${it.code}) ${it.type.label} ${it.streak}일 연속 순매수" } +
             disclosureSignals.map { "${it.name}(${it.code}) 공시: ${it.title}" } +
-            valuationSignals.map { "${it.name}(${it.code}) 밸류 저평가(PER 하위 ${it.percentile}%)" }
+            valuationSignals.map { "${it.name}(${it.code}) 밸류 저평가(PER 하위 ${it.percentile}%)" } +
+            reversalSignals.map { "${it.name}(${it.code}) ${it.type.label} ${if (it.toBuy) "매수" else "매도"} 전환(직전 ${it.prevStreak}일 반대)" }
 
         var posted = false
         if (descriptions.isNotEmpty()) {
-            posted = slack.postMessage(signalChannel, formatMessage(flowSignals, disclosureSignals, valuationSignals))
+            posted = slack.postMessage(signalChannel, formatMessage(flowSignals, disclosureSignals, valuationSignals, reversalSignals))
         }
         saveState(state)   // 밸류밴드 상태 추적 위해 항상 저장(발화 없어도 전이 기준 갱신)
         return ScanResult(scanned = codes.size, fired = descriptions, posted = posted)
@@ -145,11 +176,25 @@ class SignalService(
     private fun extractRceptNo(url: String): String? =
         Regex("""rcpNo=(\d+)""").find(url)?.groupValues?.get(1)
 
+    /** 외인 순매수(전환 방향) 백테스트 근거 한 줄 — 매수 전환 메시지에 병기. 데이터 없으면 null. */
+    private suspend fun backtestNote(code: String, type: FlowType): String? {
+        val bt = runCatching { backtest?.getBacktest(code) }.getOrNull() ?: return null
+        val sig = bt.signals.firstOrNull { it.signal == "${type.corrLabel} 순매수" } ?: return null
+        if (sig.n <= 0 || sig.winRate < 0) return null
+        val caveat = if (sig.confident) "" else ", 참고 수준"
+        return "이 종목 ${type.corrLabel} 순매수 신호 익일 승률 ${sig.winRate}% (n=${sig.n}$caveat)"
+    }
+
+    /** FlowCorrelation.investor / Backtest signal명은 "외인/기관" 축약 라벨을 쓴다. */
+    private val FlowType.corrLabel: String
+        get() = when (this) { FlowType.FOREIGN -> "외인"; FlowType.INSTITUTION -> "기관" }
+
     /** 종류별 섹션으로 한 메시지 구성. (mrkdwn 정규화는 SlackClient가 일괄 처리) */
     private fun formatMessage(
         flows: List<FlowSignal>,
         discs: List<DisclosureSignal>,
         vals: List<ValuationSignal>,
+        reversals: List<ReversalSignal> = emptyList(),
     ): String = buildString {
         appendLine("🔔 *오늘의 관심종목 신호*")
         appendLine()
@@ -175,6 +220,16 @@ class SignalService(
             }
             appendLine()
         }
+        if (reversals.isNotEmpty()) {
+            appendLine("🔄 *수급 전환점*")
+            reversals.forEach { r ->
+                val dir = if (r.toBuy) "순매도 후 첫 *순매수*" else "순매수 후 첫 *순매도*"
+                val qty = "%,d".format(kotlin.math.abs(r.todayQty))
+                appendLine("• *${r.name}* (${r.code}) — ${r.type.label} ${r.prevStreak}일 연속 $dir (${if (r.toBuy) "+" else "-"}${qty}주)")
+                r.backtestNote?.let { appendLine("  _${it}_") }
+            }
+            appendLine()
+        }
         append("_장 마감 후 확정 데이터 기준 · 참고용_")
     }
 
@@ -192,6 +247,38 @@ class SignalService(
     companion object {
         private const val FLOW_THRESHOLD = 3        // N일 연속 순매수 = 신호
         private const val LOW_VALUE_LABEL = "역사적 하단권"
+        internal const val REVERSAL_MIN_STREAK = 5  // 직전 N일 연속 반대 방향이어야 전환으로 인정
+        internal const val REVERSAL_COOLDOWN_DAYS = 7 // 같은 방향 전환 재알림 금지 기간
+        internal const val REVERSAL_MIN_CORR = 0.3  // flow-sensitivity r 하한(수급이 가격을 움직이는 종목만)
+
+        /**
+         * 수급 전환점 감지(F4, 순수 함수). netByDay = 한 주체의 일별 순매수량, 최신이 앞(확정 일별값).
+         * 당일 방향 ≠ 0 이고 직전 [REVERSAL_MIN_STREAK]일 이상 연속 반대 방향이면 전환.
+         * 0(보합)은 streak을 끊는다 — "연속"의 정의를 보수적으로.
+         */
+        internal fun detectReversal(netByDay: List<Long>): Reversal? {
+            if (netByDay.size < REVERSAL_MIN_STREAK + 1) return null
+            val today = netByDay[0]
+            if (today == 0L) return null
+            var streak = 0
+            for (i in 1 until netByDay.size) {
+                val v = netByDay[i]
+                // 오늘과 반대 부호가 이어지는 동안만 카운트
+                if (v != 0L && (v > 0) != (today > 0)) streak++ else break
+            }
+            if (streak < REVERSAL_MIN_STREAK) return null
+            return Reversal(toBuy = today > 0, prevStreak = streak, todayQty = today)
+        }
+
+        /** 마지막 발화일(ISO)로부터 days일이 안 지났으면 true(재알림 금지). 파싱 실패는 false(발화 허용). */
+        internal fun withinCooldown(lastIso: String?, todayIso: String, days: Int): Boolean {
+            if (lastIso.isNullOrBlank()) return false
+            return runCatching {
+                val last = java.time.LocalDate.parse(lastIso)
+                val today = java.time.LocalDate.parse(todayIso)
+                !last.plusDays(days.toLong()).isBefore(today)
+            }.getOrDefault(false)
+        }
         // 주가 트리거가 되는 중요 공시 유형(부분 일치). 단순 정정·임원변경 등 경미한 건 제외된다.
         private val IMPORTANT_KEYWORDS = listOf(
             "공급계약", "수주", "단일판매",            // 수주·계약

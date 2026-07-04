@@ -232,8 +232,8 @@ fun Application.module() {
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
     val costSummary = CostSummaryService(slack, costChannel, usageTracker)
-    // S3a/b 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가 → #알림-신호 채널. 신호별 디듀프로 도배 방지.
-    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes)
+    // S3a/b+F4 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가·수급 전환점 → #알림-신호 채널. 신호별 디듀프로 도배 방지.
+    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes, backtest)
     // S7·S8 슬래시 명령 + 라운지 명령어. 서명검증 + 멀티 커맨드 라우팅.
     val slackVerifier = SlackSignatureVerifier(System.getenv("SLACK_SIGNING_SECRET").orEmpty())
     val slackCommand = SlackCommandService(analysis, master, slack, kis, marketMood, eventSync, comparison)
