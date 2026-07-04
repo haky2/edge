@@ -22,7 +22,7 @@ class CatalystEventLogTest {
     )
 
     @Test
-    fun `append 후 readAll 왕복`() = runBlocking {
+    fun `append 후 readAll 왕복`(): Unit = runBlocking {
         val dir = tempDir()
         val log = CatalystEventLog(dir.absolutePath)
         log.append(listOf(event("http://a"), event("http://b")))
@@ -36,7 +36,7 @@ class CatalystEventLogTest {
     }
 
     @Test
-    fun `빈 목록 append는 파일을 만들지 않는다`() = runBlocking {
+    fun `빈 목록 append는 파일을 만들지 않는다`(): Unit = runBlocking {
         val dir = tempDir()
         val log = CatalystEventLog(dir.absolutePath)
         log.append(emptyList())
@@ -46,7 +46,7 @@ class CatalystEventLogTest {
     }
 
     @Test
-    fun `손상 줄은 건너뛰고 나머지는 읽는다`() = runBlocking {
+    fun `손상 줄은 건너뛰고 나머지는 읽는다`(): Unit = runBlocking {
         val dir = tempDir()
         val log = CatalystEventLog(dir.absolutePath)
         log.append(listOf(event("http://a")))
@@ -60,7 +60,7 @@ class CatalystEventLogTest {
     }
 
     @Test
-    fun `파일 없으면 readAll은 빈 목록`() = runBlocking {
+    fun `파일 없으면 readAll은 빈 목록`(): Unit = runBlocking {
         val dir = tempDir()
         val log = CatalystEventLog(dir.absolutePath)
         assertTrue(log.readAll().isEmpty())

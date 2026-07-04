@@ -112,6 +112,7 @@ class AnalysisService(
     private val aiCommentChannel: String = "",
     private val notifyScope: CoroutineScope? = null,
     private val askDailyLimit: Int = 200,
+    private val stanceLog: StanceLog = StanceLog(),
 ) {
     private data class Cached(val analysis: Analysis)
     private val cache = ConcurrentHashMap<String, Cached>()
@@ -161,7 +162,9 @@ class AnalysisService(
         val model = modelRouter.modelFor(trigger)
         val t1 = System.currentTimeMillis()
         var rawComment = claude.complete(prompt, facts, maxTokens = 3500, modelOverride = model)
-        var (summary, comment) = parseSummaryFromComment(rawComment)
+        // 스탠스 태그(F6)는 캐시·앱 노출 전에 본문에서 떼어낸다 — iOS 파싱 계약 불변.
+        var (stance, cleanedComment) = parseStanceTag(rawComment)
+        var (summary, comment) = parseSummaryFromComment(cleanedComment)
         // 요약(핵심 요약) 가드: 앱 카드 최상단에 노출되는 블록이라 여기만 엄격 검증.
         // facts에 없는 가격류(≥1000) 수치가 발견되면 같은 모델로 1회 재생성(실사고: 학습 프라이어
         // 주가 "53,700원"이 요약에 누출된 건). 본문 전체는 가공·라운드 오탐이 많아 기존대로 로그만.
@@ -169,7 +172,9 @@ class AnalysisService(
         if (suspicious.isNotEmpty()) {
             println("[NumberGuard] $code: 요약에 facts 외 가격류 ${suspicious.joinToString()} → 1회 재생성")
             rawComment = claude.complete(prompt, facts, maxTokens = 3500, modelOverride = model)
-            val second = parseSummaryFromComment(rawComment)
+            val regen = parseStanceTag(rawComment)
+            stance = regen.first
+            val second = parseSummaryFromComment(regen.second)
             summary = second.first
             comment = second.second
             val still = suspiciousSummaryPrices(facts, summary)
@@ -186,6 +191,8 @@ class AnalysisService(
         val analysis = Analysis(code = code, name = cf.name, date = today, comment = comment, summary = summary, generatedAt = now, generatedPrice = cf.quote.price.toDouble(), factsRichness = cf.richness, numberWarning = false)
         cache[key] = Cached(analysis)
         fileCache.put(key, analysis)
+        // F6: 생성분만 스탠스 기록(캐시 적중은 위에서 이미 반환됨 — 중복 없음). "미상"도 기록(채점 제외용).
+        stanceLog.append(StanceEntry(code, today, mode.name.lowercase(), stance, cf.quote.price.toDouble(), now))
         // S4: 공개 분석(포지션 없음)만 #ai코멘트 채널 아카이브. 포지션 포함은 개인정보라 skip.
         if (position == null && aiCommentChannel.isNotBlank() && notifyScope != null) {
             notifyScope.launch { slack.postMessage(aiCommentChannel, formatAiCommentMessage(analysis, mode, isRefresh)) }
@@ -936,6 +943,18 @@ class AnalysisService(
             }
         }
 
+        /**
+         * F6: 응답 어디든 `[스탠스: 긍정|중립|부정]` 줄을 찾아 (스탠스, 태그 제거 본문) 반환.
+         * 태그 없음/오형식 → ("미상", 원본) — 채점에서 제외되고 본문은 그대로 나간다(폴백 안전).
+         * 여러 개면 마지막 것을 채택하고 전부 제거(모델이 실수로 중복 출력해도 앱에 안 샌다).
+         */
+        internal fun parseStanceTag(raw: String): Pair<String, String> {
+            val lineRegex = Regex("""(?m)^\s*\[\s*스탠스\s*[:：]\s*(긍정|중립|부정)\s*]\s*$""")
+            val matches = lineRegex.findAll(raw).toList()
+            if (matches.isEmpty()) return "미상" to raw
+            return matches.last().groupValues[1] to lineRegex.replace(raw, "").trimEnd()
+        }
+
         // ── 시스템 프롬프트(캐시 대상) ────────────────────────────────────────
         // 방어/공격 공통 규칙은 COMMON_RULES 한 곳에만 둔다 — 두 프롬프트가 80% 복제였던
         // 시절의 "한쪽만 고치는 드리프트"를 구조적으로 차단. **소제목** 형식은 iOS 카드
@@ -1010,7 +1029,17 @@ class AnalysisService(
                 종합 단락에서 한두 문장으로 녹이되, 이 사실로 매매를 지시하지는 마라.
         """.trimIndent()
 
-        private val DEFENSIVE_PROMPT = DEFENSIVE_CORE + "\n\n" + COMMON_RULES + "\n\n" + FINAL_GUARD
+        // F6 스탠스 태그 — COMMON_RULES(내용 규칙)와 분리된 후처리 지시. 백엔드가 파싱 후 본문에서
+        // 제거하므로 요약/소제목 계약(C3)과 충돌하지 않는다. 맨 끝(FINAL_GUARD 뒤)에 붙인다.
+        private val STANCE_TAG_INSTRUCTION = """
+            출력 후처리 지시(본문 내용·톤과 무관):
+            응답의 맨 마지막 줄에 [스탠스: 긍정] [스탠스: 중립] [스탠스: 부정] 중 하나를 정확히 그 형식으로 한 줄 추가하라.
+            이는 이 종목에 대한 너의 종합 시각 요약이며 시스템이 별도 기록용으로 떼어간다.
+            본문을 먼저 평소대로 완성하고, 그 결론을 태그로 옮기기만 하라 — 태그 때문에 본문 방향을 억지로 정하지 마라.
+            판단이 서지 않거나 혼조면 중립을 선택하라. 태그 뒤에는 아무것도 쓰지 마라.
+        """.trimIndent()
+
+        private val DEFENSIVE_PROMPT = DEFENSIVE_CORE + "\n\n" + COMMON_RULES + "\n\n" + FINAL_GUARD + "\n\n" + STANCE_TAG_INSTRUCTION
 
         // 공격 모드 고유 부분. 공통 사실·환각가드(COMMON_RULES·FINAL_GUARD) 위에서 개별 종목
         // 매매 판단까지 단호하게 허용한다(macro-impact 공격 모드는 섹터 레벨까지만 — 여기는 개별 종목 가능).
@@ -1051,7 +1080,7 @@ class AnalysisService(
                 "투자경고"·"단기과열"·"VI"는 과열·변동성 신호로, 추격 매수를 경계하고 되돌림을 기다리라는 식으로 액션에 묶어라. 단 결과를 단정하지는 마라.
         """.trimIndent()
 
-        private val AGGRESSIVE_PROMPT = AGGRESSIVE_CORE + "\n\n" + COMMON_RULES + "\n\n" + FINAL_GUARD
+        private val AGGRESSIVE_PROMPT = AGGRESSIVE_CORE + "\n\n" + COMMON_RULES + "\n\n" + FINAL_GUARD + "\n\n" + STANCE_TAG_INSTRUCTION
 
         // ── Q&A(ask) — 분석 코멘트와 달리 "### 핵심 요약"/소제목 형식 계약이 없다 ──────────
         // 원칙은 동일(사실 한정·통계 한정·시장상태 표현)하되, "질문에 정면으로·짧게"가 형식의 전부.
