@@ -114,6 +114,7 @@ fun StockDetailScreen(
     var analysis by remember { mutableStateOf<com.haky.edge.model.Analysis?>(null) }
     var analyzing by remember { mutableStateOf(false) }
     var catalysts by remember { mutableStateOf<com.haky.edge.model.CatalystReport?>(null) }
+    var catalystImpact by remember { mutableStateOf<com.haky.edge.model.CatalystImpact?>(null) }
     var catalystsLoading by remember { mutableStateOf(false) }
     var catalystAttempted by remember { mutableStateOf(false) }
     var chartPeriod by remember { mutableStateOf(ChartPeriod.M3) }
@@ -170,6 +171,8 @@ fun StockDetailScreen(
             try { catalysts = api.getCatalysts(watchItem.code, days = 7, refresh = force) } catch (_: Exception) {}
             catalystsLoading = false
             catalystAttempted = true
+            // F2 임팩트 통계 — 로딩 상태 별도 없음(데이터 있으면 표시, 없으면 숨김)
+            try { catalystImpact = api.getCatalystImpact(watchItem.code) } catch (_: Exception) {}
         }
     }
 
@@ -291,6 +294,7 @@ fun StockDetailScreen(
                 report = catalysts,
                 loading = catalystsLoading,
                 attempted = catalystAttempted,
+                impact = catalystImpact,
                 onRetry = { loadCatalysts(true) },
             )
             quote?.let { InterpretationCard(it, flows, targetPrice) }

@@ -15,6 +15,7 @@ struct StockDetailView: View {
     @State private var flows: [InvestorFlow] = []   // 일별 수급(외인/기관/개인)
     @State private var analysis: Analysis?           // AI 종합 코멘트
     @State private var catalysts: CatalystReport?    // 뉴스·공시 영향(호재/악재 판정)
+    @State private var catalystImpact: CatalystImpact?  // F2 수주 공시 임팩트 통계
     @State private var catalystsLoading = false
     @State private var catalystAttempted = false     // 1회 로드 시도 후 nil이면 실패로 간주(폴백 안내)
     @State private var catalystExpanded = false      // 뉴스·공시 영향 (기본 접힘, netBias 배지는 접어도 보임)
@@ -2006,6 +2007,22 @@ struct StockDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            // F2 임팩트 통계 — 수주·공급계약 공시에만 표시
+            if c.category == "수주·공급계약", c.source == "공시",
+               let imp = catalystImpact, imp.n > 0 {
+                let day1 = imp.horizons.first(where: { $0.days == 1 })
+                let day5 = imp.horizons.first(where: { $0.days == 5 })
+                let parts = [day1.map { "익일 평균 \(formatPct($0.avgPct))" },
+                             day5.map { "5일 \(formatPct($0.avgPct))" }].compactMap { $0 }
+                if !parts.isEmpty {
+                    HStack(spacing: 3) {
+                        Image(systemName: "chart.bar.xaxis")
+                            .font(.system(size: 9)).foregroundColor(.secondary)
+                        Text("과거 수주 공시 \(imp.n)건: " + parts.joined(separator: ", "))
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+            }
         }
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2022,6 +2039,11 @@ struct StockDetailView: View {
         case "악재": return .blue
         default:     return .gray
         }
+    }
+
+    // +3.2% / -1.5% 형식
+    private func formatPct(_ v: Double) -> String {
+        String(format: "%+.1f%%", v)
     }
 
     private func netBiasColor(_ b: String) -> Color {
@@ -2387,6 +2409,8 @@ struct StockDetailView: View {
         catalysts = try? await api.getCatalysts(code: item.code, days: 7, refresh: force)
         catalystsLoading = false
         catalystAttempted = true
+        // F2 임팩트 통계 — 로딩 상태 별도 없음(데이터 있으면 표시, 없으면 숨김)
+        catalystImpact = try? await api.getCatalystImpact(code: item.code)
     }
 }
 

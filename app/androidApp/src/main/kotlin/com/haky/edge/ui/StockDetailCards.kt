@@ -55,6 +55,7 @@ import com.haky.edge.model.AnalogHorizon
 import com.haky.edge.model.AnalogReport
 import com.haky.edge.model.Analysis
 import com.haky.edge.model.Backtest
+import com.haky.edge.model.CatalystImpact
 import com.haky.edge.model.CatalystItem
 import com.haky.edge.model.CatalystReport
 import androidx.compose.material3.TextButton
@@ -213,7 +214,7 @@ internal fun PriceLimitsLine(limits: PriceLimits, currentPrice: Long) {
 // Claude 호출이라 로딩이 느릴 수 있음(백엔드 30분 캐시 적중 시 즉시).
 
 @Composable
-internal fun CatalystCard(report: CatalystReport?, loading: Boolean, attempted: Boolean, onRetry: () -> Unit) {
+internal fun CatalystCard(report: CatalystReport?, loading: Boolean, attempted: Boolean, impact: CatalystImpact?, onRetry: () -> Unit) {
     // 로드 실패(Claude 오류/타임아웃): 뉴스·공시 원문 섹션을 없앴으므로 빈 화면 방지용 폴백.
     if (report == null && !loading && attempted) {
         Row(
@@ -247,7 +248,7 @@ internal fun CatalystCard(report: CatalystReport?, loading: Boolean, attempted: 
             } else {
                 report.items.forEach { c ->
                     HorizontalDivider()
-                    CatalystRow(c) { runCatching { uri.openUri(c.url) } }
+                    CatalystRow(c, impact) { runCatching { uri.openUri(c.url) } }
                 }
             }
         } else {
@@ -257,7 +258,7 @@ internal fun CatalystCard(report: CatalystReport?, loading: Boolean, attempted: 
 }
 
 @Composable
-private fun CatalystRow(c: CatalystItem, onClick: () -> Unit) {
+private fun CatalystRow(c: CatalystItem, impact: CatalystImpact?, onClick: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 5.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -277,12 +278,31 @@ private fun CatalystRow(c: CatalystItem, onClick: () -> Unit) {
             val note = c.preReflectedNote?.let { " · $it" } ?: ""
             Text("⚠ 선반영 가능성$note", style = MaterialTheme.typography.labelSmall, color = OrangeAccent)
         }
+        // F2 임팩트 통계 — 수주·공급계약 공시에만 표시
+        if (c.category == "수주·공급계약" && c.source == "공시" && impact != null && impact.n > 0) {
+            val day1 = impact.horizons.firstOrNull { it.days == 1 }
+            val day5 = impact.horizons.firstOrNull { it.days == 5 }
+            val parts = listOfNotNull(
+                day1?.let { "익일 평균 ${formatImpactPct(it.avgPct)}" },
+                day5?.let { "5일 ${formatImpactPct(it.avgPct)}" },
+            )
+            if (parts.isNotEmpty()) {
+                Text(
+                    "과거 수주 공시 ${impact.n}건: ${parts.joinToString(", ")}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
 // 공시는 YYYYMMDD, 뉴스는 RFC822 → 표기 분기.
 private fun catalystDate(c: CatalystItem): String =
     if (c.source == "공시") formattedDate8(c.date) else shortDate(c.date)
+
+// +3.2% / -1.5% 형식
+private fun formatImpactPct(v: Double): String = if (v >= 0) "+%.1f%%".format(v) else "%.1f%%".format(v)
 
 @Composable
 private fun sentimentColor(s: String): Color = when (s) {

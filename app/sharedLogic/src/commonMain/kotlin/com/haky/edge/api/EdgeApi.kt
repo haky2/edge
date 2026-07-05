@@ -10,6 +10,7 @@ import com.haky.edge.model.AskAnswer
 import com.haky.edge.model.AskRequest
 import com.haky.edge.model.AskTurn
 import com.haky.edge.model.CatalystBriefReport
+import com.haky.edge.model.CatalystImpact
 import com.haky.edge.model.CatalystReport
 import com.haky.edge.model.Comparison
 import com.haky.edge.model.Backtest
@@ -192,6 +193,15 @@ class EdgeApi(
             if (days != 7) parameter("days", days)
             if (refresh) parameter("refresh", "true")
         }.body()
+
+    /**
+     * F2 수주 공시 임팩트 통계. 종목 수주·공급계약 공시의 1/5/20거래일 forward return.
+     * 이벤트 없거나 오류 시 null(재료 카드 항목에서 통계 줄 숨김).
+     */
+    @Throws(Exception::class)
+    suspend fun getCatalystImpact(code: String): CatalystImpact? = runCatching {
+        client.get("$baseUrl/catalyst-impact/$code").body<CatalystImpact>()
+    }.getOrNull()
 
     /**
      * 관심종목 재료 동향을 섹터별로 묶어 한 줄씩 반환. 캐시된 판정만 사용(Claude 미호출).
