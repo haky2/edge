@@ -6,6 +6,46 @@
 
 ---
 
+## 2026-07-05 (11) — F5 매수 프리모템 + 무효화 조건 (Opus)
+
+**한 일**
+- **5a 백엔드**: `POST /premortem/{code}`(body: reason·avgPrice·qty·stopPrice) — 매수 사유를 `AnalysisService.factsText`(종목 분석과 *같은 사실 데이터*, 신규 노출 헬퍼)와 함께 Claude 1회(ModelRouter.PREMORTEM=기본 Sonnet, 매수당 자연 상한) → `{bullCase, bearCase, invalidations[]}` JSON 강제. **환각 가드**: 가격 threshold(price_below/above)는 facts에 실재하는 수치만 통과(A3, `extractNumbers` 재사용) — 창작 레벨 드롭. flow_exit는 1~30 클램프. JSON 파싱 실패 시 저장 없이 산문 폴백. `{DATA_DIR}/premortem.json`(종목당 최신 1건).
+- **5b 감시**: signals-scan(18:00) 신호 6종째로 통합 — 활성 프리모템 전체를 현재가·외국인 연속 순매도 일수로 평가(`firedInvalidations`), 발동 시 Slack ⚠️ 섹션 + 조건 1회성 비활성화(`markFired`). 평가 가능 타입=price_below/above·flow_exit(target_cut·event_before는 표시용 저장만).
+- **5c 클라**: 매수 기록 시트에 "무효화 조건 만들기" 토글(매수 선택 시만) — 저장 시 부모 생존 스코프가 `createPremortem` 호출·완료되면 상세 '매수 가설 점검' 카드에 반영(racy 지연 재조회 대신 콜백). iOS `premortemCard` + Android `PremortemCard`(bull/bear·조건 목록·발동 상태·anchor). SharedLogic `Premortem`/`Invalidation`/`PremortemRequest` + `createPremortem`/`getPremortem`.
+- 검증: PremortemTest 10(파싱·코드펜스·환각 가드·클램프·발동 평가) + 전체 테스트 + iOS/Android 빌드 통과.
+
+**막힌 점·배운 것**
+- 프리모템 생성은 Claude 호출(수 초)이라 시트 dismiss 직후 재조회는 racy → 부모 스코프에서 `createPremortem` 결과로 직접 상태 갱신(양 플랫폼 공통).
+- STANCE_TAG처럼 프롬프트는 facts 공유가 핵심 — `factsText()` 헬퍼로 analyze와 100% 동일 데이터 근거(별도 수집 금지).
+
+**다음 할 일**
+- 남은 스펙: F2-1~3(수주 공시 임팩트 — 백필 배치·통계·재료 카드). F2-0(이벤트 로그)는 이미 완료라 데이터 누적 중.
+- 이후 전체(2-0·F1·F6·F4·F3·F5) 일괄 배포 + 평일 KIS e2e.
+
+## 2026-07-04 (10) — F3 실적 발표 프리뷰/리뷰 (Fable)
+
+**한 일**
+- **3a**: `GET /earnings-preview/{code}` — ① run-rate YoY: 분기 누적 연환산(1Q×4·반기×2·3Q×4/3) vs 전년 *연간* 순이익 = "지금 속도 유지 시 작년 대비 +X%"(컨센서스 아님 명시). ② 과거 반응: `DartClient.getPeriodicFilingDates`(18개월 정기공시 접수일) × F1 일봉 캐시 → 접수일 다음 거래일/5거래일 수익률·승률. `EarningsPreviewService`, LLM 0.
+- **3b**: 브리핑 실적 일정에서 D-7 이내 종목만 프리뷰 2줄 병렬 로드(iOS `earningsPreviews` + Android 동일). SharedLogic `EarningsPreview` + `getEarningsPreview()`.
+- **3c**: 실적 리뷰 — **"직전 run-rate 예상"은 상태 저장 없이 리뷰 시점에 재계산 가능**(직전 보고서 누적 × 환산 배수: 1Q←연간÷4·반기←1Q×2·3Q누적←반기×1.5·연간←3Q×4/3, 양쪽 다 DART에 있음 → 멱등). signals-scan이 새 정기보고서 접수 감지(EREV rceptNo 디듀프, 정정 제외) → ±10% 밴드 상회/부합/하회 → Slack 📊 섹션. `DartClient.getCumulativeNetIncome(year, reprtCode)` 추가. 스펙의 "별도 일일 잡 + 다음날 브리핑" 대신 당일 18:00 Slack push(잡 재사용, 더 빠름).
+- EarningsPreviewTest 15 + 전체 테스트 + iOS/Android 빌드 통과. 커밋 8d179bb.
+
+**다음 할 일**
+- 남은 스펙: F5(프리모템·매수 시 무효화 조건, LLM 1회/기록) → F2-1~3(수주 백필·통계·카드). 이후 일괄 배포.
+- 평일 e2e 목록에 추가: /earnings-preview 실호출(8월 반기 시즌 전 D-7 걸리는 종목 확인).
+
+## 2026-07-04 (9) — F4 수급 전환점 알림 (Fable)
+
+**한 일**
+- `SignalService.detectReversal`(순수 함수): 당일 방향≠0 + 직전 5일 이상 연속 반대 방향 = 전환(보합 0은 streak 끊음, 매수/매도 대칭). 기존 "연속 순매수"(추세 확인)와 구분되는 변곡 감지.
+- 소음 필터: flow-sensitivity 해당 주체 r≥0.3·confident 종목만. 디듀프: `REV:code:주체:방향` 키 7일 쿨다운(`withinCooldown`). 매수 전환엔 백테스트 근거 병기("외인 순매수 신호 익일 승률 N% (n=M)").
+- **스펙 변형**: 별도 16:30 잡+`/jobs/flow-reversal-scan` 대신 **기존 18:00 signals-scan에 신호 4종째로 통합** — 디듀프 상태 파일·#알림-신호 채널·스케줄러 재사용, 장 마감 후라 시점 차이 무의미. F5 프리모템 감시도 이 잡에 얹는 구조 유지. 새 라우트·스케줄러 0.
+- FlowReversalTest 10케이스 + 전체 테스트 통과. 커밋 b93fc04.
+
+**다음 할 일**
+- 평일 e2e에 추가: signals-scan 수동 트리거로 🔄 섹션 확인(전환 발생 종목 있을 때).
+- 남은 스펙: F3(실적 프리뷰/리뷰) → F5(프리모템) → F2-1~3. 전부 끝나면 일괄 배포.
+
 ## 2026-07-04 (8) — F6 AI 스탠스 적중률 6a+6b+6c (Fable)
 
 **한 일**

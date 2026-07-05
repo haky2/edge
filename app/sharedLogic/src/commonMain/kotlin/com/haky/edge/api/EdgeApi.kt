@@ -3,6 +3,8 @@ package com.haky.edge.api
 import com.haky.edge.model.AnalogReport
 import com.haky.edge.model.Analysis
 import com.haky.edge.model.EarningsPreview
+import com.haky.edge.model.Premortem
+import com.haky.edge.model.PremortemRequest
 import com.haky.edge.model.StanceStats
 import com.haky.edge.model.AskAnswer
 import com.haky.edge.model.AskRequest
@@ -411,6 +413,30 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getEarningsPreview(code: String): EarningsPreview? = runCatching {
         client.get("$baseUrl/earnings-preview/$code").body<EarningsPreview>()
+    }.getOrNull()
+
+    /**
+     * 매수 프리모템 생성(F5): 매수 사유를 받아 "가설이 깨지는 조건"을 구조화.
+     * 매수 기록당 1회(백엔드 Claude 호출). 실패 시 null(기록 자체는 영향 없음).
+     */
+    @Throws(Exception::class)
+    suspend fun createPremortem(
+        code: String,
+        reason: String,
+        avgPrice: Double? = null,
+        qty: Long? = null,
+        stopPrice: Double? = null,
+    ): Premortem? = runCatching {
+        client.post("$baseUrl/premortem/$code") {
+            contentType(ContentType.Application.Json)
+            setBody(PremortemRequest(reason, avgPrice, qty, stopPrice))
+        }.body<Premortem>()
+    }.getOrNull()
+
+    /** 저장된 프리모템 조회(상세 화면 조건 카드). 없거나 오류면 null(카드 숨김). */
+    @Throws(Exception::class)
+    suspend fun getPremortem(code: String): Premortem? = runCatching {
+        client.get("$baseUrl/premortem/$code").body<Premortem>()
     }.getOrNull()
 
     /**

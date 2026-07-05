@@ -495,6 +495,42 @@ private fun ProbabilityBar(winFraction: Float, baselineFraction: Float, color: C
     }
 }
 
+// ─── 매수 프리모템 (F5) ──────────────────────────────────
+
+@Composable
+internal fun PremortemCard(pm: com.haky.edge.model.Premortem) {
+    val activeCount = pm.invalidations.count { it.active }
+    CollapsibleCard(
+        title = "매수 가설 점검",
+        trailing = { Text("감시 중 ${activeCount}개", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (pm.reason.isNotBlank()) {
+                Text("매수 사유: ${pm.reason}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (pm.bullCase.isNotBlank()) Text("맞다면: ${pm.bullCase}", style = MaterialTheme.typography.bodySmall)
+            if (pm.bearCase.isNotBlank()) Text("틀렸다면: ${pm.bearCase}", style = MaterialTheme.typography.bodySmall)
+            if (pm.invalidations.isNotEmpty()) {
+                HorizontalDivider()
+                Text("무효화 조건", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
+                pm.invalidations.forEach { inv ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(if (inv.active) "👁" else "⚠️", style = MaterialTheme.typography.labelSmall)
+                        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text(inv.description, style = MaterialTheme.typography.bodySmall,
+                                color = if (inv.active) MaterialTheme.colorScheme.onSurface else OrangeAccent)
+                            inv.anchor?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            inv.firedAt?.let { Text("발동됨 · ${it.take(10)}", style = MaterialTheme.typography.labelSmall, color = OrangeAccent) }
+                        }
+                    }
+                }
+            }
+            Text("가설이 틀렸음을 빨리 알기 위한 조건이에요. 발동해도 매매 지시가 아니라 점검 신호예요.",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
 // ─── 유사 국면 통계 (F1) ─────────────────────────────────
 
 @Composable

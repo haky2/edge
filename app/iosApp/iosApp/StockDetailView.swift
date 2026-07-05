@@ -33,6 +33,8 @@ struct StockDetailView: View {
     @State private var backtest: Backtest?          // 신호별 익일 적중률(검증된 신호)
     @State private var flowSensitivity: FlowSensitivity?  // 수급-가격 민감도
     @State private var analog: AnalogReport?        // 유사 국면 통계(F1)
+    @State private var premortem: Premortem?        // 매수 프리모템(F5)
+    @State private var premortemExpanded = false
     @State private var earningsExpanded = false
     @State private var signalExpanded = false
     @State private var indicatorHelpExpanded = false
@@ -76,6 +78,7 @@ struct StockDetailView: View {
                     priceLimitView(q)
                     priceChartCard(q)
                     positionCard(q)
+                    if let pm = premortem { premortemCard(pm) }
                     // ── 종합 판단 ──
                     aiCommentCard()
                     // ── AI 근거 ──
@@ -146,8 +149,11 @@ struct StockDetailView: View {
         .sheet(isPresented: $showEdit) {
             PositionEditView(item: item) { updated in item = updated }
         }
-        .sheet(isPresented: $showLogSheet, onDismiss: loadLogs) {
-            ActionLogSheetView(code: item.code, name: item.name, logRepo: logRepo, currentPrice: quote?.price ?? 0)
+        .sheet(isPresented: $showLogSheet, onDismiss: {
+            loadLogs()
+            Task { premortem = try? await api.getPremortem(code: item.code) }  // 방금 생성됐을 수 있음
+        }) {
+            ActionLogSheetView(code: item.code, name: item.name, logRepo: logRepo, currentPrice: quote?.price ?? 0, api: api, item: item)
         }
         .sheet(isPresented: $showComparePicker) {
             ComparePickerView(
@@ -1587,6 +1593,62 @@ struct StockDetailView: View {
         .opacity(confident ? 1.0 : 0.6)
     }
 
+    // 매수 프리모템 카드(F5) — 매수 가설이 깨지는 조건 목록 + 발동 상태
+    private func premortemCard(_ pm: Premortem) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("매수 가설 점검").font(.subheadline.weight(.semibold))
+                Spacer()
+                let activeCount = pm.invalidations.filter { $0.active }.count
+                Text("감시 중 \(activeCount)개").font(.caption2).foregroundColor(.secondary)
+                Image(systemName: premortemExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { premortemExpanded.toggle() } }
+            if premortemExpanded {
+                Divider()
+                VStack(alignment: .leading, spacing: 10) {
+                    if !pm.reason.isEmpty {
+                        Text("매수 사유: \(pm.reason)").font(.caption).foregroundColor(.secondary)
+                    }
+                    if !pm.bullCase.isEmpty {
+                        Text("맞다면: \(pm.bullCase)").font(.caption)
+                    }
+                    if !pm.bearCase.isEmpty {
+                        Text("틀렸다면: \(pm.bearCase)").font(.caption)
+                    }
+                    if !pm.invalidations.isEmpty {
+                        Divider()
+                        Text("무효화 조건").font(.caption.weight(.semibold))
+                        ForEach(Array(pm.invalidations.enumerated()), id: \.offset) { _, inv in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: inv.active ? "eye" : "exclamationmark.triangle.fill")
+                                    .font(.caption2)
+                                    .foregroundColor(inv.active ? .secondary : .orange)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(inv.description).font(.caption)
+                                        .foregroundColor(inv.active ? .primary : .orange)
+                                    if let anchor = inv.anchor {
+                                        Text(anchor).font(.caption2).foregroundColor(.secondary)
+                                    }
+                                    if let fired = inv.firedAt {
+                                        Text("발동됨 · \(String(fired.prefix(10)))").font(.caption2).foregroundColor(.orange)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Text("가설이 틀렸음을 빨리 알기 위한 조건이에요. 발동해도 매매 지시가 아니라 점검 신호예요.")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                .padding(.top, 8).padding(.bottom, 4)
+            }
+        }
+        .cardStyle()
+    }
+
     // 유사 국면 통계 카드(F1) — 오늘 상태와 비슷했던 과거 시점들의 이후 실제 수익률 분포
     private func analogCard(_ an: AnalogReport) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -2285,6 +2347,7 @@ struct StockDetailView: View {
         async let backtestTask          = api.getBacktest(code: item.code)
         async let flowSensitivityTask   = api.getFlowSensitivity(code: item.code)
         async let analogTask            = api.getAnalog(code: item.code)
+        async let premortemTask         = api.getPremortem(code: item.code)
         earningsEntry   = (try? await earnsTask)?.first
         stockSignal     = try? await signalTask
         shortSelling    = try? await shortSellingTask
@@ -2293,6 +2356,7 @@ struct StockDetailView: View {
         backtest        = try? await backtestTask
         flowSensitivity = try? await flowSensitivityTask
         analog          = try? await analogTask
+        premortem       = try? await premortemTask
     }
 
     private func loadAnalysis(force: Bool = false) async {
@@ -2494,10 +2558,13 @@ struct ActionLogSheetView: View {
     let name: String?
     let logRepo: ActionLogRepository
     let currentPrice: Int64        // 기록 시점 현재가. 0 = 미기록.
+    var api: EdgeApi? = nil        // F5 프리모템 생성용(nil이면 토글 숨김)
+    var item: WatchItem? = nil     // 평단·손절가 전달용
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedAction = "interest"
     @State private var reason = ""
+    @State private var makePremortem = true   // 매수 시 무효화 조건 생성(F5)
 
     private let actions: [(id: String, label: String)] = [
         ("interest", "관심"),
@@ -2521,6 +2588,15 @@ struct ActionLogSheetView: View {
                 Section("사유 (선택)") {
                     TextField("왜 관심/매수/매도 하려는지 한 줄로", text: $reason)
                 }
+                if selectedAction == "buy" && api != nil {
+                    Section {
+                        Toggle("무효화 조건 만들기", isOn: $makePremortem)
+                        if makePremortem {
+                            Text("AI가 이 매수 논리가 깨지는 조건(지지 이탈·수급 이탈 등)을 만들어 두고, 발동하면 알려줘요. 사유가 구체적일수록 조건이 정확해져요.")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+                }
             }
             .navigationTitle("행동 기록")
             .navigationBarTitleDisplayMode(.inline)
@@ -2537,6 +2613,18 @@ struct ActionLogSheetView: View {
                             reason: reason.isEmpty ? nil : reason,
                             price: currentPrice
                         )
+                        // F5: 매수 + 토글 on → 프리모템 생성(백그라운드, 실패해도 기록엔 영향 없음)
+                        if selectedAction == "buy", makePremortem, let api {
+                            let r = reason
+                            let avg = item?.avgPrice
+                            let qty = item?.qty
+                            let stop = item?.stopPrice
+                            Task.detached {
+                                _ = try? await api.createPremortem(
+                                    code: code, reason: r,
+                                    avgPrice: avg, qty: qty, stopPrice: stop)
+                            }
+                        }
                         dismiss()
                     }
                     .fontWeight(.semibold)

@@ -252,6 +252,9 @@ class AnalysisService(
         val richness: FactsRichness,
     )
 
+    /** F5 프리모템 등 다른 서비스가 종목 분석과 *같은 사실 데이터*를 쓰도록 facts 텍스트만 노출. */
+    suspend fun factsText(code: String, position: Position? = null): String = collectFacts(code, position).facts
+
     /** 사실 수집 — 독립 호출은 전부 병렬, name·quote 확보 후 의존 2건(뉴스·sectorRS) 합류. */
     private suspend fun collectFacts(code: String, position: Position?): CollectedFacts = coroutineScope {
         val t0 = System.currentTimeMillis()

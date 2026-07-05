@@ -43,6 +43,7 @@ import com.haky.edge.routes.chartRoutes
 import com.haky.edge.routes.dartRoutes
 import com.haky.edge.routes.earningsPreviewRoutes
 import com.haky.edge.routes.earningsRoutes
+import com.haky.edge.routes.premortemRoutes
 import com.haky.edge.routes.investorRoutes
 import com.haky.edge.routes.macroImpactRoutes
 import com.haky.edge.routes.marketCalendarRoutes
@@ -232,11 +233,13 @@ fun Application.module() {
     val stanceStats = com.haky.edge.ai.StanceStatsService(stanceLog, dailyHistory)
     // F3 실적 프리뷰 — run-rate YoY + 과거 발표 반응 통계(DART 접수일 × F1 일봉 캐시).
     val earningsPreview = com.haky.edge.ai.EarningsPreviewService(dart, dailyHistory, master)
+    // F5 프리모템 — 매수 사유 → 무효화 조건 구조화(Claude 1회/기록). 감시는 signals-scan이 담당.
+    val premortem = com.haky.edge.ai.PremortemService(analysis, master, claude, modelRouter)
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
     val costSummary = CostSummaryService(slack, costChannel, usageTracker)
-    // S3a/b+F4+F3 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가·수급 전환점·실적 리뷰 → #알림-신호 채널. 신호별 디듀프로 도배 방지.
-    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes, backtest, earningsPreview)
+    // S3a/b+F4+F3+F5 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가·수급 전환점·실적 리뷰·프리모템 발동 → #알림-신호 채널.
+    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes, backtest, earningsPreview, premortem)
     // S7·S8 슬래시 명령 + 라운지 명령어. 서명검증 + 멀티 커맨드 라우팅.
     val slackVerifier = SlackSignatureVerifier(System.getenv("SLACK_SIGNING_SECRET").orEmpty())
     val slackCommand = SlackCommandService(analysis, master, slack, kis, marketMood, eventSync, comparison)
@@ -281,6 +284,7 @@ fun Application.module() {
             dartRoutes(dart)
             earningsRoutes(dart)
             earningsPreviewRoutes(earningsPreview)
+            premortemRoutes(premortem)
             sectorRoutes(kis)
             sectorBriefingRoutes(sectorBriefing)
             shortSellingRoutes(krxShortSelling)

@@ -106,6 +106,7 @@ fun StockDetailScreen(
     var peerValuation by remember { mutableStateOf<com.haky.edge.model.PeerValuation?>(null) }
     var backtest by remember { mutableStateOf<com.haky.edge.model.Backtest?>(null) }
     var analog by remember { mutableStateOf<com.haky.edge.model.AnalogReport?>(null) }
+    var premortem by remember { mutableStateOf<com.haky.edge.model.Premortem?>(null) }
     var flowSensitivity by remember { mutableStateOf<com.haky.edge.model.FlowSensitivity?>(null) }
     var earnings by remember { mutableStateOf<com.haky.edge.model.EarningsEntry?>(null) }
     var stockSignal by remember { mutableStateOf<com.haky.edge.model.StockImpact?>(null) }
@@ -199,6 +200,7 @@ fun StockDetailScreen(
         try { earnings = api.getEarnings(listOf(code)).firstOrNull() } catch (_: Exception) {}
         try { stockSignal = api.getStockSignals(code) } catch (_: Exception) {}
         try { targetPrice = api.getTargetPrice(code) } catch (_: Exception) {}
+        try { premortem = api.getPremortem(code) } catch (_: Exception) {}
     }
 
     Scaffold(
@@ -267,6 +269,7 @@ fun StockDetailScreen(
                 quote = quote,
                 onEditClick = { showPositionSheet = true },
             )
+            premortem?.let { PremortemCard(it) }
             AICommentCard(
                 analysis = analysis,
                 analyzing = analyzing,
@@ -328,6 +331,15 @@ fun StockDetailScreen(
             onSaved = {
                 showLogSheet = false
                 reloadLogs()
+            },
+            premortemEnabled = true,
+            onBuyWithPremortem = { reason ->
+                // 부모 스코프는 시트가 닫혀도 살아있음 → Claude 생성이 끝나면 카드에 바로 반영.
+                scope.launch {
+                    runCatching {
+                        api.createPremortem(watchItem.code, reason, watchItem.avgPrice, watchItem.qty, watchItem.stopPrice)
+                    }.getOrNull()?.let { premortem = it }
+                }
             },
         )
     }
@@ -1238,10 +1250,13 @@ private fun ActionLogSheet(
     logRepo: ActionLogRepository,
     onDismiss: () -> Unit,
     onSaved: () -> Unit,
+    premortemEnabled: Boolean = false,          // F5 토글 노출 여부(api 있을 때만)
+    onBuyWithPremortem: (reason: String) -> Unit = {},  // 매수+토글 on 시 부모가 프리모템 생성
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedAction by remember { mutableStateOf("interest") }
     var reason by remember { mutableStateOf("") }
+    var makePremortem by remember { mutableStateOf(true) }  // 매수 시 무효화 조건 생성(F5)
     val actions = listOf("interest" to "관심", "buy" to "매수", "sell" to "매도")
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -1281,6 +1296,19 @@ private fun ActionLogSheet(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
+            if (selectedAction == "buy" && premortemEnabled) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.material3.Switch(checked = makePremortem, onCheckedChange = { makePremortem = it })
+                    Text("무효화 조건 만들기", style = MaterialTheme.typography.bodyMedium)
+                }
+                if (makePremortem) {
+                    Text(
+                        "AI가 이 매수 논리가 깨지는 조건(지지 이탈·수급 이탈 등)을 만들어 두고, 발동하면 알려줘요. 사유가 구체적일수록 조건이 정확해져요.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
@@ -1294,6 +1322,8 @@ private fun ActionLogSheet(
                         reason = reason.ifBlank { null },
                         price = currentPrice,
                     )
+                    // F5: 매수 + 토글 on → 부모(생존 스코프)가 프리모템 생성·상태 갱신.
+                    if (selectedAction == "buy" && makePremortem && premortemEnabled) onBuyWithPremortem(reason)
                     onSaved()
                 }) { Text("저장") }
             }

@@ -42,6 +42,7 @@ class SignalService(
     private val codes: List<String>,
     private val backtest: com.haky.edge.ai.BacktestService? = null, // F4 필터·근거용(없으면 전환 신호 skip)
     private val earningsPreview: com.haky.edge.ai.EarningsPreviewService? = null, // F3 리뷰용(없으면 skip)
+    private val premortem: com.haky.edge.ai.PremortemService? = null, // F5 무효화 조건 감시(없으면 skip)
 ) {
     private val dataDir = File(System.getenv("DATA_DIR") ?: ".data").also { it.mkdirs() }
     private val stateFile = File(dataDir, "signal_state.json")
@@ -61,6 +62,7 @@ class SignalService(
     private data class ValuationSignal(val code: String, val name: String, val perCurrent: Double, val percentile: Int)
     private data class ReversalSignal(val code: String, val name: String, val type: FlowType, val toBuy: Boolean, val prevStreak: Int, val todayQty: Long, val backtestNote: String?)
     private data class EarningsReviewSignal(val code: String, val name: String, val review: com.haky.edge.ai.EarningsPreviewService.EarningsReview)
+    private data class PremortemSignal(val code: String, val name: String, val reason: String, val descriptions: List<String>)
 
     internal enum class FlowType(val label: String) { FOREIGN("외국인"), INSTITUTION("기관") }
 
@@ -161,15 +163,37 @@ class SignalService(
                 }
         }
 
+        // 6. 프리모템 무효화 조건(F5) — 관심종목 목록과 무관하게 활성 프리모템 전체를 평가.
+        //    가격·수급만으로 평가 가능한 타입(price_below/above·flow_exit)이 대상(EVALUABLE_TYPES).
+        val premortemSignals = mutableListOf<PremortemSignal>()
+        premortem?.let { svc ->
+            for (pm in runCatching { svc.allWithActive() }.getOrElse { emptyList() }) {
+                val price = runCatching { kis.getPrice(pm.code).price }.getOrNull()
+                val sellStreak = runCatching { kis.getInvestorFlow(pm.code, days = 10) }.getOrNull()
+                    ?.let { flows -> foreignSellStreak(flows) } ?: 0
+                val fired = com.haky.edge.ai.PremortemService.firedInvalidations(pm, price, sellStreak)
+                if (fired.isEmpty()) continue
+                svc.markFired(pm.code, fired)   // 1회성 — 발동 조건 비활성화
+                premortemSignals += PremortemSignal(
+                    pm.code, pm.name, pm.reason,
+                    fired.map { i ->
+                        val inv = pm.invalidations[i]
+                        inv.description + (inv.anchor?.let { " ($it)" } ?: "")
+                    },
+                )
+            }
+        }
+
         val descriptions = flowSignals.map { "${it.name}(${it.code}) ${it.type.label} ${it.streak}일 연속 순매수" } +
             disclosureSignals.map { "${it.name}(${it.code}) 공시: ${it.title}" } +
             valuationSignals.map { "${it.name}(${it.code}) 밸류 저평가(PER 하위 ${it.percentile}%)" } +
             reversalSignals.map { "${it.name}(${it.code}) ${it.type.label} ${if (it.toBuy) "매수" else "매도"} 전환(직전 ${it.prevStreak}일 반대)" } +
-            reviewSignals.map { "${it.name}(${it.code}) 실적 리뷰: ${it.review.periodLabel} run-rate ${it.review.verdict}" }
+            reviewSignals.map { "${it.name}(${it.code}) 실적 리뷰: ${it.review.periodLabel} run-rate ${it.review.verdict}" } +
+            premortemSignals.map { "${it.name}(${it.code}) 무효화 조건 발동: ${it.descriptions.joinToString("; ")}" }
 
         var posted = false
         if (descriptions.isNotEmpty()) {
-            posted = slack.postMessage(signalChannel, formatMessage(flowSignals, disclosureSignals, valuationSignals, reversalSignals, reviewSignals))
+            posted = slack.postMessage(signalChannel, formatMessage(flowSignals, disclosureSignals, valuationSignals, reversalSignals, reviewSignals, premortemSignals))
         }
         saveState(state)   // 밸류밴드 상태 추적 위해 항상 저장(발화 없어도 전이 기준 갱신)
         return ScanResult(scanned = codes.size, fired = descriptions, posted = posted)
@@ -215,6 +239,13 @@ class SignalService(
     private fun isPeriodicName(name: String) =
         name.contains("분기보고서") || name.contains("반기보고서") || name.contains("사업보고서")
 
+    /** 외국인 연속 순매도 일수(최신부터). flow_exit 평가용 — 0=오늘 순매도 아님. */
+    private fun foreignSellStreak(flows: List<InvestorFlow>): Int {
+        var streak = 0
+        for (f in flows) { if (f.foreign < 0) streak++ else break }
+        return streak
+    }
+
     /** 종류별 섹션으로 한 메시지 구성. (mrkdwn 정규화는 SlackClient가 일괄 처리) */
     private fun formatMessage(
         flows: List<FlowSignal>,
@@ -222,6 +253,7 @@ class SignalService(
         vals: List<ValuationSignal>,
         reversals: List<ReversalSignal> = emptyList(),
         reviews: List<EarningsReviewSignal> = emptyList(),
+        premortems: List<PremortemSignal> = emptyList(),
     ): String = buildString {
         appendLine("🔔 *오늘의 관심종목 신호*")
         appendLine()
@@ -264,6 +296,16 @@ class SignalService(
                 appendLine("• *${s.name}* (${s.code}) — ${rv.periodLabel} 누적 순이익 *${"%,d".format(rv.actualEok)}억*, 직전 속도 예상(${"%,d".format(rv.expectedEok)}억) 대비 *${"%+.1f".format(rv.diffPct)}% ${rv.verdict}*")
             }
             appendLine("  _단순 연환산 예상 대비이며 컨센서스가 아닙니다_")
+            appendLine()
+        }
+        if (premortems.isNotEmpty()) {
+            appendLine("⚠️ *무효화 조건 발동 — 매수 가설 점검*")
+            premortems.forEach { p ->
+                p.descriptions.forEach { d ->
+                    appendLine("• *${p.name}* (${p.code}) — $d")
+                }
+                appendLine("  _매수 사유: ${p.reason.ifBlank { "(미입력)" }}_")
+            }
             appendLine()
         }
         append("_장 마감 후 확정 데이터 기준 · 참고용_")
