@@ -1,11 +1,13 @@
 package com.haky.edge.routes
 
 import com.haky.edge.ErrorResponse
+import com.haky.edge.ai.CatalystImpactService
 import com.haky.edge.ai.CatalystService
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
 
 private val CODE_REGEX = Regex("""[0-9A-Z]{6}""")
 
@@ -35,5 +37,33 @@ fun Route.catalystRoutes(catalyst: CatalystService) {
             return@get
         }
         call.respond(catalyst.brief(codes))
+    }
+}
+
+fun Route.catalystImpactRoutes(impactSvc: CatalystImpactService) {
+    // GET /catalyst-impact/{code}?category=수주·공급계약
+    //   해당 종목 카테고리 공시의 공시일 기준 1/5/20거래일 forward return 통계.
+    //   이벤트 없으면 backfill 유도 메시지 포함 빈 응답.
+    get("/catalyst-impact/{code}") {
+        val code = call.parameters["code"].orEmpty()
+        if (!CODE_REGEX.matches(code)) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("종목코드는 6자리 영숫자여야 합니다: '$code'"))
+            return@get
+        }
+        val category = call.request.queryParameters["category"] ?: CatalystImpactService.ORDER_CATEGORY
+        call.respond(impactSvc.impact(code, category))
+    }
+
+    // POST /catalyst-impact/{code}/backfill
+    //   과거 2년 수주·공급계약 공시를 catalyst_events.jsonl에 백필(url 기준 중복 제거).
+    //   LLM 0, DART list API만 사용. 추가된 건수를 반환.
+    post("/catalyst-impact/{code}/backfill") {
+        val code = call.parameters["code"].orEmpty()
+        if (!CODE_REGEX.matches(code)) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("종목코드는 6자리 영숫자여야 합니다: '$code'"))
+            return@post
+        }
+        val added = impactSvc.backfill(code)
+        call.respond(mapOf("status" to "ok", "code" to code, "added" to added.toString()))
     }
 }

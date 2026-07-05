@@ -523,6 +523,36 @@ class DartClient(private val apiKey: String) {
             }
         )
     }
+
+    /**
+     * F2 백필용: bgn_de~end_de 기간의 전체 공시 목록(최대 100건).
+     * 캐시 없음 — 배치 1회성 조회. 매핑 없음·API 실패 시 빈 목록.
+     */
+    suspend fun getDisclosuresForPeriod(stockCode: String, bgnDate: String, endDate: String): List<DartDisclosure> {
+        if (apiKey.isBlank()) return emptyList()
+        ensureCorpCodeMap()
+        val corpCode = corpCodeMap?.get(stockCode) ?: return emptyList()
+
+        val resp: DartListResponse = runCatching {
+            http.get("https://opendart.fss.or.kr/api/list.json") {
+                parameter("crtfc_key", apiKey)
+                parameter("corp_code", corpCode)
+                parameter("bgn_de", bgnDate)
+                parameter("end_de", endDate)
+                parameter("page_count", "100")
+            }.body<DartListResponse>()
+        }.getOrNull() ?: return emptyList()
+
+        if (resp.status != "000" && resp.status != "013") return emptyList()
+        return (resp.list ?: emptyList()).map { item ->
+            DartDisclosure(
+                corpName   = item.corpName,
+                reportName = item.reportName,
+                date       = item.rceptDt,
+                url        = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${item.rceptNo}",
+            )
+        }
+    }
 }
 
 // ── 앱에 내려주는 실적 일정 1건 ─────────────────────────────────────────────

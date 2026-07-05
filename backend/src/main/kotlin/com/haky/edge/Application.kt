@@ -36,6 +36,7 @@ import com.haky.edge.routes.stanceStatsRoutes
 import com.haky.edge.routes.askRoutes
 import com.haky.edge.routes.portfolioReviewRoutes
 import com.haky.edge.routes.backtestRoutes
+import com.haky.edge.routes.catalystImpactRoutes
 import com.haky.edge.routes.catalystRoutes
 import com.haky.edge.routes.comparisonRoutes
 import com.haky.edge.routes.eventRoutes
@@ -225,9 +226,12 @@ fun Application.module() {
     val moodLog = MarketMoodLogService()
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, modelRouter, moodLog, eventSync)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
-    val catalyst = CatalystService(kis, naver, master, claude, dart, valuationBand, macroImpact, modelRouter)
+    val catalystEventLog = com.haky.edge.ai.CatalystEventLog()
+    val catalyst = CatalystService(kis, naver, master, claude, dart, valuationBand, macroImpact, modelRouter, catalystEventLog)
     // F1 유사 국면 통계 — 장기 일봉 이력(페이지네이션+파일 캐시) 위 기저율 계산. LLM 0.
     val dailyHistory = com.haky.edge.ai.DailyHistoryService(kis)
+    // F2 수주 공시 임팩트 통계 — 백필(2-1) + forward return 통계(2-2). LLM 0.
+    val catalystImpact = com.haky.edge.ai.CatalystImpactService(dart, dailyHistory, master, catalystEventLog)
     val analog = com.haky.edge.ai.AnalogService(dailyHistory, master)
     // F6 채점 — 스탠스 로그 × 일봉 이력(F1 캐시 재사용) 20거래일 후 수익률 대조.
     val stanceStats = com.haky.edge.ai.StanceStatsService(stanceLog, dailyHistory)
@@ -279,6 +283,7 @@ fun Application.module() {
             analysisRoutes(analysis)
             askRoutes(analysis)
             catalystRoutes(catalyst)
+            catalystImpactRoutes(catalystImpact)
             analogRoutes(analog)
             stanceStatsRoutes(stanceStats)
             dartRoutes(dart)
