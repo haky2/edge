@@ -15,8 +15,9 @@ enum Db {
         let info = Bundle.main.infoDictionary
         let url = (info?["EDGE_BASE_URL"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
         let token = (info?["EDGE_API_TOKEN"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
-        #if DEBUG
-        // 시뮬레이터는 맥과 네트워크를 공유 → localhost 가 맥의 로컬 백엔드. 토큰은 로컬 .env 와 같은 값 사용.
+        // 시뮬레이터(Debug)만 로컬 백엔드(localhost=맥) → run.sh 로 백엔드 반복개발.
+        // 실기기·Release 는 운영(Cloud Run HTTPS) → 어느 폰·WiFi 에서도 그냥 동작(LAN/mDNS 불필요).
+        #if DEBUG && targetEnvironment(simulator)
         let base = "http://localhost:8080"
         #else
         let base = url.isEmpty ? "http://localhost:8080" : url

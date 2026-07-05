@@ -1,5 +1,6 @@
 package com.haky.edge
 
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -39,10 +40,19 @@ class MainActivity : ComponentActivity() {
         // 첫 실행은 빈 관심종목으로 시작한다(시드 없음). 사용자가 검색으로 직접 추가.
         val watchlistRepo = WatchlistRepository(driverFactory)
         val actionLogRepo = ActionLogRepository(driverFactory)
-        // Debug(개발 빌드)는 항상 로컬 백엔드(에뮬레이터 10.0.2.2=호스트 맥), Release는 운영(Cloud Run) URL.
-        // → 개발 중엔 재배포 없이 `cd backend && ./run.sh` 만 띄우면 에뮬이 그 로컬 서버를 본다.
-        val baseUrl = if (BuildConfig.DEBUG) "http://10.0.2.2:8080"
-                      else BuildConfig.EDGE_BASE_URL.ifEmpty { "http://10.0.2.2:8080" }
+        // 에뮬레이터(Debug)만 로컬 백엔드(10.0.2.2=호스트 맥) → `cd backend && ./run.sh` 로 백엔드 반복개발.
+        // 실제 폰은 10.0.2.2 가 안 닿으므로 실기기·Release 는 운영(Cloud Run HTTPS) → 어느 폰·WiFi 에서도 동작.
+        val isEmulator = Build.FINGERPRINT.startsWith("generic")
+            || Build.FINGERPRINT.lowercase().contains("emulator")
+            || Build.MODEL.contains("Emulator")
+            || Build.MODEL.contains("Android SDK built for")
+            || Build.MANUFACTURER.contains("Genymotion")
+            || (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic"))
+            || Build.PRODUCT.contains("sdk")
+            || Build.HARDWARE.contains("goldfish")
+            || Build.HARDWARE.contains("ranchu")
+        val prodUrl = BuildConfig.EDGE_BASE_URL.ifEmpty { "http://10.0.2.2:8080" }
+        val baseUrl = if (BuildConfig.DEBUG && isEmulator) "http://10.0.2.2:8080" else prodUrl
         val api = EdgeApi(baseUrl = baseUrl, apiToken = BuildConfig.EDGE_API_TOKEN)
 
         setContent {
@@ -60,8 +70,9 @@ class MainActivity : ComponentActivity() {
                         api = api,
                         onThemeChange = { themeMode = it },
                     )
-                    // 개발(Debug) 빌드 = 로컬 백엔드를 보고 있다는 표식. 운영(Release)엔 안 나온다.
-                    if (BuildConfig.DEBUG) {
+                    // 로컬 백엔드(10.0.2.2)를 보고 있다는 표식 = 에뮬레이터 개발 빌드만.
+                    // 실기기(Debug)·운영(Release)은 Cloud Run 을 보므로 배지 안 나온다.
+                    if (BuildConfig.DEBUG && isEmulator) {
                         Text(
                             "LOCAL",
                             color = Color.White,

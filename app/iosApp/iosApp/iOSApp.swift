@@ -5,8 +5,9 @@ struct iOSApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-            #if DEBUG
-                // 개발(Debug) 빌드 = 로컬 백엔드를 보고 있다는 표식. 운영(Release) 빌드엔 안 나온다.
+            #if DEBUG && targetEnvironment(simulator)
+                // 로컬 백엔드(localhost)를 보고 있다는 표식 = 시뮬레이터 개발 빌드만.
+                // 실기기(Debug)·운영(Release)은 Cloud Run 을 보므로 배지 안 나온다.
                 .overlay(alignment: .topTrailing) {
                     Text("LOCAL")
                         .font(.system(size: 9, weight: .heavy))
