@@ -1,5 +1,6 @@
 package com.haky.edge.model
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /** 무효화 조건 1개. threshold: 가격 타입=원, flow_exit=연속 순매도 일수. 백엔드와 일치. */
@@ -8,7 +9,10 @@ data class Invalidation(
     val type: String,
     val threshold: Double? = null,
     val anchor: String? = null,
-    val description: String,
+    // 프로퍼티명은 desc: Swift/ObjC의 NSObject.description(=toString)과 충돌해 iOS에서
+    // inv.description이 프로퍼티 대신 객체 toString을 반환하는 버그가 있어 이름을 바꾼다.
+    // JSON 와이어 포맷은 백엔드와 동일하게 "description" 유지.
+    @SerialName("description") val desc: String,
     val active: Boolean = true,
     val firedAt: String? = null,
 )

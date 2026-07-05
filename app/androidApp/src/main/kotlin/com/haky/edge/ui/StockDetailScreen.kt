@@ -272,7 +272,6 @@ fun StockDetailScreen(
                 quote = quote,
                 onEditClick = { showPositionSheet = true },
             )
-            premortem?.let { PremortemCard(it) }
             AICommentCard(
                 analysis = analysis,
                 analyzing = analyzing,
@@ -306,6 +305,7 @@ fun StockDetailScreen(
             shortSelling?.let { ShortSellingCard(it) }
             earnings?.let { EarningsCard(it) }
             stockSignal?.let { MacroSignalCard(it) }
+            premortem?.let { PremortemCard(it) }
             if (logEntries.isNotEmpty()) LogCard(
                 entries = logEntries,
                 onDelete = { id ->

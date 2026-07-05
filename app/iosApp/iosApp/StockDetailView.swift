@@ -79,7 +79,6 @@ struct StockDetailView: View {
                     priceLimitView(q)
                     priceChartCard(q)
                     positionCard(q)
-                    if let pm = premortem { premortemCard(pm) }
                     // ── 종합 판단 ──
                     aiCommentCard()
                     // ── AI 근거 ──
@@ -102,6 +101,7 @@ struct StockDetailView: View {
                 earningsDueDateSection()
                 macroSignalSection()
                 // ── 내 기록 ──
+                if let pm = premortem { premortemCard(pm) }
                 if !logEntries.isEmpty { logCard() }
             }
             .padding()
@@ -1629,7 +1629,7 @@ struct StockDetailView: View {
                                     .font(.caption2)
                                     .foregroundColor(inv.active ? .secondary : .orange)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(inv.description).font(.caption)
+                                    Text(inv.desc).font(.caption)
                                         .foregroundColor(inv.active ? .primary : .orange)
                                     if let anchor = inv.anchor {
                                         Text(anchor).font(.caption2).foregroundColor(.secondary)

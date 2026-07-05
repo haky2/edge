@@ -537,7 +537,7 @@ internal fun PremortemCard(pm: com.haky.edge.model.Premortem) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(if (inv.active) "👁" else "⚠️", style = MaterialTheme.typography.labelSmall)
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                            Text(inv.description, style = MaterialTheme.typography.bodySmall,
+                            Text(inv.desc, style = MaterialTheme.typography.bodySmall,
                                 color = if (inv.active) MaterialTheme.colorScheme.onSurface else OrangeAccent)
                             inv.anchor?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                             inv.firedAt?.let { Text("발동됨 · ${it.take(10)}", style = MaterialTheme.typography.labelSmall, color = OrangeAccent) }
