@@ -57,6 +57,7 @@ import com.haky.edge.routes.quoteRoutes
 import com.haky.edge.routes.searchRoutes
 import com.haky.edge.routes.sectorBriefingRoutes
 import com.haky.edge.routes.sectorRoutes
+import com.haky.edge.routes.sectorRotationRoutes
 import com.haky.edge.routes.shortSellingRoutes
 import com.haky.edge.routes.peerValuationRoutes
 import com.haky.edge.routes.targetPriceRoutes
@@ -224,7 +225,9 @@ fun Application.module() {
     // 포트폴리오 종합 진단(B) — 집중도·매크로 노출·밸류 분포는 계산, Claude는 구조 해석만.
     val portfolioReview = com.haky.edge.ai.PortfolioReviewService(kis, master, macroImpact, valuationBand, claude, modelRouter)
     val moodLog = MarketMoodLogService()
-    val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, modelRouter, moodLog, eventSync)
+    // C 섹터 자금 순환 — 업종지수 5/20일 상대강도. 시장 분위기 facts에 순환 문단 주입(신호 있을 때만).
+    val sectorRotation = com.haky.edge.macro.SectorRotationService(kis)
+    val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, modelRouter, moodLog, eventSync, sectorRotation)
     val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
     val catalystEventLog = com.haky.edge.ai.CatalystEventLog()
     val catalyst = CatalystService(kis, naver, master, claude, dart, valuationBand, macroImpact, modelRouter, catalystEventLog)
@@ -291,6 +294,7 @@ fun Application.module() {
             earningsPreviewRoutes(earningsPreview)
             premortemRoutes(premortem)
             sectorRoutes(kis)
+            sectorRotationRoutes(sectorRotation)
             sectorBriefingRoutes(sectorBriefing)
             shortSellingRoutes(krxShortSelling)
             targetPriceRoutes(naverTargetPrice)

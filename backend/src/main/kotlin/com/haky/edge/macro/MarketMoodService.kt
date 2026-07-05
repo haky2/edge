@@ -55,6 +55,7 @@ class MarketMoodService(
     private val modelRouter: com.haky.edge.ai.ModelRouter,
     val moodLog: MarketMoodLogService = MarketMoodLogService(),
     private val eventSync: EventSyncService? = null,
+    private val sectorRotation: SectorRotationService? = null,
 ) {
     private val cache = ConcurrentHashMap<String, MarketMood>()
     private val fileCache = FileCache("market_mood", MarketMood.serializer())
@@ -82,7 +83,9 @@ class MarketMoodService(
         }
 
         val eventsText = runCatching { eventSync?.upcomingFactsText() }.getOrNull()
-        val facts = buildFacts(indicators, eventsText)
+        // 섹터 자금 순환(C) — 뚜렷한 신호 있을 때만 factsText 반환(없으면 null → 주입 생략).
+        val rotationText = runCatching { sectorRotation?.get()?.factsText }.getOrNull()
+        val facts = buildFacts(indicators, eventsText, rotationText)
         val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
         // 상한(ceiling)일 뿐 — 3문단이면 보통 그 안에서 end_turn, 길어져도 ClaudeClient가 이어써 안 잘림.
         // 시장 분위기는 매일 보는 방향 판단 → 기본 Opus(briefing 트리거). env OPUS_TRIGGERS로 롤백 가능.
@@ -118,12 +121,16 @@ class MarketMoodService(
         moodLog.addOrUpdateEntry(todayStr, direction, indicators)
     }
 
-    private fun buildFacts(indicators: List<MacroIndicator>, eventsText: String?): String {
+    private fun buildFacts(indicators: List<MacroIndicator>, eventsText: String?, rotationText: String? = null): String {
         val sb = StringBuilder()
         sb.appendLine("현재 시장 지표 (전일 대비):")
         indicators.forEach { ind ->
             val sign = if (ind.changeRate >= 0) "+" else ""
             sb.appendLine("  - ${ind.label}: ${ind.value} ($sign${"%.2f".format(ind.changeRate)}%)")
+        }
+        if (rotationText != null) {
+            sb.appendLine()
+            sb.appendLine(rotationText)
         }
         if (eventsText != null) {
             sb.appendLine()
@@ -153,6 +160,9 @@ class MarketMoodService(
                날짜·이름은 사실대로, 영향은 조건부로. 일정 전체를 나열하지 말고 핵심만.
             7. 미국 지수선물(나스닥선물·S&P500선물·다우선물)이 지표에 있으면, 이는 미국 지수 종가 이후 한국 장 시작 전까지의
                야간 흐름을 담은 **가장 신선한 선행지표**다. 종가와 방향이 갈리면 더 최근인 선물을 우선해 코스피 출발 분위기를 읽어라.
+            8. "섹터 자금 순환" 섹션이 있으면(유입/이탈 조짐 표시), 문단 ②나 ③에서 한 번만 짚어라 — 어느 업종에서 어디로
+               자금이 도는지 방향만. 데이터에 있는 유입/이탈 라벨만 쓰고, "왜 도는지" 인과나 없는 종목명은 지어내지 마라.
+               이 섹션이 없으면(신호 없음) 순환은 아예 언급하지 마라.
 
             마지막 경고: 너의 학습 지식 속 지수·환율·금리 수치는 전부 낡아서 틀렸다. 절대 사용하지 마라. 수치는 위 지표 데이터에서 그대로 복사해서만 쓴다.
         """.trimIndent()
@@ -185,6 +195,9 @@ class MarketMoodService(
                (예: "D-2 FOMC 전까지 신규 베팅은 줄이고 결과를 보고 대응하라"). 날짜·이름은 사실대로, 결과 방향은 조건부로.
             7. 미국 지수선물(나스닥선물·S&P500선물·다우선물)은 미국 종가 이후 한국 장 시작 전까지의 야간 흐름을 담은
                **가장 신선한 선행지표**다. 종가와 선물 방향이 갈리면 더 최근인 선물을 우선해 출발 분위기를 못박아라.
+            8. "섹터 자금 순환" 섹션이 있으면(유입/이탈 조짐), 문단 ②나 ③ 스탠스에 묶어라 — 자금이 들어오는 업종은
+               낙폭과대 저가매수보다 우선순위가 높다는 식으로. 데이터의 유입/이탈 라벨만 쓰고 인과·종목명은 지어내지 마라.
+               이 섹션이 없으면 순환은 언급하지 마라.
 
             마지막 경고: 너의 학습 지식 속 지수·환율·금리 수치는 전부 낡아서 틀렸다. 절대 사용하지 마라. 수치는 위 지표 데이터에서 그대로 복사해서만 쓴다.
         """.trimIndent()
