@@ -13,10 +13,11 @@ class ModelRouterTest {
 
     // ── 기본 정책: 브리핑·최초=Opus / 자동재생성·수동·재료판정=Sonnet ─────────
 
-    @Test fun `기본 정책 라우팅 - 브리핑과 최초 생성만 Opus`() {
+    @Test fun `기본 정책 라우팅 - 브리핑·최초생성·프리모템만 Opus`() {
         val r = router(ModelRouter.DEFAULT_OPUS_TRIGGERS)
         assertEquals(opus, r.modelFor(ModelRouter.BRIEFING))
         assertEquals(opus, r.modelFor(ModelRouter.ANALYSIS_INITIAL))
+        assertEquals(opus, r.modelFor(ModelRouter.PREMORTEM)) // 매수당 1회·고판단 저빈도
         assertEquals(sonnet, r.modelFor(ModelRouter.ANALYSIS_AUTO_REFRESH))
         assertEquals(sonnet, r.modelFor(ModelRouter.ANALYSIS_MANUAL))
         assertEquals(sonnet, r.modelFor(ModelRouter.CATALYST))

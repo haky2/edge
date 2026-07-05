@@ -45,7 +45,7 @@ data class Premortem(
  * 매수 기록 시 reason을 받아 "이 논리가 깨지는 조건"을 구조화해 저장하고,
  * signals-scan(18:00)이 매일 평가해 발동 시 Slack으로 알린다(발동 조건은 1회성 비활성).
  *
- * LLM 비용: 매수 기록당 1회(수동 행위 기반 자연 상한) — ModelRouter.PREMORTEM 기본 Sonnet.
+ * LLM 비용: 매수 기록당 1회(수동 행위 기반 자연 상한) — 저빈도·고판단이라 ModelRouter.PREMORTEM 기본 Opus.
  * 환각 가드: 가격 threshold는 facts에 존재하는 수치만 허용(A3 원칙 — 아니면 해당 조건 드롭).
  * 저장: {DATA_DIR}/premortem.json (단일 사용자 전제, code → 최신 1건).
  */

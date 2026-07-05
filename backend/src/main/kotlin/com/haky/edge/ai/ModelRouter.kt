@@ -35,14 +35,15 @@ class ModelRouter(
         const val CATALYST = "catalyst"
         const val ASK = "ask" // 종목 자유 질문 Q&A — 대화형(지연 민감)·볼륨 트리거라 기본 Sonnet
         const val PORTFOLIO = "portfolio" // 포트폴리오 종합 진단 — facts가 전부 계산값이라 기본 Sonnet(env로 승격 가능)
-        const val PREMORTEM = "premortem" // F5 매수 프리모템 — 매수 기록당 1회(자연 상한)라 기본 Sonnet
+        const val PREMORTEM = "premortem" // F5 매수 프리모템 — 매수 기록당 1회(자연 상한)·고판단 지점이라 기본 Opus
 
         /**
-         * 기본 Opus 대상: 브리핑 + 종목 최초 생성만. 나머지(자동 재생성·수동 새로고침·재료 판정)는
-         * Sonnet — 재료 판정은 JSON 분류라 판단력 프리미엄이 불필요하고, 수동/자동 재생성은 볼륨
-         * 트리거라 비용 대비 효용이 낮다(CLAUDE.md "facts 강화로 Sonnet 충분" 결정과 정합).
+         * 기본 Opus 대상: 브리핑 + 종목 최초 생성 + 매수 프리모템. 나머지(자동 재생성·수동 새로고침·
+         * 재료 판정)는 Sonnet — 재료 판정은 JSON 분류라 판단력 프리미엄이 불필요하고, 수동/자동
+         * 재생성은 볼륨 트리거라 비용 대비 효용이 낮다(CLAUDE.md "facts 강화로 Sonnet 충분" 결정과 정합).
+         * 프리모템은 analysis_initial과 같은 저빈도·고판단 지점(매수당 1회 자연 상한)이라 비용 부담 없이 Opus.
          */
-        val DEFAULT_OPUS_TRIGGERS = setOf(BRIEFING, ANALYSIS_INITIAL)
+        val DEFAULT_OPUS_TRIGGERS = setOf(BRIEFING, ANALYSIS_INITIAL, PREMORTEM)
 
         /**
          * env 문자열 → 트리거 집합.
