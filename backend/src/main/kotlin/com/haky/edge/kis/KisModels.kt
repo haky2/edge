@@ -211,5 +211,36 @@ data class SectorIndex(
     val changeRate: Double, // 등락률 %
 )
 
+// ── 섹터 자금 순환(C) ─────────────────────────────────────────────────
+// 업종지수 일별 이력으로 5/20일 상대강도 → 순환 판정. inquire-daily-indexchartprice(FHKUP03500100).
+
+/** 업종지수 일별 종가 1점. rotation 계산은 종가만 쓴다. */
+@Serializable
+data class IndexPoint(
+    val date: String,   // 영업일 YYYYMMDD
+    val close: Double,  // 업종지수 종가(bstp_nmix_prpr)
+)
+
+/** 업종 1개의 일별 종가 이력(최신일이 앞). */
+@Serializable
+data class SectorHistory(
+    val label: String,           // "전기전자" 등
+    val points: List<IndexPoint>, // 최신일이 앞
+)
+
+/** inquire-daily-indexchartprice 응답. output2=일자별(최신 앞). 종가 필드가 주식과 다름(bstp_nmix_prpr). */
+@Serializable
+data class KisIndexChartResponse(
+    @SerialName("rt_cd") val rtCd: String = "",
+    @SerialName("msg1") val msg1: String = "",
+    @SerialName("output2") val output2: List<KisIndexChartBar> = emptyList(),
+)
+
+@Serializable
+data class KisIndexChartBar(
+    @SerialName("stck_bsop_date") val date: String = "",
+    @SerialName("bstp_nmix_prpr") val close: String = "0", // 업종지수 종가
+)
+
 /** 한투 연동 중 발생한 오류(상류 문제)를 일반 버그와 구분하기 위한 예외 — StatusPages에서 502로 매핑된다. */
 class KisException(message: String) : RuntimeException(message)

@@ -518,6 +518,54 @@ class KisClient(
         throw KisException("한투 업종지수 조회 실패(${spec.iscd}): $lastMsg")
     }
 
+    /**
+     * 섹터 자금 순환(C)용 — 6개 KOSPI 업종의 일별 종가 이력을 병렬 조회.
+     * getSectorIndices 와 동일 패턴(병렬·개별 실패 무시). startYmd~endYmd 는 YYYYMMDD.
+     */
+    suspend fun getSectorHistories(startYmd: String, endYmd: String): List<SectorHistory> = coroutineScope {
+        SECTOR_SPECS
+            .map { spec ->
+                async {
+                    runCatching { SectorHistory(spec.label, getSectorIndexChartRange(spec.iscd, startYmd, endYmd)) }
+                        .getOrNull()
+                }
+            }
+            .awaitAll()
+            .filterNotNull()
+    }
+
+    /** 업종지수 기간 일별 종가(FHKUP03500100). 최신일이 앞. 20거래일은 단일 응답에 들어와 페이지네이션 불필요. */
+    suspend fun getSectorIndexChartRange(iscd: String, startYmd: String, endYmd: String): List<IndexPoint> {
+        val accessToken = token()
+        var lastMsg = ""
+        repeat(MAX_ATTEMPTS) { attempt ->
+            val resp = rateLimiter.withPermit { requestIndexChart(iscd, accessToken, startYmd, endYmd) }
+            if (resp.rtCd == "0") {
+                return resp.output2
+                    .map { IndexPoint(date = it.date, close = it.close.toDoubleSafe()) }
+                    .filter { it.close > 0 && it.date.isNotBlank() }
+            }
+            lastMsg = resp.msg1.ifBlank { "rt_cd=${resp.rtCd}" }
+            if (attempt < MAX_ATTEMPTS - 1) delay(BACKOFF_MS * (attempt + 1))
+        }
+        throw KisException("한투 업종지수 일봉 조회 실패($iscd, $startYmd~$endYmd): $lastMsg")
+    }
+
+    /** 업종지수 일별 차트 HTTP 호출 1회. MRKT=U(업종), period=D. */
+    private suspend fun requestIndexChart(iscd: String, accessToken: String, startYmd: String, endYmd: String): KisIndexChartResponse =
+        http.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice") {
+            header("authorization", "Bearer $accessToken")
+            header("appkey", appKey)
+            header("appsecret", appSecret)
+            header("tr_id", "FHKUP03500100") // 국내업종 일자별 지수
+            header("custtype", "P")
+            parameter("FID_COND_MRKT_DIV_CODE", "U")
+            parameter("FID_INPUT_ISCD", iscd)
+            parameter("FID_INPUT_DATE_1", startYmd)
+            parameter("FID_INPUT_DATE_2", endYmd)
+            parameter("FID_PERIOD_DIV_CODE", "D")
+        }.body()
+
     companion object {
         private const val MAX_ATTEMPTS = 4
         private const val BACKOFF_MS = 250L
