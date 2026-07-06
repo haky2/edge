@@ -294,7 +294,7 @@ struct PortfolioView: View {
                                     Text("핵심 요약").font(.caption.weight(.bold))
                                 }
                                 .foregroundColor(.purple)
-                                Text(summary)
+                                Text(markdown(summary))
                                     .font(.callout)
                                     .lineSpacing(5)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -318,7 +318,7 @@ struct PortfolioView: View {
                                 .frame(width: 3)
                             VStack(alignment: .leading, spacing: 10) {
                                 ForEach(Array(visibleBlocks.enumerated()), id: \.offset) { _, block in
-                                    Text(block)
+                                    Text(markdown(block))
                                         .font(.callout)
                                         .lineSpacing(5)
                                         .fixedSize(horizontal: false, vertical: true)
@@ -569,6 +569,32 @@ struct PortfolioView: View {
     private func shortTime(_ d: Date) -> String {
         let f = DateFormatter(); f.dateFormat = "HH:mm"
         return f.string(from: d)
+    }
+
+    private func markdown(_ s: String) -> AttributedString {
+        var text = s.replacingOccurrences(of: #"~~(.+?)~~"#, with: "$1", options: .regularExpression)
+        text = text.replacingOccurrences(of: "~~", with: "")
+
+        guard let regex = try? NSRegularExpression(pattern: #"\*\*(.+?)\*\*"#) else {
+            return AttributedString(text.replacingOccurrences(of: "**", with: ""))
+        }
+        let ns = text as NSString
+        var out = AttributedString()
+        var cursor = 0
+        for m in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            if m.range.location > cursor {
+                let plain = ns.substring(with: NSRange(location: cursor, length: m.range.location - cursor))
+                out += AttributedString(plain.replacingOccurrences(of: "**", with: ""))
+            }
+            var bold = AttributedString(ns.substring(with: m.range(at: 1)))
+            bold.inlinePresentationIntent = .stronglyEmphasized
+            out += bold
+            cursor = m.range.location + m.range.length
+        }
+        if cursor < ns.length {
+            out += AttributedString(ns.substring(from: cursor).replacingOccurrences(of: "**", with: ""))
+        }
+        return out
     }
 }
 

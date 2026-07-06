@@ -658,7 +658,7 @@ private fun PortfolioReviewCard(
                             Text("핵심 요약", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 color = PurpleAccent)
                         }
-                        Text(summary, style = MaterialTheme.typography.bodyMedium, lineHeight = 22.sp)
+                        Text(parseMarkdownBold(summary), style = MaterialTheme.typography.bodyMedium, lineHeight = 22.sp)
                     }
                     Spacer(Modifier.height(12.dp))
                 }
@@ -679,7 +679,7 @@ private fun PortfolioReviewCard(
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.weight(1f)) {
                         visible.forEach { block ->
-                            Text(block, style = MaterialTheme.typography.bodyMedium, lineHeight = 22.sp)
+                            Text(parseMarkdownBold(block), style = MaterialTheme.typography.bodyMedium, lineHeight = 22.sp)
                         }
                     }
                 }
