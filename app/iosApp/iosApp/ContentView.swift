@@ -9,6 +9,7 @@ enum Db {
     }()
     static let actionLog = ActionLogRepository(driverFactory: DriverFactory())
     static let holding = HoldingRepository(driverFactory: DriverFactory())
+    static let account = AccountRepository(driverFactory: DriverFactory())
     // 백엔드 주소·토큰. Debug(Xcode 실행)는 항상 로컬 백엔드, Release(Archive/TestFlight)는 운영(Cloud Run).
     // → 개발 중엔 재배포 없이 `cd backend && ./run.sh` 만 띄우면 시뮬레이터가 그 로컬 서버를 본다.
     // 운영 URL·토큰은 Secrets.xcconfig → Info.plist(EDGE_BASE_URL/EDGE_API_TOKEN)에서 읽는다.

@@ -38,3 +38,10 @@ DELETE FROM holding WHERE code = ?;
 
 deleteByCodeAndAccount:
 DELETE FROM holding WHERE code = ? AND account_id = ?;
+
+-- 계좌 삭제 시 보유 종목을 다른 계좌로 이전
+moveToAccount:
+UPDATE holding SET account_id = :newAccountId WHERE account_id = :oldAccountId;
+
+countInAccount:
+SELECT count(*) FROM holding WHERE account_id = ?;

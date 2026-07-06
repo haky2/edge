@@ -2,8 +2,8 @@ import SwiftUI
 import SharedLogic
 
 // 내 포지션 입력 시트. 평단가/수량/목표가/손절가를 손으로 입력(수동 입력 전제).
-// G1: 읽기·쓰기 모두 HoldingRepository(기본 계좌). watchlist 포지션 필드는 더 이상 사용하지 않음.
-// 빈칸으로 저장 시 holding 행을 삭제 → "포지션 없음" 상태로 되돌리기 가능.
+// G1: 읽기·쓰기 모두 HoldingRepository. watchlist 포지션 필드는 더 이상 사용하지 않음.
+// G2: 계좌가 여러 개이면 계좌 피커를 표시. 계좌마다 독립 포지션을 보유할 수 있다.
 struct PositionEditView: View {
     let code: String
     let name: String
@@ -15,11 +15,17 @@ struct PositionEditView: View {
     @State private var target: String
     @State private var stop: String
 
+    // 계좌 선택 (계좌가 1개=기본만 있으면 피커 숨김)
+    @State private var accounts: [AccountInfo] = []
+    @State private var selectedAccountId: Int64
+
     init(item: WatchItem, onSave: @escaping (WatchItem) -> Void) {
         self.code = item.code
         self.name = item.name
         self.onSave = onSave
-        // 기존 holding에서 초기값 로드 (watchlist.avgPrice 는 G1 migration 이후 항상 null)
+        let defId = HoldingRepository.companion.DEFAULT_ACCOUNT_ID
+        _selectedAccountId = State(initialValue: defId)
+        // 기존 기본 계좌 holding에서 초기값 로드
         let existing = Db.holding.getDefaultHolding(code: item.code)
         _avg    = State(initialValue: existing?.avgPrice.map    { Self.fmtPrice(Int($0.doubleValue)) } ?? "")
         _qty    = State(initialValue: existing?.qty.map         { String($0.int64Value) } ?? "")
@@ -27,9 +33,23 @@ struct PositionEditView: View {
         _stop   = State(initialValue: existing?.stopPrice.map   { Self.fmtPrice(Int($0.doubleValue)) } ?? "")
     }
 
+    private var hasCustomAccounts: Bool { accounts.count > 1 }
+
     var body: some View {
         NavigationStack {
             Form {
+                // 계좌가 여러 개일 때만 계좌 피커 노출
+                if hasCustomAccounts {
+                    Section("계좌") {
+                        Picker("계좌", selection: $selectedAccountId) {
+                            ForEach(accounts, id: \.id) { account in
+                                Text(account.name).tag(account.id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                    }
+                }
                 Section("내 포지션") {
                     priceField("평단가", $avg)
                     plainField("수량", "주", $qty)
@@ -49,6 +69,17 @@ struct PositionEditView: View {
                     Button("저장") { save() }.fontWeight(.semibold)
                 }
             }
+        }
+        .onAppear {
+            accounts = Db.account.all() as! [AccountInfo]
+        }
+        .onChange(of: selectedAccountId) { newId in
+            // 계좌 전환 시 해당 계좌의 holding으로 필드 갱신
+            let existing = Db.holding.getHolding(code: code, accountId: newId)
+            avg    = existing?.avgPrice.map    { Self.fmtPrice(Int($0.doubleValue)) } ?? ""
+            qty    = existing?.qty.map         { String($0.int64Value) } ?? ""
+            target = existing?.targetPrice.map { Self.fmtPrice(Int($0.doubleValue)) } ?? ""
+            stop   = existing?.stopPrice.map   { Self.fmtPrice(Int($0.doubleValue)) } ?? ""
         }
     }
 
@@ -83,18 +114,18 @@ struct PositionEditView: View {
         let targetD = parseDouble(target)
         let stopD   = parseDouble(stop)
 
-        Db.holding.savePosition(
+        Db.holding.savePositionForAccount(
             code: code,
             name: name,
+            accountId: selectedAccountId,
             avgPrice:    avgD.map    { KotlinDouble(double: $0) },
             qty:         qtyL.map    { KotlinLong(longLong: $0) },
             targetPrice: targetD.map { KotlinDouble(double: $0) },
             stopPrice:   stopD.map   { KotlinDouble(double: $0) }
         )
-        // StockDetailView 의 @State item 갱신용 — holding 저장값으로 WatchItem 구성
+        // StockDetailView @State item 갱신용 WatchItem
         let updated = WatchItem(
-            code: code,
-            name: name,
+            code: code, name: name,
             avgPrice:    avgD.map    { KotlinDouble(double: $0) },
             qty:         qtyL.map    { KotlinLong(longLong: $0) },
             targetPrice: targetD.map { KotlinDouble(double: $0) },

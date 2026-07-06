@@ -37,6 +37,33 @@ class HoldingRepository(driverFactory: DriverFactory) {
         }
     }
 
+    /** 특정 계좌의 포지션 조회. 계좌 피커가 있는 PositionEditView에서 계좌 전환 시 사용. */
+    fun getHolding(code: String, accountId: Long): Holding? =
+        queries.selectByCodeAndAccount(code, accountId) { id, c, name, accId, avgPrice, qty, targetPrice, stopPrice ->
+            Holding(id, c, name, accId, avgPrice, qty, targetPrice, stopPrice)
+        }.executeAsOneOrNull()
+
+    /** 특정 계좌에 포지션 저장(upsert). avgPrice/qty 가 모두 null 이면 해당 계좌 행을 삭제. */
+    fun savePositionForAccount(
+        code: String,
+        name: String,
+        accountId: Long,
+        avgPrice: Double?,
+        qty: Long?,
+        targetPrice: Double?,
+        stopPrice: Double?,
+    ) {
+        if (avgPrice == null && qty == null) {
+            queries.deleteByCodeAndAccount(code, accountId)
+        } else {
+            queries.upsert(code, name, accountId, avgPrice, qty, targetPrice, stopPrice, nowMillis())
+        }
+    }
+
+    /** 계좌 삭제 시 보유 이전용. AccountRepository.deleteById 에서 호출. */
+    fun moveToAccount(fromAccountId: Long, toAccountId: Long) =
+        queries.moveToAccount(newAccountId = toAccountId, oldAccountId = fromAccountId)
+
     /** 관심종목 삭제 시 보유도 함께 제거. */
     fun removeByCode(code: String) = queries.deleteByCode(code)
 

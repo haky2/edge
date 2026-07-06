@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.haky.edge.api.EdgeApi
+import com.haky.edge.db.AccountRepository
 import com.haky.edge.db.ActionLogRepository
 import com.haky.edge.db.HoldingRepository
 import com.haky.edge.db.WatchlistRepository
@@ -66,6 +67,7 @@ fun EdgeApp(
     watchlistRepo: WatchlistRepository,
     actionLogRepo: ActionLogRepository,
     holdingRepo: HoldingRepository,
+    accountRepo: AccountRepository,
     api: EdgeApi,
     onThemeChange: (String) -> Unit = {},
 ) {
@@ -130,6 +132,7 @@ fun EdgeApp(
                         initialQuote = dest.quote,
                         watchlistRepo = watchlistRepo,
                         holdingRepo = holdingRepo,
+                        accountRepo = accountRepo,
                         actionLogRepo = actionLogRepo,
                         api = api,
                         onBack = { destination = tabDestination(activeTab) },
@@ -144,6 +147,7 @@ fun EdgeApp(
                     )
                     is AppDestination.Portfolio -> PortfolioScreen(
                         holdingRepo = holdingRepo,
+                        accountRepo = accountRepo,
                         api = api,
                     )
                     is AppDestination.Briefing -> BriefingScreen(

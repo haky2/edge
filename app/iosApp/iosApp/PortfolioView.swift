@@ -14,6 +14,7 @@ struct PortfolioView: View {
     @State private var reviewCommentExpanded = false
     @State private var loading = false
     @State private var lastUpdated: Date?
+    @State private var showAccountMgmt = false
     @AppStorage(analysisModeKey) private var modeRaw = AnalysisMode.defensive.rawValue
     private var analysisMode: AnalysisMode { AnalysisMode(rawValue: modeRaw) ?? .defensive }
 
@@ -50,6 +51,11 @@ struct PortfolioView: View {
             .navigationTitle("내 자산")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showAccountMgmt = true } label: {
+                        Image(systemName: "creditcard")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     if loading {
                         ProgressView().scaleEffect(0.8)
@@ -73,6 +79,9 @@ struct PortfolioView: View {
                         }
                     }
                 }
+            }
+            .sheet(isPresented: $showAccountMgmt) {
+                NavigationStack { AccountManagementView() }
             }
         }
         .task { await load() }

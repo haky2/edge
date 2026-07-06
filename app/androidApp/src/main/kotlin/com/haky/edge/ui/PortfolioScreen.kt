@@ -54,7 +54,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.CreditCard
 import com.haky.edge.api.EdgeApi
+import com.haky.edge.db.AccountRepository
 import com.haky.edge.db.HoldingRepository
 import com.haky.edge.model.PortfolioReview
 import com.haky.edge.model.Quote
@@ -113,6 +115,7 @@ private data class HoldingRow(
 @Composable
 fun PortfolioScreen(
     holdingRepo: HoldingRepository,
+    accountRepo: AccountRepository,
     api: EdgeApi,
 ) {
     var rows by remember { mutableStateOf<List<HoldingRow>>(emptyList()) }
@@ -120,6 +123,7 @@ fun PortfolioScreen(
     var portfolioReview by remember { mutableStateOf<PortfolioReview?>(null) }
     var reviewLoading by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
+    var showAccountMgmt by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -162,11 +166,22 @@ fun PortfolioScreen(
 
     LaunchedEffect(Unit) { load() }
 
+    if (showAccountMgmt) {
+        AccountManagementSheet(
+            accountRepo = accountRepo,
+            holdingRepo = holdingRepo,
+            onDismiss = { showAccountMgmt = false },
+        )
+    }
+
     Scaffold(
         topBar = {
             CompactHeader(
                 title = "내 자산",
                 actions = {
+                    IconButton(onClick = { showAccountMgmt = true }) {
+                        Icon(Icons.Filled.CreditCard, contentDescription = "계좌 관리")
+                    }
                     if (loading) {
                         Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)

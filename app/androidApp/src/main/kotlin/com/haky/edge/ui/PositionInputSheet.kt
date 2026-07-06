@@ -13,15 +13,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,7 +36,9 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import com.haky.edge.db.AccountRepository
 import com.haky.edge.db.HoldingRepository
+import com.haky.edge.model.AccountInfo
 import com.haky.edge.model.WatchItem
 import java.util.Locale
 
@@ -40,18 +47,44 @@ import java.util.Locale
 fun PositionInputSheet(
     item: WatchItem,
     holdingRepo: HoldingRepository,
+    accountRepo: AccountRepository,
     onDismiss: () -> Unit,
     onSave: (WatchItem) -> Unit,
 ) {
-    // 부분 확장 detent를 건너뛰어 처음부터 전체 높이로 펼친다(저장/취소 버튼이 바로 보이게).
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // G1: 기존 holding에서 초기값 로드 (watchlist.avgPrice 는 migration 이후 항상 null)
-    val existing = remember(item.code) { holdingRepo.getDefaultHolding(item.code) }
-    var avgTfv by remember { mutableStateOf(existing?.avgPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue("")) }
-    var qtyText by remember { mutableStateOf(existing?.qty?.toString() ?: "") }
-    var targetTfv by remember { mutableStateOf(existing?.targetPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue("")) }
-    var stopTfv by remember { mutableStateOf(existing?.stopPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue("")) }
+    // 계좌 목록 로드 (1개=기본만이면 피커 숨김)
+    var accounts by remember { mutableStateOf(listOf<AccountInfo>()) }
+    var selectedAccount by remember { mutableStateOf<AccountInfo?>(null) }
+    var accountDropdownExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        accounts = accountRepo.all()
+        selectedAccount = accounts.firstOrNull { it.isDefault == 1L }
+    }
+
+    val hasCustomAccounts = accounts.size > 1
+
+    // 기존 holding 로드 (선택 계좌 기준)
+    val existing = remember(selectedAccount?.id) {
+        selectedAccount?.let { acc ->
+            if (acc.isDefault == 1L) holdingRepo.getDefaultHolding(item.code)
+            else holdingRepo.getHolding(item.code, acc.id)
+        }
+    }
+
+    var avgTfv by remember(existing) {
+        mutableStateOf(existing?.avgPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue(""))
+    }
+    var qtyText by remember(existing) {
+        mutableStateOf(existing?.qty?.toString() ?: "")
+    }
+    var targetTfv by remember(existing) {
+        mutableStateOf(existing?.targetPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue(""))
+    }
+    var stopTfv by remember(existing) {
+        mutableStateOf(existing?.stopPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue(""))
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -67,6 +100,50 @@ fun PositionInputSheet(
                 .padding(bottom = 16.dp),
         ) {
             Text("포지션 입력", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 16.dp))
+
+            // 계좌 피커 (계좌가 2개 이상일 때만)
+            if (hasCustomAccounts && accounts.isNotEmpty()) {
+                SectionLabel("계좌")
+                ExposedDropdownMenuBox(
+                    expanded = accountDropdownExpanded,
+                    onExpandedChange = { accountDropdownExpanded = it },
+                ) {
+                    OutlinedTextField(
+                        value = selectedAccount?.name ?: "",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("계좌 선택") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountDropdownExpanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                    )
+                    ExposedDropdownMenu(
+                        expanded = accountDropdownExpanded,
+                        onDismissRequest = { accountDropdownExpanded = false },
+                    ) {
+                        accounts.forEach { account ->
+                            DropdownMenuItem(
+                                text = { Text(account.name) },
+                                onClick = {
+                                    selectedAccount = account
+                                    accountDropdownExpanded = false
+                                    // 계좌 전환 시 필드 재로드
+                                    val h = if (account.isDefault == 1L) holdingRepo.getDefaultHolding(item.code)
+                                             else holdingRepo.getHolding(item.code, account.id)
+                                    avgTfv    = h?.avgPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue("")
+                                    qtyText   = h?.qty?.toString() ?: ""
+                                    targetTfv = h?.targetPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue("")
+                                    stopTfv   = h?.stopPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue("")
+                                },
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             SectionLabel("내 포지션")
             PriceField("평단가", avgTfv) { new ->
@@ -105,15 +182,16 @@ fun PositionInputSheet(
                         val qty         = qtyText.toLongOrNull()
                         val targetPrice = targetTfv.text.filter { it.isDigit() }.toDoubleOrNull()
                         val stopPrice   = stopTfv.text.filter { it.isDigit() }.toDoubleOrNull()
-                        holdingRepo.savePosition(
+                        val accountId   = selectedAccount?.id ?: HoldingRepository.DEFAULT_ACCOUNT_ID
+                        holdingRepo.savePositionForAccount(
                             code        = item.code,
                             name        = item.name,
+                            accountId   = accountId,
                             avgPrice    = avgPrice,
                             qty         = qty,
                             targetPrice = targetPrice,
                             stopPrice   = stopPrice,
                         )
-                        // StockDetailScreen @State item 갱신용 WatchItem 구성
                         val updated = WatchItem(code = item.code, name = item.name,
                                                 avgPrice = avgPrice, qty = qty,
                                                 targetPrice = targetPrice, stopPrice = stopPrice)
