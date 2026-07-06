@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.ActionLogRepository
+import com.haky.edge.db.HoldingRepository
 import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.model.Quote
 import com.haky.edge.model.WatchItem
@@ -64,6 +65,7 @@ private fun tabDestination(tab: AppTab): AppDestination = when (tab) {
 fun EdgeApp(
     watchlistRepo: WatchlistRepository,
     actionLogRepo: ActionLogRepository,
+    holdingRepo: HoldingRepository,
     api: EdgeApi,
     onThemeChange: (String) -> Unit = {},
 ) {
@@ -127,6 +129,7 @@ fun EdgeApp(
                         item = dest.item,
                         initialQuote = dest.quote,
                         watchlistRepo = watchlistRepo,
+                        holdingRepo = holdingRepo,
                         actionLogRepo = actionLogRepo,
                         api = api,
                         onBack = { destination = tabDestination(activeTab) },
@@ -140,7 +143,7 @@ fun EdgeApp(
                         onDismiss = { destination = AppDestination.Watchlist },
                     )
                     is AppDestination.Portfolio -> PortfolioScreen(
-                        watchlistRepo = watchlistRepo,
+                        holdingRepo = holdingRepo,
                         api = api,
                     )
                     is AppDestination.Briefing -> BriefingScreen(
@@ -152,7 +155,7 @@ fun EdgeApp(
                             destination = AppDestination.StockDetail(item, quote)
                         },
                     )
-                    is AppDestination.Stats -> StatsScreen(watchlistRepo = watchlistRepo, actionLogRepo = actionLogRepo, api = api)
+                    is AppDestination.Stats -> StatsScreen(watchlistRepo = watchlistRepo, holdingRepo = holdingRepo, actionLogRepo = actionLogRepo, api = api)
                     is AppDestination.Settings -> SettingsScreen(onThemeChange = onThemeChange)
                     is AppDestination.Comparison -> ComparisonScreen(
                         itemA = dest.itemA,

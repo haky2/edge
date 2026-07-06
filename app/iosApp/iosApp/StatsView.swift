@@ -4,13 +4,14 @@ import SharedLogic
 // Phase 4 — 내 투자 패턴 통계.
 // action_log(로컬 SQLDelight)를 전부 읽어 앱에서 집계. 백엔드는 현재가·일봉 조회에만 사용.
 struct StatsView: View {
-    private let logRepo   = Db.actionLog
-    private let watchRepo = Db.watchlist
-    private let api       = Db.api
+    private let logRepo    = Db.actionLog
+    private let watchRepo  = Db.watchlist
+    private let holdingRepo = Db.holding
+    private let api        = Db.api
 
     @State private var entries: [ActionLogEntry] = []
     @State private var nameMap: [String: String] = [:]    // code → 종목명
-    @State private var positionMap: [String: WatchItem] = [:]  // code → stop/target
+    @State private var positionMap: [String: Holding_] = [:]  // code → stop/target (G1: holding 정본)
     @State private var missedRows: [MissedRow] = []
     @State private var missedLoading = false
     @State private var stanceStats: StanceStats?   // 종목 코멘트 적중률(F6, 시장 방향 예측과 별도)
@@ -626,11 +627,11 @@ struct StatsView: View {
     }
 
     private var disciplineRows: [DisciplineRow] {
-        pairRows.compactMap { pair in
+        pairRows.compactMap { pair -> DisciplineRow? in
             guard let bp = pair.buyPrice, let sp = pair.sellPrice else { return nil }
             let item = positionMap[pair.code]
-            let stop   = item.flatMap { w in w.stopPrice.map   { Int64($0.doubleValue) } }
-            let target = item.flatMap { w in w.targetPrice.map { Int64($0.doubleValue) } }
+            let stop:   Int64? = item.flatMap { h -> Int64? in h.stopPrice.map   { Int64($0.doubleValue) } }
+            let target: Int64? = item.flatMap { h -> Int64? in h.targetPrice.map { Int64($0.doubleValue) } }
             guard stop != nil || target != nil else { return nil }
             return DisciplineRow(
                 id: pair.id, code: pair.code,
@@ -674,7 +675,8 @@ struct StatsView: View {
             if let n = e.name, resolved[e.code] == nil { resolved[e.code] = n }
         }
         nameMap = resolved
-        positionMap = Dictionary(uniqueKeysWithValues: watchItems.map { ($0.code, $0) })
+        let holdings = holdingRepo.all()
+        positionMap = Dictionary(uniqueKeysWithValues: holdings.map { ($0.code, $0) })
         Task { await loadMissed() }
         Task {
             let ss = try? await api.getStanceStats()

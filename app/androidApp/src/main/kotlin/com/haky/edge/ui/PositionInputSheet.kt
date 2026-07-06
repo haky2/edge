@@ -31,7 +31,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
-import com.haky.edge.db.WatchlistRepository
+import com.haky.edge.db.HoldingRepository
 import com.haky.edge.model.WatchItem
 import java.util.Locale
 
@@ -39,17 +39,19 @@ import java.util.Locale
 @Composable
 fun PositionInputSheet(
     item: WatchItem,
-    watchlistRepo: WatchlistRepository,
+    holdingRepo: HoldingRepository,
     onDismiss: () -> Unit,
     onSave: (WatchItem) -> Unit,
 ) {
     // 부분 확장 detent를 건너뛰어 처음부터 전체 높이로 펼친다(저장/취소 버튼이 바로 보이게).
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    var avgTfv by remember { mutableStateOf(item.avgPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue("")) }
-    var qtyText by remember { mutableStateOf(item.qty?.toString() ?: "") }
-    var targetTfv by remember { mutableStateOf(item.targetPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue("")) }
-    var stopTfv by remember { mutableStateOf(item.stopPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue("")) }
+    // G1: 기존 holding에서 초기값 로드 (watchlist.avgPrice 는 migration 이후 항상 null)
+    val existing = remember(item.code) { holdingRepo.getDefaultHolding(item.code) }
+    var avgTfv by remember { mutableStateOf(existing?.avgPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue("")) }
+    var qtyText by remember { mutableStateOf(existing?.qty?.toString() ?: "") }
+    var targetTfv by remember { mutableStateOf(existing?.targetPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue("")) }
+    var stopTfv by remember { mutableStateOf(existing?.stopPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue("")) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -99,15 +101,23 @@ fun PositionInputSheet(
                 }
                 Button(
                     onClick = {
-                        watchlistRepo.updatePosition(
-                            code = item.code,
-                            avgPrice = avgTfv.text.filter { it.isDigit() }.toDoubleOrNull(),
-                            qty = qtyText.toLongOrNull(),
-                            targetPrice = targetTfv.text.filter { it.isDigit() }.toDoubleOrNull(),
-                            stopPrice = stopTfv.text.filter { it.isDigit() }.toDoubleOrNull(),
+                        val avgPrice    = avgTfv.text.filter { it.isDigit() }.toDoubleOrNull()
+                        val qty         = qtyText.toLongOrNull()
+                        val targetPrice = targetTfv.text.filter { it.isDigit() }.toDoubleOrNull()
+                        val stopPrice   = stopTfv.text.filter { it.isDigit() }.toDoubleOrNull()
+                        holdingRepo.savePosition(
+                            code        = item.code,
+                            name        = item.name,
+                            avgPrice    = avgPrice,
+                            qty         = qty,
+                            targetPrice = targetPrice,
+                            stopPrice   = stopPrice,
                         )
-                        val updated = watchlistRepo.all().firstOrNull { it.code == item.code }
-                        if (updated != null) onSave(updated) else onDismiss()
+                        // StockDetailScreen @State item 갱신용 WatchItem 구성
+                        val updated = WatchItem(code = item.code, name = item.name,
+                                                avgPrice = avgPrice, qty = qty,
+                                                targetPrice = targetPrice, stopPrice = stopPrice)
+                        onSave(updated)
                     },
                     modifier = Modifier.weight(1f),
                 ) {

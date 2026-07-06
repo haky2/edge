@@ -55,7 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.haky.edge.api.EdgeApi
-import com.haky.edge.db.WatchlistRepository
+import com.haky.edge.db.HoldingRepository
 import com.haky.edge.model.PortfolioReview
 import com.haky.edge.model.Quote
 import com.haky.edge.model.WatchItem
@@ -112,7 +112,7 @@ private data class HoldingRow(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PortfolioScreen(
-    watchlistRepo: WatchlistRepository,
+    holdingRepo: HoldingRepository,
     api: EdgeApi,
 ) {
     var rows by remember { mutableStateOf<List<HoldingRow>>(emptyList()) }
@@ -125,21 +125,25 @@ fun PortfolioScreen(
 
     suspend fun load() {
         loading = true
-        val all = watchlistRepo.all()
-        val holdings = all.filter { it.avgPrice != null && it.qty != null }
-        if (holdings.isEmpty()) {
+        // G1: holding 테이블이 보유 포지션의 단일 정본
+        val allHoldings = holdingRepo.all().filter { it.avgPrice != null && it.qty != null }
+        if (allHoldings.isEmpty()) {
             rows = emptyList()
             loading = false
             return
         }
-        val codes = holdings.map { it.code }
+        val codes = allHoldings.map { it.code }
         val quotes = runCatching { api.getQuotes(codes) }.getOrDefault(emptyList())
         val quoteMap = quotes.associateBy { it.code }
-        rows = holdings.mapNotNull { item ->
-            val avg = item.avgPrice ?: return@mapNotNull null
-            val qty = (item.qty ?: return@mapNotNull null).toDouble()
-            val quote = quoteMap[item.code]
+        rows = allHoldings.mapNotNull { h ->
+            val avg = h.avgPrice ?: return@mapNotNull null
+            val qty = (h.qty ?: return@mapNotNull null).toDouble()
+            val quote = quoteMap[h.code]
             val price = quote?.let { it.price.toDouble() } ?: avg
+            // StockDetailScreen 연결용 WatchItem — holding 포지션 데이터를 담아 전달
+            val item = WatchItem(code = h.code, name = h.name,
+                                 avgPrice = h.avgPrice, qty = h.qty,
+                                 targetPrice = h.targetPrice, stopPrice = h.stopPrice)
             HoldingRow(item, quote, avg, qty, price)
         }
         loading = false

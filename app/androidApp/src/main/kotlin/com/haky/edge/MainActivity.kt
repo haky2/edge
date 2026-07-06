@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.ActionLogRepository
 import com.haky.edge.db.DriverFactory
+import com.haky.edge.db.HoldingRepository
 import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.ui.AppPrefs
 import com.haky.edge.ui.EdgeApp
@@ -40,6 +41,7 @@ class MainActivity : ComponentActivity() {
         // 첫 실행은 빈 관심종목으로 시작한다(시드 없음). 사용자가 검색으로 직접 추가.
         val watchlistRepo = WatchlistRepository(driverFactory)
         val actionLogRepo = ActionLogRepository(driverFactory)
+        val holdingRepo   = HoldingRepository(driverFactory)
         // 에뮬레이터(Debug)만 로컬 백엔드(10.0.2.2=호스트 맥) → `cd backend && ./run.sh` 로 백엔드 반복개발.
         // 실제 폰은 10.0.2.2 가 안 닿으므로 실기기·Release 는 운영(Cloud Run HTTPS) → 어느 폰·WiFi 에서도 동작.
         val isEmulator = Build.FINGERPRINT.startsWith("generic")
@@ -67,6 +69,7 @@ class MainActivity : ComponentActivity() {
                     EdgeApp(
                         watchlistRepo = watchlistRepo,
                         actionLogRepo = actionLogRepo,
+                        holdingRepo   = holdingRepo,
                         api = api,
                         onThemeChange = { themeMode = it },
                     )

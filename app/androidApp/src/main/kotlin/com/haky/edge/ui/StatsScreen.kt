@@ -50,8 +50,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.ActionLogRepository
+import com.haky.edge.db.HoldingRepository
 import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.model.ActionLogEntry
+import com.haky.edge.model.Holding
 import com.haky.edge.model.WatchItem
 import com.haky.edge.ui.theme.ChangeDown
 import com.haky.edge.ui.theme.ChangeUp
@@ -145,13 +147,14 @@ private data class MissedRow(
 @Composable
 fun StatsScreen(
     watchlistRepo: WatchlistRepository,
+    holdingRepo: HoldingRepository,
     actionLogRepo: ActionLogRepository,
     api: EdgeApi,
 ) {
     val ctx = LocalContext.current
     var entries by remember { mutableStateOf<List<ActionLogEntry>>(emptyList()) }
     var nameMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var positionMap by remember { mutableStateOf<Map<String, WatchItem>>(emptyMap()) }
+    var positionMap by remember { mutableStateOf<Map<String, Holding>>(emptyMap()) }  // G1: holding 정본
     var missedRows by remember { mutableStateOf<List<MissedRow>>(emptyList()) }
     var missedLoading by remember { mutableStateOf(false) }
     var stanceStats by remember { mutableStateOf<com.haky.edge.model.StanceStats?>(null) } // 종목 코멘트 적중률(F6)
@@ -165,7 +168,7 @@ fun StatsScreen(
     // 집계 계산
     val pairRows = remember(entries) { computePairs(entries) }
     val winRateRows = remember(pairRows) { computeWinRates(pairRows) }
-    val disciplineRows = remember(pairRows, positionMap) { computeDiscipline(pairRows, positionMap) }
+    val disciplineRows = remember(pairRows, positionMap) { computeDiscipline(pairRows, positionMap) }  // positionMap: Map<String, Holding>
     val reasonRows = remember(entries) { computeReasons(entries) }
     val codeRows = remember(entries) { computeCodeRows(entries) }
     val avgHoldDays = remember(pairRows) { if (pairRows.isEmpty()) null else pairRows.sumOf { it.days }.toDouble() / pairRows.size }
@@ -194,7 +197,8 @@ fun StatsScreen(
             }
         }
         nameMap = resolved
-        positionMap = watchItems.associateBy { it.code }
+        // G1: stop/target 은 holding 이 정본. code 중복(다계좌) 시 첫 번째 계좌 사용(G3에서 개선)
+        positionMap = holdingRepo.all().associateBy { it.code }
 
         // 종목 코멘트 적중률(서버 집계, 행동 로그와 무관)
         try { stanceStats = api.getStanceStats() } catch (_: Exception) {}
@@ -867,13 +871,13 @@ private fun computeWinRates(pairs: List<HoldPair>): List<WinRateRow> {
         .sortedByDescending { it.total }
 }
 
-private fun computeDiscipline(pairs: List<HoldPair>, positionMap: Map<String, WatchItem>): List<DisciplineRow> =
+private fun computeDiscipline(pairs: List<HoldPair>, positionMap: Map<String, Holding>): List<DisciplineRow> =
     pairs.mapNotNull { pair ->
         val bp = pair.buyPrice ?: return@mapNotNull null
         val sp = pair.sellPrice ?: return@mapNotNull null
         val item = positionMap[pair.code]
-        val stop   = item?.stopPrice?.let { it.toLong() }
-        val target = item?.targetPrice?.let { it.toLong() }
+        val stop   = item?.stopPrice?.toLong()
+        val target = item?.targetPrice?.toLong()
         if (stop == null && target == null) return@mapNotNull null
         DisciplineRow(pair.id, pair.code, pair.buyAt, pair.sellAt, bp, sp, stop, target)
     }

@@ -1,0 +1,24 @@
+-- 계좌. G1: '기본' 계좌 1개가 migration 4.sqm 에서 시드된다.
+-- 관리 UI(추가·삭제·이름 변경)는 G2에서 붙인다.
+CREATE TABLE account (
+    id         INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_default INTEGER NOT NULL DEFAULT 0   -- 1=기본 계좌(1개만)
+);
+
+selectAll:
+SELECT id, name, sort_order, is_default FROM account ORDER BY sort_order ASC;
+
+-- 사용자 정의 계좌가 있는지 판정. 0이면 flat 화면, 1 이상이면 그룹 뷰 노출(G3).
+countCustom:
+SELECT count(*) FROM account WHERE is_default = 0;
+
+defaultId:
+SELECT id FROM account WHERE is_default = 1 LIMIT 1;
+
+insert:
+INSERT INTO account(name, sort_order, is_default) VALUES (?, ?, ?);
+
+deleteById:
+DELETE FROM account WHERE id = ?;

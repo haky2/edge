@@ -517,22 +517,26 @@ struct PortfolioView: View {
 
     private func load() async {
         loading = true
-        let all = Db.watchlist.all()
-        let holdings = all.filter { $0.avgPrice != nil && $0.qty != nil }
-        guard !holdings.isEmpty else {
+        // G1: holding 테이블이 보유 포지션의 단일 정본
+        let allHoldings = Db.holding.all().filter { $0.avgPrice != nil && $0.qty != nil }
+        guard !allHoldings.isEmpty else {
             rows = []
             loading = false
             return
         }
-        let codes = holdings.map { $0.code }
+        let codes = allHoldings.map { $0.code }
         let quotes = (try? await api.getQuotes(codes: codes)) ?? []
         let quoteMap = Dictionary(uniqueKeysWithValues: quotes.map { ($0.code, $0) })
-        rows = holdings.compactMap { item in
-            guard let avgNum = item.avgPrice, let qtyNum = item.qty else { return nil }
+        rows = allHoldings.compactMap { h in
+            guard let avgNum = h.avgPrice, let qtyNum = h.qty else { return nil }
             let avg = avgNum.doubleValue
             let qty = Double(qtyNum.int64Value)
-            let quote = quoteMap[item.code]
+            let quote = quoteMap[h.code]
             let price = quote.map { Double($0.price) } ?? avg
+            // StockDetailView 연결용 WatchItem — holding 포지션 데이터를 담아 전달
+            let item = WatchItem(code: h.code, name: h.name,
+                                 avgPrice: h.avgPrice, qty: h.qty,
+                                 targetPrice: h.targetPrice, stopPrice: h.stopPrice)
             return HoldingRow(item: item, quote: quote, avg: avg, qty: qty, price: price)
         }
         lastUpdated = Date()

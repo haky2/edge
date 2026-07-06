@@ -1,0 +1,34 @@
+-- v4 → v5: account + holding 테이블 신설. watchlist 보유 데이터를 기본 계좌로 이전.
+-- 기존 avg_price/qty/target_price/stop_price 는 이전 후 watchlist 에서 지운다(holding 이 정본).
+
+CREATE TABLE account (
+    id         INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_default INTEGER NOT NULL DEFAULT 0
+);
+
+INSERT INTO account(name, sort_order, is_default) VALUES ('기본', 0, 1);
+
+CREATE TABLE holding (
+    id           INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    code         TEXT    NOT NULL,
+    name         TEXT    NOT NULL,
+    account_id   INTEGER NOT NULL DEFAULT 1,
+    avg_price    REAL,
+    qty          INTEGER,
+    target_price REAL,
+    stop_price   REAL,
+    added_at     INTEGER NOT NULL,
+    UNIQUE(code, account_id)
+);
+
+
+-- 기존 보유(avg_price 있는 행)를 기본 계좌(id=1)로 이전
+INSERT INTO holding(code, name, account_id, avg_price, qty, target_price, stop_price, added_at)
+SELECT code, name, 1, avg_price, qty, target_price, stop_price, added_at
+FROM watchlist
+WHERE avg_price IS NOT NULL;
+
+-- watchlist 포지션 필드 비우기 — holding 이 유일한 정본
+UPDATE watchlist SET avg_price = NULL, qty = NULL, target_price = NULL, stop_price = NULL;

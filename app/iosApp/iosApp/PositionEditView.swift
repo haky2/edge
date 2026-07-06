@@ -1,10 +1,12 @@
 import SwiftUI
 import SharedLogic
 
-// 1.5b — 내 포지션 입력 시트. 평단가/수량/목표가/손절가를 손으로 입력(수동 입력 전제).
-// 빈칸은 null(미입력)로 저장 → "되돌리기" 가능. 저장 시 DB(updatePosition) 후 onSave로 상세에 반영.
+// 내 포지션 입력 시트. 평단가/수량/목표가/손절가를 손으로 입력(수동 입력 전제).
+// G1: 읽기·쓰기 모두 HoldingRepository(기본 계좌). watchlist 포지션 필드는 더 이상 사용하지 않음.
+// 빈칸으로 저장 시 holding 행을 삭제 → "포지션 없음" 상태로 되돌리기 가능.
 struct PositionEditView: View {
     let code: String
+    let name: String
     var onSave: (WatchItem) -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -15,12 +17,14 @@ struct PositionEditView: View {
 
     init(item: WatchItem, onSave: @escaping (WatchItem) -> Void) {
         self.code = item.code
+        self.name = item.name
         self.onSave = onSave
-        // KotlinDouble?/KotlinLong? → 쉼표 포맷 문자열. nil이면 빈칸.
-        _avg    = State(initialValue: item.avgPrice.map  { Self.fmtPrice(Int($0.doubleValue)) } ?? "")
-        _qty    = State(initialValue: item.qty.map       { String($0.int64Value) } ?? "")
-        _target = State(initialValue: item.targetPrice.map { Self.fmtPrice(Int($0.doubleValue)) } ?? "")
-        _stop   = State(initialValue: item.stopPrice.map   { Self.fmtPrice(Int($0.doubleValue)) } ?? "")
+        // 기존 holding에서 초기값 로드 (watchlist.avgPrice 는 G1 migration 이후 항상 null)
+        let existing = Db.holding.getDefaultHolding(code: item.code)
+        _avg    = State(initialValue: existing?.avgPrice.map    { Self.fmtPrice(Int($0.doubleValue)) } ?? "")
+        _qty    = State(initialValue: existing?.qty.map         { String($0.int64Value) } ?? "")
+        _target = State(initialValue: existing?.targetPrice.map { Self.fmtPrice(Int($0.doubleValue)) } ?? "")
+        _stop   = State(initialValue: existing?.stopPrice.map   { Self.fmtPrice(Int($0.doubleValue)) } ?? "")
     }
 
     var body: some View {
@@ -48,7 +52,6 @@ struct PositionEditView: View {
         }
     }
 
-    // 가격 필드: 숫자만 입력, 입력 즉시 천단위 쉼표 자동 삽입
     private func priceField(_ label: String, _ text: Binding<String>) -> some View {
         HStack {
             Text(label).foregroundColor(.secondary)
@@ -64,7 +67,6 @@ struct PositionEditView: View {
         }
     }
 
-    // 수량 등 단순 숫자 필드 (쉼표 없음)
     private func plainField(_ label: String, _ unit: String, _ text: Binding<String>) -> some View {
         HStack {
             Text(label).foregroundColor(.secondary)
@@ -76,26 +78,32 @@ struct PositionEditView: View {
     }
 
     private func save() {
-        // 빈칸/파싱 실패 → null(미입력). 쉼표는 replacingOccurrences로 제거.
         let avgD    = parseDouble(avg)
         let qtyL    = parseLong(qty)
         let targetD = parseDouble(target)
         let stopD   = parseDouble(stop)
 
-        Db.watchlist.updatePosition(
+        Db.holding.savePosition(
             code: code,
+            name: name,
             avgPrice:    avgD.map    { KotlinDouble(double: $0) },
             qty:         qtyL.map    { KotlinLong(longLong: $0) },
             targetPrice: targetD.map { KotlinDouble(double: $0) },
             stopPrice:   stopD.map   { KotlinDouble(double: $0) }
         )
-        if let updated = Db.watchlist.all().first(where: { $0.code == code }) {
-            onSave(updated)
-        }
+        // StockDetailView 의 @State item 갱신용 — holding 저장값으로 WatchItem 구성
+        let updated = WatchItem(
+            code: code,
+            name: name,
+            avgPrice:    avgD.map    { KotlinDouble(double: $0) },
+            qty:         qtyL.map    { KotlinLong(longLong: $0) },
+            targetPrice: targetD.map { KotlinDouble(double: $0) },
+            stopPrice:   stopD.map   { KotlinDouble(double: $0) }
+        )
+        onSave(updated)
         dismiss()
     }
 
-    // 정수를 천단위 쉼표 문자열로. Int.formatted()는 로케일 의존이라 NumberFormatter 명시.
     private static func fmtPrice(_ n: Int) -> String {
         let fmt = NumberFormatter()
         fmt.numberStyle = .decimal

@@ -70,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.ActionLogRepository
+import com.haky.edge.db.HoldingRepository
 import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.model.AskTurn
 import com.haky.edge.model.Quote
@@ -90,6 +91,7 @@ fun StockDetailScreen(
     item: WatchItem,
     initialQuote: Quote?,
     watchlistRepo: WatchlistRepository,
+    holdingRepo: HoldingRepository,
     actionLogRepo: ActionLogRepository,
     api: EdgeApi,
     onBack: () -> Unit,
@@ -351,7 +353,7 @@ fun StockDetailScreen(
     if (showPositionSheet) {
         PositionInputSheet(
             item = watchItem,
-            watchlistRepo = watchlistRepo,
+            holdingRepo = holdingRepo,
             onDismiss = { showPositionSheet = false },
             onSave = { updated ->
                 watchItem = updated

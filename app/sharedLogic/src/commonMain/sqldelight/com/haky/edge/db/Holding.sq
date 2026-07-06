@@ -1,0 +1,40 @@
+-- 보유 포지션. watchlist(관심종목)에서 분리 — 같은 종목을 여러 계좌에 나눠 담을 수 있게.
+-- UNIQUE(code, account_id): 한 계좌 안에서 동일 종목은 1행으로 관리(평균 단가 개념).
+CREATE TABLE holding (
+    id           INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    code         TEXT    NOT NULL,
+    name         TEXT    NOT NULL,
+    account_id   INTEGER NOT NULL DEFAULT 1,
+    avg_price    REAL,
+    qty          INTEGER,
+    target_price REAL,
+    stop_price   REAL,
+    added_at     INTEGER NOT NULL,
+    UNIQUE(code, account_id)
+);
+
+-- PortfolioView/PortfolioScreen: 전 계좌 보유 합산(전체 보기)
+selectAll:
+SELECT id, code, name, account_id, avg_price, qty, target_price, stop_price FROM holding;
+
+-- 특정 종목의 모든 계좌 보유 (다계좌 지원 후 사용)
+selectByCode:
+SELECT id, code, name, account_id, avg_price, qty, target_price, stop_price
+FROM holding WHERE code = ?;
+
+-- PositionEditView: 특정 계좌 포지션 로드
+selectByCodeAndAccount:
+SELECT id, code, name, account_id, avg_price, qty, target_price, stop_price
+FROM holding WHERE code = ? AND account_id = ?;
+
+-- upsert: (code, account_id) UNIQUE 충돌 시 기존 행 교체(id 재발급, 참조 없으므로 무방)
+upsert:
+INSERT OR REPLACE INTO holding(code, name, account_id, avg_price, qty, target_price, stop_price, added_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+-- 관심종목 삭제 시 보유도 함께 제거
+deleteByCode:
+DELETE FROM holding WHERE code = ?;
+
+deleteByCodeAndAccount:
+DELETE FROM holding WHERE code = ? AND account_id = ?;
