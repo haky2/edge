@@ -50,7 +50,7 @@ struct AccountManagementView: View {
                 title: Text("보유 종목 이전"),
                 message: Text("기본 계좌의 보유 종목 \(alert.count)개를 '\(alert.accountName)'으로 이동하시겠습니까?"),
                 primaryButton: .default(Text("이동")) {
-                    Db.holding.moveToAccount(fromAccountId: HoldingRepository.companion.DEFAULT_ACCOUNT_ID, toAccountId: alert.accountId)
+                    Db.holding.moveToAccount(fromAccountId: Db.holding.defaultAccountId(), toAccountId: alert.accountId)
                 },
                 secondaryButton: .cancel(Text("유지"))
             )

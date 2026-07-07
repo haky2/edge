@@ -28,17 +28,8 @@ class WatchlistRepository(driverFactory: DriverFactory) {
             WatchItem(code, name, avgPrice, qty, targetPrice, stopPrice)
         }.executeAsList()
 
-    /**
-     * 내 포지션(평단가·수량·목표가·손절가) 저장. 각 값은 null이면 미입력으로 비운다.
-     * 상세 화면의 입력 UI(1.5b)가 호출.
-     */
-    fun updatePosition(
-        code: String,
-        avgPrice: Double?,
-        qty: Long?,
-        targetPrice: Double?,
-        stopPrice: Double?,
-    ) = queries.updatePosition(avgPrice, qty, targetPrice, stopPrice, code)
+    // 포지션 쓰기(updatePosition)는 G1에서 HoldingRepository.savePosition*으로 이관·제거됨.
+    // watchlist의 포지션 컬럼은 G1 마이그레이션 이후 항상 NULL — 표시는 HoldingRepository.hydrate가 얹는다.
 
     /** 관심종목 추가(검색 1.4b 연동용). 기존 코드면 이름/순서 갱신. 끝에 붙인다. */
     fun add(code: String, name: String) {

@@ -20,16 +20,12 @@ FROM watchlist ORDER BY sort_order ASC;
 count:
 SELECT count(*) FROM watchlist;
 
--- 추가 시엔 포지션 필드를 건드리지 않는다(나중에 updatePosition으로 입력).
 insert:
 INSERT OR REPLACE INTO watchlist(code, name, sort_order, added_at)
 VALUES (?, ?, ?, ?);
 
--- 내 포지션 입력/수정(상세 화면). 비우면 NULL로 저장(미입력으로 되돌리기 가능).
-updatePosition:
-UPDATE watchlist
-SET avg_price = ?, qty = ?, target_price = ?, stop_price = ?
-WHERE code = ?;
+-- 포지션 쓰기는 G1부터 holding 테이블이 정본(HoldingRepository.savePosition*).
+-- watchlist 포지션 컬럼은 스키마 호환용으로만 남아 있고 항상 NULL이다.
 
 deleteByCode:
 DELETE FROM watchlist WHERE code = ?;

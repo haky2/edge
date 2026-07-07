@@ -182,7 +182,7 @@ fun PositionInputSheet(
                         val qty         = qtyText.toLongOrNull()
                         val targetPrice = targetTfv.text.filter { it.isDigit() }.toDoubleOrNull()
                         val stopPrice   = stopTfv.text.filter { it.isDigit() }.toDoubleOrNull()
-                        val accountId   = selectedAccount?.id ?: HoldingRepository.DEFAULT_ACCOUNT_ID
+                        val accountId   = selectedAccount?.id ?: holdingRepo.defaultAccountId()
                         holdingRepo.savePositionForAccount(
                             code        = item.code,
                             name        = item.name,

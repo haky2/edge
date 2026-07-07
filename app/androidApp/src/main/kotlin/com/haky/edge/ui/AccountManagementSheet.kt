@@ -154,7 +154,7 @@ fun AccountManagementSheet(
             text = { Text("기본 계좌의 보유 종목 ${state.count}개를 '${state.accountName}'으로 이동하시겠습니까?") },
             confirmButton = {
                 TextButton(onClick = {
-                    holdingRepo.moveToAccount(fromAccountId = HoldingRepository.DEFAULT_ACCOUNT_ID, toAccountId = state.accountId)
+                    holdingRepo.moveToAccount(fromAccountId = holdingRepo.defaultAccountId(), toAccountId = state.accountId)
                     migrationDialog = null
                 }) { Text("이동") }
             },

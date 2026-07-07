@@ -23,7 +23,7 @@ struct PositionEditView: View {
         self.code = item.code
         self.name = item.name
         self.onSave = onSave
-        let defId = HoldingRepository.companion.DEFAULT_ACCOUNT_ID
+        let defId = Db.holding.defaultAccountId()  // 상수 1 가정 금지 — 프레시 설치 자가 시드 포함
         _selectedAccountId = State(initialValue: defId)
         // 기존 기본 계좌 holding에서 초기값 로드
         let existing = Db.holding.getDefaultHolding(code: item.code)

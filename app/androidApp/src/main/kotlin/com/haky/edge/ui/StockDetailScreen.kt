@@ -99,7 +99,9 @@ fun StockDetailScreen(
     onBack: () -> Unit,
     onCompare: ((WatchItem) -> Unit)? = null,
 ) {
-    var watchItem by remember { mutableStateOf(item) }
+    // 관심종목 탭 경로의 item은 watchlist 기반이라 포지션 필드가 비어 있다(G1 이후 holding이 정본)
+    // → holding을 얹어서 내 포지션 카드·차트 기준선·게이지가 어느 경로로 들어와도 보이게.
+    var watchItem by remember { mutableStateOf(holdingRepo.hydrate(item)) }
     var quote by remember { mutableStateOf(initialQuote) }
     var warnings by remember { mutableStateOf<List<com.haky.edge.model.StockWarning>>(emptyList()) }
     var priceLimits by remember { mutableStateOf<com.haky.edge.model.PriceLimits?>(null) }

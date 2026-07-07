@@ -24,11 +24,12 @@ CREATE TABLE holding (
 );
 
 
--- 기존 보유(avg_price 있는 행)를 기본 계좌(id=1)로 이전
+-- 기존 포지션 데이터가 있는 행을 기본 계좌(id=1)로 이전.
+-- avg_price만 조건으로 걸면 "평단 없이 목표/손절가만 등록"한 행(목표가 게이지 사용)이 유실된다.
 INSERT INTO holding(code, name, account_id, avg_price, qty, target_price, stop_price, added_at)
 SELECT code, name, 1, avg_price, qty, target_price, stop_price, added_at
 FROM watchlist
-WHERE avg_price IS NOT NULL;
+WHERE avg_price IS NOT NULL OR qty IS NOT NULL OR target_price IS NOT NULL OR stop_price IS NOT NULL;
 
 -- watchlist 포지션 필드 비우기 — holding 이 유일한 정본
 UPDATE watchlist SET avg_price = NULL, qty = NULL, target_price = NULL, stop_price = NULL;

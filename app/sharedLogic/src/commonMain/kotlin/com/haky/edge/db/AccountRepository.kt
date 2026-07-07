@@ -14,7 +14,12 @@ class AccountRepository(driverFactory: DriverFactory) {
 
     fun countCustom(): Long = q.countCustom().executeAsOne()
 
-    fun defaultId(): Long = q.defaultId().executeAsOne()
+    /** 기본 계좌 id. 프레시 설치엔 migration이 안 돌아 '기본'이 없으므로 자가 시드(HoldingRepository와 동일). */
+    fun defaultId(): Long =
+        q.defaultId().executeAsOneOrNull() ?: run {
+            q.insert("기본", 0L, 1L)
+            q.defaultId().executeAsOne()
+        }
 
     /**
      * 새 계좌를 추가하고 삽입된 AccountInfo를 반환한다.
