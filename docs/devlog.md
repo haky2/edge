@@ -6,6 +6,23 @@
 
 ---
 
+## 2026-07-07 — 평일 e2e + R1 리밸런싱 트리거 + D1 후보 발굴 (Fable)
+
+**한 일**
+- **계획 수립**: 사용자 목표 3축(매수근거·시장인지·리밸런싱/발굴) 갭 분석 → `docs/rebalancing-discovery-spec.md`(R·D 상세 스펙 + 잔여 트랙 순서 표, 커밋 039ca57). 남은 갭 = "언제 손대야 하나(트리거)" + "무엇을 새로 지켜봐야 하나(발굴)".
+- **⓪ 평일 e2e 6건 전부 통과**: ① /analog 502봉 증분 캐시·재호출 0.004s — **삼성전자 60일 중앙값 +80.8%가 수상해 파이썬 교차 재계산 → 진짜였음**(2025-26 랠리 구간, 8건 전부 동일 국면이라 caveat가 커버) ② /portfolio-review 실포지션(시뮬 구DB watchlist에서 추출) 계산 정확 ③ 운영 GCS catalyst_events.jsonl 106건 누적 중 ④ signals-scan 11종목·4신호(로컬 SLACK_SIGNAL_CHANNEL 미설정=발송 없이 평가) ⑤ earnings-preview 반기 D-38·runRate +317.9% ⑥ 스탠스 태그 미노출·로그 적재 정상.
+- **R1 (커밋 34f5228)**: `RebalanceService` — /portfolio-review 훅으로 `portfolio_snapshot.json` 영속(무상태 백엔드에 잡용 포지션 공급, premortem 전례), 룰1 드리프트(기준 대비 ±7%p)·룰2 상단권 쏠림(합 40%), 신선도 게이트(3거래일, businessDaysBetween), 최초 기준점 자동 설정. `GET /rebalance-check`·`POST /rebalance/baseline`. RebalanceTest 11. curl: 룰2 실발동(상단권 100%) + 드리프트 시뮬 발동 + 기준점 재설정.
+- **D1 (커밋 2c647e1)**: `DiscoveryService` — peer 유니버스(29종목, 관심 제외) × 신호 4종(수급전환 재사용·상대모멘텀·신고가근접·저점반등), 2신호 교집합 컷·최대 5. `GET /discovery` 당일 캐시. DiscoveryTest 10. curl: 현대로템(상대모멘텀+저점반등) 후보 적중.
+
+**막힌 점·배운 것**
+- **kotlinx 직렬화 함정**: DTO 기본값 필드(caveat)는 encodeDefaults=false에서 값==기본값이면 JSON에서 통째로 빠진다 — 계약 필드는 기본값 주지 말고 생성 시 명시 전달. RebalanceCheck·DiscoveryReport 수정.
+- 상대모멘텀 벤치마크를 업종지수→코스피로 변경(스펙 편차): 세부 Sector→KRX 업종지수 매핑이 대분류 1:N 혼재(SECTOR_INDEX_TO_OUR)라 신규 하드코딩은 오분류 위험. "시장 대비"가 해석도 깔끔.
+- 시뮬 최신 컨테이너에 G1 holding 테이블 없음 — G1 마이그레이션이 이 시뮬에서 미실행(새 빌드 설치 필요). G3 착수 때 확인.
+
+**다음 할 일**
+- R2(signals-scan 통합, Sonnet) → R3(진단 카드 드리프트+기준점 버튼, Sonnet) → D2(브리핑 "지켜볼 후보" 섹션, Sonnet) → C3(섹터 순환 카드, 선택). R2·D1 배포는 R2 후 일괄.
+- 이후 G3·G4 → O1~O5 → Batch F (spec 순서 표).
+
 ## 2026-07-05 (11) — F5 매수 프리모템 + 무효화 조건 (Opus)
 
 **한 일**

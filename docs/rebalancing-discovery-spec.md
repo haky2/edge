@@ -17,9 +17,9 @@
 
 | 순서 | 작업 | 슬라이스 | 모델 | 상태 |
 |---|---|---|---|---|
-| 0 | 운영 점검 (push 2건 + 평일 e2e) | — | Sonnet | 즉시 |
-| 1 | **R 리밸런싱 트리거** | R1~R3 | R1 Opus / R2·R3 Sonnet | 신규 |
-| 2 | **D 지켜볼 후보 발굴** | D1~D2 | D1 Opus / D2 Sonnet | 신규 |
+| 0 | 운영 점검 (push 2건 + 평일 e2e) | — | Fable | ✅ 6건 통과 (2026-07-07) |
+| 1 | **R 리밸런싱 트리거** | R1~R3 | R1 Fable / R2·R3 Sonnet | ✅R1(34f5228) · R2·R3 남음 |
+| 2 | **D 지켜볼 후보 발굴** | D1~D2 | D1 Fable / D2 Sonnet | ✅D1(2c647e1) · D2 남음 |
 | 2.5 | C3 섹터 순환 앱 노출 (선택) | C3 | Sonnet | 선택 |
 | 3 | G 계좌 그룹 뷰 | G3 (+G4 선택) | G3 Sonnet / G4 Fable | 계획 승인됨 |
 | 4 | O 해외 시세 | O1~O5 | O1~O3 Sonnet / O4 Opus / O5 Fable | 계획 승인됨 |
@@ -66,7 +66,7 @@ G·O·그래픽의 상세 정본은 각 메모리(edge-account-grouping-slices /
 - Slack ⚖️ 섹션: "비중 점검 신호: 삼성전자 32%→41% (기준 대비 +9%p)" + "매매 지시 아님, 포트폴리오 점검 신호" 고정 문구.
 
 ### 슬라이스
-- **R1 (Opus)** — 스냅샷/기준점 영속 + `RebalanceService.evaluate()` 순수 함수(룰 1·2) + 유닛테스트 + `GET /rebalance-check` 검증 라우트(수동 확인용). curl 검증.
+- **✅ R1 (Fable, 커밋 34f5228)** — 스냅샷/기준점 영속 + `RebalanceService.check()`(룰 1·2) + RebalanceTest 11 + `GET /rebalance-check`·`POST /rebalance/baseline`. curl 검증 완료(룰2 실발동·드리프트 시뮬·기준점 재설정).
 - **R2 (Sonnet)** — signals-scan 통합(신선도 게이트·쿨다운·⚖️ 포맷). 수동 트리거 검증.
 - **R3 (Sonnet)** — 앱: 포트폴리오 진단 카드에 드리프트 행(현재 vs 기준 비중, 발동 룰 배지) + "기준점 재설정" 버튼(`POST /rebalance/baseline`). iOS+Android 동시.
 
@@ -105,7 +105,7 @@ GET /discovery → { date, universe: Int, candidates: [
 당일 파일 캐시. 후보 풀 시세는 `/quotes` 병렬 패턴(Semaphore) 재사용.
 
 ### 슬라이스
-- **D1 (Opus)** — 백엔드: 유니버스 구성 + 신호 4종 평가(순수 함수) + 교집합 컷 + `GET /discovery` + 유닛테스트. curl 검증.
+- **✅ D1 (Fable, 커밋 2c647e1)** — 유니버스 29종목 + 신호 4종 + 교집합 컷 + `GET /discovery` + DiscoveryTest 10. curl 검증 완료(현대로템 후보 적중). **스펙 편차**: 상대모멘텀 벤치마크는 업종지수 대신 **코스피(0001)** — 세부 Sector→업종지수 매핑이 대분류 1:N 혼재라 오분류 회피.
 - **D2 (Sonnet)** — 앱: 브리핑 탭 "지켜볼 후보" 섹션(신호 배지 + 탭→상세, 상세에서 관심 추가는 기존 플로우) iOS+Android. (선택) Slack 아침브리핑에 후보 한 줄.
 
 ### 테스트
