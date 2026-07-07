@@ -69,7 +69,8 @@ data class RebalanceCheck(
     val topBandStocks: List<String> = emptyList(),
     val topBandFired: Boolean = false,
     val signals: List<String> = emptyList(),
-    val caveat: String = RebalanceService.CAVEAT,
+    // 기본값이면 encodeDefaults=false 에서 JSON 누락되므로 생성 시 명시 전달
+    val caveat: String,
 )
 
 /**
@@ -131,12 +132,14 @@ class RebalanceService(
         val snap = store.current ?: return RebalanceCheck(
             date = today, evaluated = false,
             reason = "포지션 스냅샷이 없습니다 — 앱에서 포트폴리오 진단을 한 번 열면 생성됩니다",
+            caveat = CAVEAT,
         )
         val ageBiz = businessDaysBetween(LocalDate.parse(snap.updatedAt), LocalDate.parse(today))
         if (ageBiz > staleBusinessDays) return RebalanceCheck(
             date = today, evaluated = false,
             reason = "스냅샷이 낡았습니다(${snap.updatedAt}, ${ageBiz}거래일 경과 > ${staleBusinessDays}) — 앱에서 포트폴리오 진단을 열면 갱신됩니다",
             snapshotUpdatedAt = snap.updatedAt,
+            caveat = CAVEAT,
         )
 
         val weights = weightsOf(fetchValues(snap.positions))
@@ -190,6 +193,7 @@ class RebalanceService(
             topBandStocks = topCodes.map { master.findByCode(it)?.name ?: it },
             topBandFired = topFired,
             signals = signals,
+            caveat = CAVEAT,
         )
     }
 

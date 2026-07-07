@@ -46,6 +46,7 @@ import com.haky.edge.routes.earningsPreviewRoutes
 import com.haky.edge.routes.earningsRoutes
 import com.haky.edge.routes.premortemRoutes
 import com.haky.edge.routes.rebalanceRoutes
+import com.haky.edge.routes.discoveryRoutes
 import com.haky.edge.routes.investorRoutes
 import com.haky.edge.routes.macroImpactRoutes
 import com.haky.edge.routes.marketCalendarRoutes
@@ -227,6 +228,8 @@ fun Application.module() {
     val portfolioReview = com.haky.edge.ai.PortfolioReviewService(kis, master, macroImpact, valuationBand, claude, modelRouter)
     // 리밸런싱 트리거(R1) — /portfolio-review가 남긴 포지션 스냅샷을 룰로 평가(비중 드리프트·상단권 쏠림).
     val rebalance = com.haky.edge.ai.RebalanceService(kis, master, valuationBand)
+    // 지켜볼 후보 발굴(D1) — peer 바스켓 유니버스(관심종목 제외) 신호 스캔.
+    val discovery = com.haky.edge.ai.DiscoveryService(kis, master, signalCodes)
     val moodLog = MarketMoodLogService()
     // C 섹터 자금 순환 — 업종지수 5/20일 상대강도. 시장 분위기 facts에 순환 문단 주입(신호 있을 때만).
     val sectorRotation = com.haky.edge.macro.SectorRotationService(kis)
@@ -307,6 +310,7 @@ fun Application.module() {
             comparisonRoutes(comparison)
             portfolioReviewRoutes(portfolioReview, rebalance)
             rebalanceRoutes(rebalance)
+            discoveryRoutes(discovery)
             eventRoutes(eventSync)
             webSearchTestRoutes(claude)
             prewarmRoutes(kis, dart)

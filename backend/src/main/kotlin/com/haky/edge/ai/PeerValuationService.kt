@@ -115,6 +115,11 @@ class PeerValuationService(
         private val POWER_BASKET = setOf("267260", "010120", "298040", "062040", "001440", "000500", "006260")
         private val AUTO_BASKET = setOf("005380", "000270", "012330", "161390", "204320", "011210")
 
+        /** 후보 발굴(D1)용 전체 peer 유니버스 — code→섹터. 공유 바스켓(전력/전선, 완성차/부품)의 중복 코드는 먼저 정의된 섹터로. */
+        internal fun peerUniverse(): Map<String, Sector> = buildMap {
+            SECTOR_PEERS.forEach { (sector, codes) -> codes.forEach { code -> putIfAbsent(code, sector) } }
+        }
+
         // 바스켓이 없는 섹터(MEMORY=국내 2개뿐·ROBOT/AI=적자·초기성장 → 밸류 비교 무의미)는 의도적으로 비움 → null.
         private val SECTOR_PEERS: Map<Sector, Set<String>> = mapOf(
             Sector.DEFENSE to setOf("012450", "047810", "079550", "064350", "272210"),
