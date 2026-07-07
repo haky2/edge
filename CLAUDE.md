@@ -262,6 +262,7 @@ Phase 1~5 핵심 기능 완성. iOS·Android 풀 패리티, 백엔드 Cloud Run 
 ## 문서 (`docs/`)
 - 계획·체크리스트의 정본은 이 `CLAUDE.md`. 보조 문서는 `docs/`에 둔다([docs/README.md](docs/README.md)).
 - `docs/decisions.md` 결정 이유 · `docs/devlog.md` 세션 작업 로그 · `docs/backend/` API·개발·한투 함정.
-- `docs/prediction-features-spec.md` **예측 보조 기능 6종 작업분석서(구현 대기)** — 유사 국면 통계·수주 공시 임팩트·실적 프리뷰·수급 전환 알림·프리모템·스탠스 적중률. 구현 시작 시 이 문서가 정본, 순서·의존성 표 포함. F2의 이벤트 로그(2-0)는 데이터 누적이 필요하므로 최우선.
+- `docs/prediction-features-spec.md` 예측 보조 기능 6종 작업분석서 — **✅ F1~F6 전부 구현 완료(2026-07-05)**, 스펙·설계 근거 참고용으로 유지.
+- `docs/rebalancing-discovery-spec.md` **다음 슬라이스 계획(2026-07-07, 진행 중)** — R 리밸런싱 트리거·D 지켜볼 후보 발굴 상세 스펙 + 잔여 트랙(G3·G4, O1~O5, Batch F) 순서 표. 이 문서가 다음 작업의 정본.
 - 세션 끝에 의미 있는 진척이 있으면 `docs/devlog.md`에 한 일/막힌 점/다음을 짧게 남긴다.
 - changelog는 git 커밋으로 갈음(버전 낼 때 도입).
