@@ -165,7 +165,10 @@ class SignalService(
 
         // 6. 프리모템 무효화 조건(F5) — 관심종목 목록과 무관하게 활성 프리모템 전체를 평가.
         //    가격·수급만으로 평가 가능한 타입(price_below/above·flow_exit)이 대상(EVALUABLE_TYPES).
+        //    markFired(1회성 비활성화)는 여기서 하지 않고 발송 성공 후에 — 발송 실패 시 알림이
+        //    영영 사라지는 걸 막는다(다음 스캔에 재평가·재발송).
         val premortemSignals = mutableListOf<PremortemSignal>()
+        val premortemFired = mutableListOf<Pair<String, List<Int>>>()
         premortem?.let { svc ->
             for (pm in runCatching { svc.allWithActive() }.getOrElse { emptyList() }) {
                 val price = runCatching { kis.getPrice(pm.code).price }.getOrNull()
@@ -173,7 +176,7 @@ class SignalService(
                     ?.let { flows -> foreignSellStreak(flows) } ?: 0
                 val fired = com.haky.edge.ai.PremortemService.firedInvalidations(pm, price, sellStreak)
                 if (fired.isEmpty()) continue
-                svc.markFired(pm.code, fired)   // 1회성 — 발동 조건 비활성화
+                premortemFired += pm.code to fired
                 premortemSignals += PremortemSignal(
                     pm.code, pm.name, pm.reason,
                     fired.map { i ->
@@ -195,7 +198,16 @@ class SignalService(
         if (descriptions.isNotEmpty()) {
             posted = slack.postMessage(signalChannel, formatMessage(flowSignals, disclosureSignals, valuationSignals, reversalSignals, reviewSignals, premortemSignals))
         }
-        saveState(state)   // 밸류밴드 상태 추적 위해 항상 저장(발화 없어도 전이 기준 갱신)
+        // 상태 저장·프리모템 비활성화는 "알릴 게 없거나, 알림이 실제로 나갔을 때"만 —
+        // 발송 실패 시 디듀프 상태가 앞서 나가 신호가 조용히 유실되는 걸 막는다(다음 스캔 재시도).
+        if (descriptions.isEmpty() || posted) {
+            premortem?.let { svc ->
+                premortemFired.forEach { (code, idx) -> runCatching { svc.markFired(code, idx) } }
+            }
+            saveState(state)   // 밸류밴드 상태 추적 위해 발화 없어도 저장(전이 기준 갱신)
+        } else {
+            println("[Signals] Slack 발송 실패 — 상태 저장·프리모템 비활성화 보류(다음 스캔 재시도)")
+        }
         return ScanResult(scanned = codes.size, fired = descriptions, posted = posted)
     }
 

@@ -63,6 +63,21 @@ class CatalystImpactService(
         const val BACKFILL_YEARS = 2L
         const val ORDER_CATEGORY = "수주·공급계약"
 
+        /**
+         * 이벤트 날짜 정규화 — CatalystEvent.date 계약("공시=YYYYMMDD, 뉴스=발행 표기, 정규화는 통계
+         * 단계에서")의 이행부. 뉴스는 RFC-1123 발행 표기("Tue, 07 Jul 2026 07:52:00 +0900")라
+         * 정규화 없이 일봉 날짜(YYYYMMDD)와 문자열 비교하면 통계에서 조용히 탈락하고 n만 부풀었다.
+         * 파싱 불가는 null(통계 제외 — n에서도 빠져 분모가 일치).
+         */
+        internal fun normalizeDate(raw: String): String? {
+            val head = raw.take(8)
+            if (head.length == 8 && head.all { it.isDigit() }) return head
+            return runCatching {
+                java.time.ZonedDateTime.parse(raw, DateTimeFormatter.RFC_1123_DATE_TIME)
+                    .withZoneSameInstant(KST).toLocalDate().format(DateTimeFormatter.BASIC_ISO_DATE)
+            }.getOrNull()
+        }
+
         /** DART 보고서명 → 수주·공급계약 여부(CatalystService.ruleCategory 핵심만 복제). */
         fun isOrderCategory(reportName: String): Boolean {
             val n = reportName.replace(" ", "")
@@ -140,7 +155,10 @@ class CatalystImpactService(
     /** F2-2: 종목+카테고리의 공시 임팩트 통계. 이벤트 없으면 안내 메시지 포함 빈 응답. */
     suspend fun impact(code: String, category: String = ORDER_CATEGORY): CatalystImpact {
         val name = master.findByCode(code)?.name ?: code
-        val events = eventLog.readAll().filter { it.code == code && it.category == category }
+        // 날짜 정규화(뉴스=RFC 표기 → YYYYMMDD). 정규화 불가 건은 n·통계 모두에서 제외.
+        val events = eventLog.readAll()
+            .filter { it.code == code && it.category == category }
+            .mapNotNull { e -> normalizeDate(e.date)?.let { e.copy(date = it) } }
         if (events.isEmpty()) return empty(code, name, category)
 
         val barsAsc = history.getHistory(code).asReversed()

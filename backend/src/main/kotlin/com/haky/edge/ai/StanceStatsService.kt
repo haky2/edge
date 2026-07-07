@@ -81,7 +81,12 @@ class StanceStatsService(
                 val baseIdx = asc.indexOfFirst { it.date >= entryYmd }
                 val exitIdx = if (baseIdx >= 0) baseIdx + HORIZON_DAYS else -1
                 if (baseIdx < 0 || exitIdx > asc.lastIndex) { pending++; continue }
-                val ret = (asc[exitIdx].close / e.priceAtGen - 1) * 100
+                // 수익률은 봉 대 봉(기준봉 종가→exit 종가) — 일봉은 수정주가라 분할·감자에도 양변이
+                // 함께 조정된다. priceAtGen(생성 시점 가격)을 분모로 쓰면 수정주가 이벤트 때 채점이
+                // 통째로 뒤집힌다(기록용으로만 유지).
+                val base = asc[baseIdx].close
+                if (base <= 0) { unknown++; continue }
+                val ret = (asc[exitIdx].close.toDouble() / base - 1) * 100
                 val correct = when (e.stance) {
                     "긍정" -> ret > 0
                     "부정" -> ret < 0

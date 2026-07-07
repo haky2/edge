@@ -2,10 +2,13 @@ package com.haky.edge.ai
 
 import com.haky.edge.kis.DailyBar
 import com.haky.edge.kis.KisClient
+import com.haky.edge.util.KST
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
 /** 종목 1개의 장기 일봉 이력 스냅샷(최신이 앞). updatedAt=effectiveMarketDate 기준. */
@@ -38,8 +41,11 @@ class DailyHistoryService(private val kis: KisClient) {
         val cached = load(code)
         if (cached != null && cached.updatedAt == today && cached.bars.size >= minBars) return cached.bars
 
-        // 최신 페이지 1콜(기존 getDailyChart 재사용 — 7개월 창, ~100건)
-        val fresh = kis.getDailyChart(code, bars = PAGE_BARS)
+        // 최신 페이지 1콜(기존 getDailyChart 재사용 — 7개월 창, ~100건).
+        // 장마감 확정 전 오늘 봉은 제외 — 포함하면 ①당일 생성 통계에 장중 반쪽 값이 섞이고
+        // ②동결 저장된 장중 종가가 다음날 병합에서 확정 종가와 불일치 → 수정주가 재계산으로
+        // 오인해 전체 리페치(~6콜)가 매일 난다.
+        val fresh = dropUnconfirmedToday(kis.getDailyChart(code, bars = PAGE_BARS))
 
         val merged = cached?.let { mergeHistories(fresh, it.bars) }
         val base = merged ?: fresh                       // merged=null → 수정주가 재계산 or 캐시 공백 → 처음부터
@@ -78,6 +84,17 @@ class DailyHistoryService(private val kis: KisClient) {
         private const val MAX_PAGES = 8
         private const val PAGE_CAL_DAYS = 200L
         private val YMD = DateTimeFormatter.ofPattern("yyyyMMdd")
+        private val CONFIRM_TIME: LocalTime = LocalTime.of(16, 0) // 종가 확정 간주 시각(수급 캐시 H1과 동일 기준)
+
+        /** 확정 전(16:00 KST 이전) 오늘 날짜 봉 제거. bars는 최신이 앞. */
+        internal fun dropUnconfirmedToday(
+            bars: List<DailyBar>,
+            now: LocalDateTime = LocalDateTime.now(KST),
+        ): List<DailyBar> {
+            if (now.toLocalTime() >= CONFIRM_TIME) return bars
+            val todayYmd = now.toLocalDate().format(YMD)
+            return bars.filter { it.date != todayYmd }
+        }
 
         /**
          * 최신 페이지(fresh)와 캐시(cached)를 병합한다. 둘 다 최신이 앞.
