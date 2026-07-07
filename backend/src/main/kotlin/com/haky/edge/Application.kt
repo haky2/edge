@@ -45,6 +45,7 @@ import com.haky.edge.routes.dartRoutes
 import com.haky.edge.routes.earningsPreviewRoutes
 import com.haky.edge.routes.earningsRoutes
 import com.haky.edge.routes.premortemRoutes
+import com.haky.edge.routes.rebalanceRoutes
 import com.haky.edge.routes.investorRoutes
 import com.haky.edge.routes.macroImpactRoutes
 import com.haky.edge.routes.marketCalendarRoutes
@@ -224,6 +225,8 @@ fun Application.module() {
     val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand)
     // 포트폴리오 종합 진단(B) — 집중도·매크로 노출·밸류 분포는 계산, Claude는 구조 해석만.
     val portfolioReview = com.haky.edge.ai.PortfolioReviewService(kis, master, macroImpact, valuationBand, claude, modelRouter)
+    // 리밸런싱 트리거(R1) — /portfolio-review가 남긴 포지션 스냅샷을 룰로 평가(비중 드리프트·상단권 쏠림).
+    val rebalance = com.haky.edge.ai.RebalanceService(kis, master, valuationBand)
     val moodLog = MarketMoodLogService()
     // C 섹터 자금 순환 — 업종지수 5/20일 상대강도. 시장 분위기 facts에 순환 문단 주입(신호 있을 때만).
     val sectorRotation = com.haky.edge.macro.SectorRotationService(kis)
@@ -302,7 +305,8 @@ fun Application.module() {
             peerValuationRoutes(peerValuation)
             backtestRoutes(backtest)
             comparisonRoutes(comparison)
-            portfolioReviewRoutes(portfolioReview)
+            portfolioReviewRoutes(portfolioReview, rebalance)
+            rebalanceRoutes(rebalance)
             eventRoutes(eventSync)
             webSearchTestRoutes(claude)
             prewarmRoutes(kis, dart)

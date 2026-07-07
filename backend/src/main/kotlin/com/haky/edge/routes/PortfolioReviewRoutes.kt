@@ -2,6 +2,7 @@ package com.haky.edge.routes
 
 import com.haky.edge.ErrorResponse
 import com.haky.edge.ai.PortfolioReviewService
+import com.haky.edge.ai.RebalanceService
 import com.haky.edge.macro.AnalysisMode
 import com.haky.edge.macro.HoldingPosition
 import io.ktor.http.HttpStatusCode
@@ -11,7 +12,7 @@ import io.ktor.server.routing.get
 
 private val CODE_REGEX = Regex("""[0-9A-Z]{6}""")
 
-fun Route.portfolioReviewRoutes(service: PortfolioReviewService) {
+fun Route.portfolioReviewRoutes(service: PortfolioReviewService, rebalance: RebalanceService? = null) {
     // GET /portfolio-review?positions=code:avg:qty,...&mode=defensive|aggressive&refresh=true
     //   보유 포지션 전체를 하나의 포트폴리오로 보고 구조(집중도·매크로 공통 노출·밸류 분포)를 진단.
     //   positions 포맷은 /macro-impact와 동일. 포지션이 입력이라 캐시는 개인별(날짜+포지션집합+모드).
@@ -24,6 +25,11 @@ fun Route.portfolioReviewRoutes(service: PortfolioReviewService) {
         val mode = AnalysisMode.from(call.request.queryParameters["mode"])
         val force = call.request.queryParameters["refresh"] == "true"
         call.respond(service.review(positions, mode, force))
+        // 리밸런싱 트리거(R1)용 포지션 스냅샷 — 응답 후 갱신이라 실패해도 진단에 영향 없음.
+        rebalance?.let { r ->
+            runCatching { r.recordSnapshot(positions) }
+                .onFailure { println("[Rebalance] 스냅샷 기록 실패: ${it.message}") }
+        }
     }
 }
 
