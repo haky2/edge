@@ -18,7 +18,7 @@
 | 순서 | 작업 | 슬라이스 | 모델 | 상태 |
 |---|---|---|---|---|
 | 0 | 운영 점검 (push 2건 + 평일 e2e) | — | Fable | ✅ 6건 통과 (2026-07-07) |
-| 1 | **R 리밸런싱 트리거** | R1~R3 | R1 Fable / R2·R3 Sonnet | ✅R1(34f5228) · R2·R3 남음 |
+| 1 | **R 리밸런싱 트리거** | R1~R3 | R1 Fable / R2·R3 Sonnet | ✅R1(34f5228) · ✅R2(f09418a) · R3 남음 |
 | 2 | **D 지켜볼 후보 발굴** | D1~D2 | D1 Fable / D2 Sonnet | ✅D1(2c647e1) · D2 남음 |
 | 2.5 | C3 섹터 순환 앱 노출 (선택) | C3 | Sonnet | 선택 |
 | 3 | G 계좌 그룹 뷰 | G3 (+G4 선택) | G3 Sonnet / G4 Fable | 계획 승인됨 |
@@ -67,7 +67,7 @@ G·O·그래픽의 상세 정본은 각 메모리(edge-account-grouping-slices /
 
 ### 슬라이스
 - **✅ R1 (Fable, 커밋 34f5228)** — 스냅샷/기준점 영속 + `RebalanceService.check()`(룰 1·2) + RebalanceTest 11 + `GET /rebalance-check`·`POST /rebalance/baseline`. curl 검증 완료(룰2 실발동·드리프트 시뮬·기준점 재설정).
-- **R2 (Sonnet)** — signals-scan 통합(신선도 게이트·쿨다운·⚖️ 포맷). 수동 트리거 검증.
+- **✅ R2 (Sonnet, 커밋 f09418a)** — SignalService에 RebalanceService 주입(신호 7번째). 신선도 게이트(check() 내부 3거래일), 쿨다운 `RB:DRIFT:{code}`·`RB:TOP` 각 14일, ⚖️ Slack 섹션 + CAVEAT 고정 문구. RebalanceSignalTest 5건. 로컬 검증: topBandFired 신호 정상 발화.
 - **R3 (Sonnet)** — 앱: 포트폴리오 진단 카드에 드리프트 행(현재 vs 기준 비중, 발동 룰 배지) + "기준점 재설정" 버튼(`POST /rebalance/baseline`). iOS+Android 동시.
 
 ### 테스트
