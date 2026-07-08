@@ -58,8 +58,10 @@ import androidx.compose.material.icons.filled.CreditCard
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.AccountRepository
 import com.haky.edge.db.HoldingRepository
+import com.haky.edge.model.DriftEntry
 import com.haky.edge.model.PortfolioReview
 import com.haky.edge.model.Quote
+import com.haky.edge.model.RebalanceCheck
 import com.haky.edge.model.WatchItem
 import com.haky.edge.ui.theme.PurpleAccent
 import com.haky.edge.ui.theme.ChangeDown
@@ -121,6 +123,7 @@ fun PortfolioScreen(
     var rows by remember { mutableStateOf<List<HoldingRow>>(emptyList()) }
     var sectorMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var portfolioReview by remember { mutableStateOf<PortfolioReview?>(null) }
+    var rebalanceCheck by remember { mutableStateOf<RebalanceCheck?>(null) }
     var reviewLoading by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var showAccountMgmt by remember { mutableStateOf(false) }
@@ -156,6 +159,7 @@ fun PortfolioScreen(
             sectorMap = entries.associate { it.code to it.sectorLabel }
         }
         loadPortfolioReview(rows, api, AppPrefs.getMode(context), false) { portfolioReview = it; reviewLoading = false }
+        rebalanceCheck = runCatching { api.getRebalanceCheck() }.getOrNull()
     }
 
     suspend fun loadReview(force: Boolean) {
@@ -216,8 +220,15 @@ fun PortfolioScreen(
                         map.entries.sortedByDescending { it.value }.map { it.key to it.value }
                     },
                     review = portfolioReview,
+                    rebalanceCheck = rebalanceCheck,
                     reviewLoading = reviewLoading,
                     onReviewRefresh = { scope.launch { loadReview(true) } },
+                    onResetBaseline = {
+                        scope.launch {
+                            runCatching { api.postRebalanceBaseline() }
+                            rebalanceCheck = runCatching { api.getRebalanceCheck() }.getOrNull()
+                        }
+                    },
                 )
             }
         }
@@ -263,8 +274,10 @@ private fun HoldingsList(
     rows: List<HoldingRow>,
     sectorRows: List<Pair<String, Double>>,
     review: PortfolioReview?,
+    rebalanceCheck: RebalanceCheck?,
     reviewLoading: Boolean,
     onReviewRefresh: () -> Unit,
+    onResetBaseline: () -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
@@ -273,7 +286,13 @@ private fun HoldingsList(
         }
         if (review != null || reviewLoading) {
             item {
-                PortfolioReviewCard(review = review, loading = reviewLoading, onRefresh = onReviewRefresh)
+                PortfolioReviewCard(
+                    review = review,
+                    rebalanceCheck = rebalanceCheck,
+                    loading = reviewLoading,
+                    onRefresh = onReviewRefresh,
+                    onResetBaseline = onResetBaseline,
+                )
                 Spacer(Modifier.height(8.dp))
             }
         }
@@ -623,11 +642,14 @@ private fun HoldingRowItem(row: HoldingRow) {
 @Composable
 private fun PortfolioReviewCard(
     review: PortfolioReview?,
+    rebalanceCheck: RebalanceCheck?,
     loading: Boolean,
     onRefresh: () -> Unit,
+    onResetBaseline: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(true) }
     var commentExpanded by remember { mutableStateOf(false) }
+    var baselineResetting by remember { mutableStateOf(false) }
 
     Surface(
         modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
@@ -739,6 +761,89 @@ private fun PortfolioReviewCard(
                                     Text("수혜 ${ex.favorablePct.toInt()}%", style = MaterialTheme.typography.labelSmall, color = ChangeUp)
                                 if (ex.adversePct > 0)
                                     Text("부담 ${ex.adversePct.toInt()}%", style = MaterialTheme.typography.labelSmall, color = ChangeDown)
+                            }
+                        }
+                    }
+                }
+
+                // 비중 드리프트
+                val rc = rebalanceCheck
+                if (rc != null && rc.evaluated) {
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text("비중 드리프트", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        rc.baselineSetAt?.let { d ->
+                            Text("(기준: $d)", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    rc.drifts.forEach { d ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(d.name, style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.width(72.dp))
+                            Text(String.format("%.1f%%", d.baselinePct),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("→", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(String.format("%.1f%%", d.currentPct),
+                                style = MaterialTheme.typography.labelSmall)
+                            val sign = if (d.deltaPp >= 0) "+" else ""
+                            Text("$sign${String.format("%.1f", d.deltaPp)}%p",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (d.fired) OrangeAccent else MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (d.fired) {
+                                Icon(Icons.Filled.Warning, contentDescription = null,
+                                    modifier = Modifier.size(12.dp), tint = OrangeAccent)
+                            }
+                        }
+                    }
+                    if (rc.topBandFired) {
+                        Spacer(Modifier.height(2.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(Icons.Filled.Warning, contentDescription = null,
+                                modifier = Modifier.size(12.dp), tint = OrangeAccent)
+                            Text("상단권 쏠림 ${String.format("%.0f", rc.topBandWeightPct ?: 0.0)}%",
+                                style = MaterialTheme.typography.labelSmall, color = OrangeAccent)
+                            Text("(${rc.topBandStocks.joinToString("·")})",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        if (baselineResetting) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = OrangeAccent)
+                        } else {
+                            androidx.compose.material3.TextButton(
+                                onClick = {
+                                    baselineResetting = true
+                                    onResetBaseline()
+                                    baselineResetting = false
+                                },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                            ) {
+                                Icon(Icons.Filled.Refresh, contentDescription = null,
+                                    modifier = Modifier.size(12.dp), tint = OrangeAccent)
+                                Spacer(Modifier.width(2.dp))
+                                Text("기준점 재설정", style = MaterialTheme.typography.labelSmall,
+                                    color = OrangeAccent)
                             }
                         }
                     }

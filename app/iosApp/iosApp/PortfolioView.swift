@@ -9,6 +9,8 @@ struct PortfolioView: View {
     @State private var rows: [HoldingRow] = []
     @State private var sectorClassify: [String: String] = [:]  // code → sectorLabel (백엔드)
     @State private var portfolioReview: PortfolioReview? = nil
+    @State private var rebalanceCheck: RebalanceCheck? = nil
+    @State private var baselineResetting = false
     @State private var reviewLoading = false
     @State private var reviewExpanded = true
     @State private var reviewCommentExpanded = false
@@ -373,6 +375,69 @@ struct PortfolioView: View {
                             }
                         }
 
+                        // 비중 드리프트 (R3)
+                        if let rc = rebalanceCheck, rc.evaluated {
+                            Divider()
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 4) {
+                                    Text("비중 드리프트").font(.caption).foregroundColor(.secondary)
+                                    if let d = rc.baselineSetAt {
+                                        Text("(기준: \(d))").font(.caption2).foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                }
+                                ForEach(rc.drifts, id: \.code) { d in
+                                    HStack(spacing: 4) {
+                                        Text(d.name).font(.caption2).lineLimit(1)
+                                            .frame(width: 72, alignment: .leading)
+                                        Text(String(format: "%.1f%%", d.baselinePct))
+                                            .font(.caption2.monospacedDigit()).foregroundColor(.secondary)
+                                        Text("→").font(.caption2).foregroundColor(.secondary)
+                                        Text(String(format: "%.1f%%", d.currentPct))
+                                            .font(.caption2.monospacedDigit())
+                                        let sign = d.deltaPp >= 0 ? "+" : ""
+                                        Text("\(sign)\(String(format: "%.1f", d.deltaPp))%p")
+                                            .font(.caption2.monospacedDigit())
+                                            .foregroundColor(d.fired ? .orange : .secondary)
+                                        if d.fired {
+                                            Image(systemName: "exclamationmark.circle.fill")
+                                                .font(.caption2).foregroundColor(.orange)
+                                        }
+                                        Spacer()
+                                    }
+                                }
+                                if rc.topBandFired {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                            .font(.caption2).foregroundColor(.orange)
+                                        Text("상단권 쏠림 \(String(format: "%.0f", rc.topBandWeightPct ?? 0))%")
+                                            .font(.caption2).foregroundColor(.orange)
+                                        Text("(\(rc.topBandStocks.joined(separator: "·")))")
+                                            .font(.caption2).foregroundColor(.secondary)
+                                        Spacer()
+                                    }
+                                }
+                                HStack {
+                                    Spacer()
+                                    if baselineResetting {
+                                        ProgressView().scaleEffect(0.7)
+                                    } else {
+                                        Button {
+                                            Task {
+                                                baselineResetting = true
+                                                try? await api.postRebalanceBaseline()
+                                                rebalanceCheck = try? await api.getRebalanceCheck()
+                                                baselineResetting = false
+                                            }
+                                        } label: {
+                                            Label("기준점 재설정", systemImage: "arrow.triangle.2.circlepath")
+                                                .font(.caption2).foregroundColor(.orange)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         // 생성 정보 + 재생성 버튼
                         HStack {
                             let todayStr: String = {
@@ -569,11 +634,14 @@ struct PortfolioView: View {
                 second: KotlinLong(value: Int64(row.qty))
             )
         }
-        portfolioReview = try? await api.getPortfolioReview(
+        async let reviewTask = api.getPortfolioReview(
             positions: positions,
             mode: analysisMode.rawValue,
             refresh: force
         )
+        async let checkTask = api.getRebalanceCheck()
+        portfolioReview = try? await reviewTask
+        rebalanceCheck = try? await checkTask
         reviewLoading = false
     }
 

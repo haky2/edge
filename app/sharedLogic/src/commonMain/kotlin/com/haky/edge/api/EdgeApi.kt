@@ -38,6 +38,7 @@ import com.haky.edge.model.MarketEvent
 import com.haky.edge.model.MoodAccuracyReport
 import com.haky.edge.model.PeerValuation
 import com.haky.edge.model.PortfolioReview
+import com.haky.edge.model.RebalanceCheck
 import com.haky.edge.model.ValuationBand
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -487,6 +488,17 @@ class EdgeApi(
         if (mode != "defensive") parameter("mode", mode)
         if (refresh) parameter("refresh", "true")
     }.body()
+
+    /** 리밸런싱 비중 점검 결과. 스냅샷 없거나 낡으면 evaluated=false. */
+    @Throws(Exception::class)
+    suspend fun getRebalanceCheck(): RebalanceCheck =
+        client.get("$baseUrl/rebalance-check").body()
+
+    /** 현재 스냅샷을 기준점으로 재설정. */
+    @Throws(Exception::class)
+    suspend fun postRebalanceBaseline() {
+        client.post("$baseUrl/rebalance/baseline")
+    }
 
     /** 향후 N일 거시 이벤트 목록(CPI·FOMC·한은·MSCI·동시만기일 등). 기본 30일. */
     @Throws(Exception::class)
