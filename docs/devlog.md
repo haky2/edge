@@ -6,6 +6,23 @@
 
 ---
 
+## 2026-07-08 — R3·D2·C3 클라 배선 + 일괄 배포 + G3 그룹 뷰 + G4 감사 (Sonnet→Fable)
+
+**한 일**
+- **R3·D2·C3 (Sonnet)**: 포폴 진단 카드 드리프트 섹션+기준점 재설정(127b2d7·d3f8a25), 브리핑 "지켜볼 후보"(ed2aecd), 시장 탭 "섹터 자금 순환" 카드(9c39979). 전부 iOS+Android 동시.
+- **UI 버그 3종(de07793)**: 손익 기여도 1행 고정폭 → 2행(이름+금액/발산 막대) — 이름 절삭·중심선 어긋남 해소. 기술적 앵커 저점/고점 쉼표 누락("%,d").
+- **일괄 배포**: 리비전 00066-kfq (R1·D1·R2 백엔드+감사 2탄분 포함). 헬스체크 OK·스케줄러 동기화·Slack 알림.
+- **G3 (Sonnet, acd5d5c)**: 내 자산 계좌별 세그먼트(커스텀 계좌 있을 때만) — 집계·도넛·손익기여·섹터 전부 선택 계좌 필터. 진단 카드는 전체 기준 유지.
+- **G4 감사 (Fable, 2be3f00)**: **HIGH ① 계좌 삭제 크래시** — moveToAccount가 단순 UPDATE라 같은 종목 양쪽 보유 시 UNIQUE(code,account_id) 충돌 → `mergeMoveHoldings`(수량 합·가중평균·트랜잭션) 신설, AccountRepository.deleteById 포함 전 경로 교체. **HIGH ② 다계좌 동일 종목** — 전체 뷰 중복 행(iOS ForEach 중복 ID)+review positions 맵 last-wins로 백엔드 진단·드리프트 오염 → `mergedByCode`로 표시·전송 병합(투자원금 합 보존). **MEDIUM** 계좌 시트 dismiss 리로드 없음(삭제된 계좌 필터 고착) → onDismiss load()+선택 검증. 4.sqm 정합 통과.
+- **C3 iOS 빌드 회귀(4eaa9ea)**: C3가 iOS 빌드 검증 없이 커밋됨 — `.indices`가 iOS 26 SDK `indices(where:)`와 모호 + rankDelta Int32 변환 누락. G4 빌드에서 발견·수정.
+
+**배운 것**
+- Sonnet 슬라이스도 iOS 빌드는 매번 돌려야 한다 — C3처럼 "Android만 빌드 확인" 커밋이 다음 감사까지 빌드 브레이크로 잠복.
+- code 키 딕셔너리/맵으로 포지션을 모으는 곳은 다계좌 도입 순간 전부 last-wins 지뢰 — 병합 헬퍼를 단일 정본으로.
+
+**다음 할 일**
+- O1~O5 해외 시세 트랙(O1 백엔드부터, Sonnet) → Batch F. G4 LOW 백로그: 빈 계좌 필터 안내·PositionEdit 계좌 컨텍스트.
+
 ## 2026-07-07 (밤) — 신규분 감사 2탄: HIGH 2·MEDIUM 6·프롬프트 1 수정 (Fable)
 
 **한 일**
