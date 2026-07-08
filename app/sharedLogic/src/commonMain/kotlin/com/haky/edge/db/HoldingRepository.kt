@@ -88,10 +88,47 @@ class HoldingRepository(driverFactory: DriverFactory) {
         }
     }
 
-    /** 계좌 삭제 시 보유 이전용. AccountRepository.deleteById 에서 호출. */
+    /** 계좌 삭제·보유 이전용. AccountRepository.deleteById 에서 호출. */
     fun moveToAccount(fromAccountId: Long, toAccountId: Long) =
-        queries.moveToAccount(newAccountId = toAccountId, oldAccountId = fromAccountId)
+        mergeMoveHoldings(db, fromAccountId, toAccountId)
 
     /** 관심종목 삭제 시 보유도 함께 제거. */
     fun removeByCode(code: String) = queries.deleteByCode(code)
+}
+
+/**
+ * from 계좌의 보유 전부를 to 계좌로 이전한다. 같은 code가 to 계좌에 이미 있으면
+ * 병합(수량 합·수량 가중평균 평단·목표/손절은 잔류 계좌 우선) — 단순 UPDATE는
+ * UNIQUE(code, account_id) 충돌로 예외가 나므로 반드시 이 경로를 쓴다.
+ * 가중평균 병합은 투자원금 합(Σ avg×qty)을 보존해 계좌별 소계 합 = 전체 정합이 유지된다.
+ * AccountRepository/HoldingRepository 가 각자 EdgeDb 를 갖고 있어 공용 함수로 뺐다.
+ */
+internal fun mergeMoveHoldings(db: EdgeDb, fromAccountId: Long, toAccountId: Long) {
+    if (fromAccountId == toAccountId) return
+    val q = db.holdingQueries
+    val mapper = { id: Long, code: String, name: String, accountId: Long,
+                   avgPrice: Double?, qty: Long?, targetPrice: Double?, stopPrice: Double? ->
+        Holding(id, code, name, accountId, avgPrice, qty, targetPrice, stopPrice)
+    }
+    db.transaction {
+        val moving = q.selectAll(mapper).executeAsList().filter { it.accountId == fromAccountId }
+        for (h in moving) {
+            val existing = q.selectByCodeAndAccount(h.code, toAccountId, mapper).executeAsOneOrNull()
+            val merged = if (existing == null) h else {
+                val priced = listOf(existing, h).filter { (it.avgPrice ?: 0.0) > 0 && (it.qty ?: 0L) > 0 }
+                val qtySum = priced.sumOf { it.qty!! }.takeIf { it > 0 }
+                val avg = qtySum?.let { total -> priced.sumOf { it.avgPrice!! * it.qty!! } / total }
+                existing.copy(
+                    avgPrice = avg,
+                    qty = if (existing.qty == null && h.qty == null) null
+                          else (existing.qty ?: 0L) + (h.qty ?: 0L),
+                    targetPrice = existing.targetPrice ?: h.targetPrice,
+                    stopPrice = existing.stopPrice ?: h.stopPrice,
+                )
+            }
+            q.upsert(merged.code, merged.name, toAccountId,
+                     merged.avgPrice, merged.qty, merged.targetPrice, merged.stopPrice, nowMillis())
+            q.deleteByCodeAndAccount(h.code, fromAccountId)
+        }
+    }
 }

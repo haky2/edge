@@ -115,6 +115,29 @@ private data class HoldingRow(
     val pnlRate: Double   get() = if (avg == 0.0) 0.0 else (price - avg) / avg * 100
 }
 
+// 같은 종목을 여러 계좌에 나눠 담은 경우 전체 뷰에서 1행으로 병합 — 수량 합·가중평균 평단
+// (hydrate와 동일 의미론, 투자원금 합 보존). portfolio-review positions 맵 유일성도 이걸로 보장.
+private fun mergedByCode(rows: List<HoldingRow>): List<HoldingRow> {
+    if (rows.map { it.item.code }.toSet().size == rows.size) return rows
+    return rows.groupBy { it.item.code }.map { (_, g) ->
+        if (g.size == 1) return@map g[0]
+        val qtySum = g.sumOf { it.qty }
+        val invested = g.sumOf { it.avg * it.qty }
+        val avg = if (qtySum > 0) invested / qtySum else g[0].avg
+        val first = g[0]
+        first.copy(
+            item = first.item.copy(
+                avgPrice = avg,
+                qty = qtySum.toLong(),
+                targetPrice = g.firstNotNullOfOrNull { it.item.targetPrice },
+                stopPrice = g.firstNotNullOfOrNull { it.item.stopPrice },
+            ),
+            avg = avg,
+            qty = qtySum,
+        )
+    }
+}
+
 // ── PortfolioScreen ──────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -142,6 +165,11 @@ fun PortfolioScreen(
         val allHoldings = holdingRepo.all().filter { it.avgPrice != null && it.qty != null }
         // G3: 계좌 목록 로드 (세그먼트 컨트롤 노출 여부 판단)
         accounts = accountRepo.all()
+        // 삭제된 계좌를 가리키는 선택 해제 — 세그먼트가 숨어도 필터만 남아 빈 화면이 고착되는 것 방지
+        val sel = selectedAccountId
+        if (sel != null && (accounts.none { it.id == sel } || accounts.none { it.isDefault == 0L })) {
+            selectedAccountId = null
+        }
         if (allHoldings.isEmpty()) {
             rows = emptyList()
             loading = false
@@ -182,7 +210,11 @@ fun PortfolioScreen(
         AccountManagementSheet(
             accountRepo = accountRepo,
             holdingRepo = holdingRepo,
-            onDismiss = { showAccountMgmt = false },
+            onDismiss = {
+                showAccountMgmt = false
+                // 계좌 추가/삭제/보유 이전이 있었을 수 있다 — 세그먼트·rows 동기화
+                scope.launch { load() }
+            },
         )
     }
 
@@ -220,8 +252,8 @@ fun PortfolioScreen(
                 }
                 rows.isEmpty() -> EmptyPortfolio()
                 else -> {
-                    // G3: 선택 계좌 기준 필터링 (null = 전체)
-                    val displayRows = if (selectedAccountId == null) rows
+                    // G3: 선택 계좌 기준 필터링 (null = 전체, 다계좌 동일 종목은 병합)
+                    val displayRows = if (selectedAccountId == null) mergedByCode(rows)
                                       else rows.filter { it.accountId == selectedAccountId }
                     HoldingsList(
                         rows = displayRows,
@@ -948,7 +980,8 @@ private suspend fun loadPortfolioReview(
     onResult: (PortfolioReview?) -> Unit,
 ) {
     if (rows.isEmpty()) { onResult(null); return }
-    val positions = rows.associate { row ->
+    // 다계좌 동일 종목은 병합해 전달 — code 키 맵이라 병합 없이는 마지막 계좌 값만 남는다
+    val positions = mergedByCode(rows).associate { row ->
         row.item.code to Pair(row.avg, row.qty.toLong())
     }
     val result = runCatching { api.getPortfolioReview(positions, mode, refresh) }.getOrNull()

@@ -32,13 +32,13 @@ class AccountRepository(driverFactory: DriverFactory) {
     }
 
     /**
-     * 계좌를 삭제한다. 삭제 전 해당 계좌의 보유를 기본 계좌로 이전한다.
+     * 계좌를 삭제한다. 삭제 전 해당 계좌의 보유를 기본 계좌로 이전한다(같은 종목은 병합).
      * 기본 계좌(is_default=1)는 삭제하지 않는다.
      */
     fun deleteById(id: Long) {
         val defId = defaultId()
         if (id == defId) return
-        hq.moveToAccount(newAccountId = defId, oldAccountId = id)
+        mergeMoveHoldings(db, fromAccountId = id, toAccountId = defId)
         q.deleteById(id)
     }
 

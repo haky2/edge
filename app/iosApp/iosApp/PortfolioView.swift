@@ -84,7 +84,10 @@ struct PortfolioView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showAccountMgmt) {
+            .sheet(isPresented: $showAccountMgmt, onDismiss: {
+                // 계좌 추가/삭제/보유 이전이 있었을 수 있다 — 세그먼트·rows 동기화
+                Task { await load() }
+            }) {
                 NavigationStack { AccountManagementView() }
             }
         }
@@ -99,10 +102,39 @@ struct PortfolioView: View {
     // G3: 커스텀 계좌(비기본 계좌)가 있을 때만 세그먼트 노출
     private var customAccounts: [AccountInfo] { accounts.filter { $0.isDefault == 0 } }
 
-    // 선택 계좌 기준 필터링 (nil = 전체)
+    // 선택 계좌 기준 필터링 (nil = 전체, 다계좌 동일 종목은 병합)
     private var displayRows: [HoldingRow] {
-        guard let selId = selectedAccountId else { return rows }
+        guard let selId = selectedAccountId else { return Self.mergedByCode(rows) }
         return rows.filter { $0.accountId == selId }
+    }
+
+    // 같은 종목을 여러 계좌에 나눠 담은 경우 전체 뷰에서 1행으로 병합 — 수량 합·가중평균 평단
+    // (hydrate와 동일 의미론, 투자원금 합 보존). ForEach id \.item.code 유일성도 이걸로 보장된다.
+    private static func mergedByCode(_ rows: [HoldingRow]) -> [HoldingRow] {
+        guard Set(rows.map { $0.item.code }).count != rows.count else { return rows }
+        var order: [String] = []
+        var groups: [String: [HoldingRow]] = [:]
+        for r in rows {
+            if groups[r.item.code] == nil { order.append(r.item.code) }
+            groups[r.item.code, default: []].append(r)
+        }
+        return order.map { code in
+            let g = groups[code]!
+            guard g.count > 1 else { return g[0] }
+            let qtySum = g.reduce(0.0) { $0 + $1.qty }
+            let invested = g.reduce(0.0) { $0 + $1.avg * $1.qty }
+            let avg = qtySum > 0 ? invested / qtySum : g[0].avg
+            let first = g[0]
+            let item = WatchItem(
+                code: first.item.code, name: first.item.name,
+                avgPrice: KotlinDouble(double: avg),
+                qty: KotlinLong(longLong: Int64(qtySum)),
+                targetPrice: g.compactMap { $0.item.targetPrice }.first,
+                stopPrice: g.compactMap { $0.item.stopPrice }.first
+            )
+            return HoldingRow(item: item, quote: first.quote, avg: avg, qty: qtySum,
+                              price: first.price, accountId: first.accountId)
+        }
     }
 
     // 보유 종목 리스트 + 상단 집계 카드
@@ -617,6 +649,11 @@ struct PortfolioView: View {
         let allHoldings = Db.holding.all().filter { $0.avgPrice != nil && $0.qty != nil }
         // G3: 계좌 목록 로드 (세그먼트 컨트롤 노출 여부 판단)
         accounts = Db.account.all() as! [AccountInfo]
+        // 삭제된 계좌를 가리키는 선택 해제 — 세그먼트가 숨어도 필터만 남아 빈 화면이 고착되는 것 방지
+        if let sel = selectedAccountId,
+           !accounts.contains(where: { $0.id == sel }) || customAccounts.isEmpty {
+            selectedAccountId = nil
+        }
         guard !allHoldings.isEmpty else {
             rows = []
             loading = false
@@ -651,8 +688,9 @@ struct PortfolioView: View {
         guard !rows.isEmpty else { return }
         reviewLoading = true
         if force { portfolioReview = nil; reviewCommentExpanded = false }
+        // 다계좌 동일 종목은 병합해 전달 — code 키 딕셔너리라 병합 없이는 마지막 계좌 값만 남는다
         var positions: [String: KotlinPair<KotlinDouble, KotlinLong>] = [:]
-        for row in rows {
+        for row in Self.mergedByCode(rows) {
             positions[row.item.code] = KotlinPair(
                 first: KotlinDouble(value: row.avg),
                 second: KotlinLong(value: Int64(row.qty))
