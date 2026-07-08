@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -461,27 +460,30 @@ private fun PnlContributionView(rows: List<HoldingRow>) {
         Text("손익 기여도", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         sorted.forEach { row ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text(row.item.name,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.width(68.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                // 이름 + 금액: 풀 폭으로 — 이름이 잘리지 않음
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    val sign = if (row.pnl >= 0) "+" else ""
+                    Text(row.item.name,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).padding(end = 6.dp))
+                    Text("$sign${fmt.format(row.pnl.toLong())}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (row.pnl >= 0) ChangeUp else ChangeDown,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
+                // 발산 막대: 전폭 → 모든 행 중심선이 동일 x에 정렬됨
                 DivergingBar(
                     pnl = row.pnl,
                     maxAbs = maxAbs,
-                    modifier = Modifier.weight(1f).height(10.dp),
-                )
-                val sign = if (row.pnl >= 0) "+" else ""
-                Text("$sign${fmt.format(row.pnl.toLong())}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (row.pnl >= 0) ChangeUp else ChangeDown,
-                    maxLines = 1,
-                    softWrap = false,
-                    modifier = Modifier.widthIn(min = 64.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
                 )
             }
         }

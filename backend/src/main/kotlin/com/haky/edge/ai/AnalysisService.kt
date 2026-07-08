@@ -622,7 +622,7 @@ class AnalysisService(
         val ma60 = if (closes.size >= 60) closes.take(60).average() else null
         val sb = StringBuilder()
         sb.appendLine("기술적 앵커(레벨 제시용 사실 값, 종가 기준):")
-        sb.appendLine("  최근 20거래일 저점 ${low20}원 / 고점 ${high20}원")
+        sb.appendLine("  최근 20거래일 저점 ${"%,d".format(low20)}원 / 고점 ${"%,d".format(high20)}원")
         sb.append("  20일 이동평균 ${"%,.0f".format(ma20)}원")
         if (ma60 != null) sb.append(", 60일 이동평균 ${"%,.0f".format(ma60)}원")
         sb.appendLine()

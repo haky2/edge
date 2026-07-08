@@ -219,13 +219,19 @@ struct PortfolioView: View {
         return VStack(alignment: .leading, spacing: 6) {
             Text("손익 기여도").font(.caption).foregroundColor(.secondary)
             ForEach(sorted, id: \.item.code) { row in
-                HStack(spacing: 6) {
-                    Text(row.item.name)
-                        .font(.caption2)
-                        .lineLimit(1)
-                        .frame(width: 68, alignment: .leading)
-
-                    // 발산 막대: 가운데 기준선, 수익 오른쪽(빨강), 손실 왼쪽(파랑)
+                VStack(alignment: .leading, spacing: 2) {
+                    // 이름 + 금액: 한 행에 — 이름이 잘리지 않도록 풀 폭 사용
+                    HStack {
+                        Text(row.item.name)
+                            .font(.caption2)
+                            .lineLimit(1)
+                        Spacer()
+                        let sign = row.pnl >= 0 ? "+" : ""
+                        Text("\(sign)\(Int(row.pnl).formatted())")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundColor(row.pnl >= 0 ? .red : .blue)
+                    }
+                    // 발산 막대: 전폭을 쓰므로 모든 행의 중심선이 동일 x에 정렬됨
                     GeometryReader { geo in
                         let half = geo.size.width / 2
                         let ratio = CGFloat(min(abs(row.pnl) / maxAbs, 1.0))
@@ -233,13 +239,13 @@ struct PortfolioView: View {
                         ZStack {
                             Rectangle()
                                 .fill(Color.secondary.opacity(0.2))
-                                .frame(width: 1, height: 10)
+                                .frame(width: 1, height: 6)
                             if row.pnl >= 0 {
                                 HStack(spacing: 0) {
                                     Color.clear.frame(width: half)
                                     RoundedRectangle(cornerRadius: 2)
                                         .fill(Color.red.opacity(0.65))
-                                        .frame(width: fillW, height: 8)
+                                        .frame(width: fillW, height: 5)
                                     Spacer()
                                 }
                             } else {
@@ -247,22 +253,13 @@ struct PortfolioView: View {
                                     Spacer()
                                     RoundedRectangle(cornerRadius: 2)
                                         .fill(Color.blue.opacity(0.65))
-                                        .frame(width: fillW, height: 8)
+                                        .frame(width: fillW, height: 5)
                                     Color.clear.frame(width: half)
                                 }
                             }
                         }
                     }
-                    .frame(height: 10)
-
-                    let sign = row.pnl >= 0 ? "+" : ""
-                    Text("\(sign)\(Int(row.pnl).formatted())")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundColor(row.pnl >= 0 ? .red : .blue)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        // 고정 폭: 값 길이에 따라 컬럼이 달라지면 위 GeometryReader 차트 폭·중심선이 행마다 어긋난다.
-                        .frame(width: 92, alignment: .trailing)
+                    .frame(height: 6)
                 }
             }
         }
