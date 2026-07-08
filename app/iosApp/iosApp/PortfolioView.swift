@@ -17,6 +17,8 @@ struct PortfolioView: View {
     @State private var loading = false
     @State private var lastUpdated: Date?
     @State private var showAccountMgmt = false
+    @State private var accounts: [AccountInfo] = []
+    @State private var selectedAccountId: Int64? = nil
     @AppStorage(analysisModeKey) private var modeRaw = AnalysisMode.defensive.rawValue
     private var analysisMode: AnalysisMode { AnalysisMode(rawValue: modeRaw) ?? .defensive }
 
@@ -94,9 +96,32 @@ struct PortfolioView: View {
         }
     }
 
+    // G3: 커스텀 계좌(비기본 계좌)가 있을 때만 세그먼트 노출
+    private var customAccounts: [AccountInfo] { accounts.filter { $0.isDefault == 0 } }
+
+    // 선택 계좌 기준 필터링 (nil = 전체)
+    private var displayRows: [HoldingRow] {
+        guard let selId = selectedAccountId else { return rows }
+        return rows.filter { $0.accountId == selId }
+    }
+
     // 보유 종목 리스트 + 상단 집계 카드
     private var holdingsList: some View {
         List {
+            if !customAccounts.isEmpty {
+                Section {
+                    Picker("계좌", selection: $selectedAccountId) {
+                        Text("전체").tag(Int64?.none)
+                        ForEach(accounts, id: \.id) { acc in
+                            Text(acc.name).tag(Optional(acc.id))
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+            }
+
             Section {
                 summaryCard
             }
@@ -107,8 +132,8 @@ struct PortfolioView: View {
                 }
             }
 
-            Section("보유 종목 \(rows.count)개") {
-                ForEach(rows, id: \.item.code) { row in
+            Section("보유 종목 \(displayRows.count)개") {
+                ForEach(displayRows, id: \.item.code) { row in
                     NavigationLink {
                         StockDetailView(item: row.item, quote: row.quote, api: api)
                     } label: {
@@ -122,8 +147,8 @@ struct PortfolioView: View {
 
     // 총 투자금·평가금액·손익·수익률 집계 카드 + 도넛 + 손익 기여도 + 섹터 비중
     private var summaryCard: some View {
-        let invested   = rows.reduce(0.0) { $0 + $1.invested }
-        let evaluated  = rows.reduce(0.0) { $0 + $1.evaluated }
+        let invested   = displayRows.reduce(0.0) { $0 + $1.invested }
+        let evaluated  = displayRows.reduce(0.0) { $0 + $1.evaluated }
         let totalPnl   = evaluated - invested
         let totalRate  = invested == 0 ? 0.0 : totalPnl / invested * 100
         let pnlColor: Color = totalPnl > 0 ? .red : totalPnl < 0 ? .blue : .secondary
@@ -155,13 +180,13 @@ struct PortfolioView: View {
             }
 
             // ── 종목 비중 도넛 ──
-            if rows.count > 1 {
+            if displayRows.count > 1 {
                 let colorByName = Dictionary(
-                    uniqueKeysWithValues: rows.enumerated().map { ($1.item.name, Self.sliceColor($0)) }
+                    uniqueKeysWithValues: displayRows.enumerated().map { ($1.item.name, Self.sliceColor($0)) }
                 )
                 Divider()
                 HStack(alignment: .center, spacing: 16) {
-                    Chart(rows, id: \.item.code) { row in
+                    Chart(displayRows, id: \.item.code) { row in
                         SectorMark(
                             angle: .value("비중", row.evaluated),
                             innerRadius: .ratio(0.55),
@@ -171,14 +196,14 @@ struct PortfolioView: View {
                         .foregroundStyle(by: .value("종목", row.item.name))
                     }
                     .chartForegroundStyleScale(
-                        domain: rows.map { $0.item.name },
-                        range: rows.indices.map { Self.sliceColor($0) }
+                        domain: displayRows.map { $0.item.name },
+                        range: displayRows.indices.map { Self.sliceColor($0) }
                     )
                     .chartLegend(.hidden)
                     .frame(width: 100, height: 100)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        ForEach(rows.sorted { $0.evaluated > $1.evaluated }, id: \.item.code) { row in
+                        ForEach(displayRows.sorted { $0.evaluated > $1.evaluated }, id: \.item.code) { row in
                             let pct = evaluated == 0 ? 0 : row.evaluated / evaluated * 100
                             HStack(spacing: 4) {
                                 Circle().frame(width: 8, height: 8)
@@ -195,8 +220,8 @@ struct PortfolioView: View {
             }
 
             // ── 손익 기여도 발산 막대 ──
-            let hasPnl = rows.contains { $0.pnl != 0 }
-            if rows.count >= 1 && hasPnl {
+            let hasPnl = displayRows.contains { $0.pnl != 0 }
+            if displayRows.count >= 1 && hasPnl {
                 Divider()
                 pnlContributionView
             }
@@ -213,7 +238,7 @@ struct PortfolioView: View {
     // MARK: - 손익 기여도 발산 막대
 
     private var pnlContributionView: some View {
-        let sorted = rows.sorted { $0.pnl > $1.pnl }  // 수익 → 손실 순
+        let sorted = displayRows.sorted { $0.pnl > $1.pnl }  // 수익 → 손실 순
         let maxAbs = max(sorted.map { abs($0.pnl) }.max() ?? 1.0, 1.0)
 
         return VStack(alignment: .leading, spacing: 6) {
@@ -576,7 +601,7 @@ struct PortfolioView: View {
     // 백엔드 분류 우선, 없으면 "기타"
     private var sectorRows: [(sector: String, evaluated: Double)] {
         var map: [String: Double] = [:]
-        for row in rows {
+        for row in displayRows {
             let sector = sectorClassify[row.item.code] ?? "기타"
             map[sector, default: 0] += row.evaluated
         }
@@ -590,6 +615,8 @@ struct PortfolioView: View {
         loading = true
         // G1: holding 테이블이 보유 포지션의 단일 정본
         let allHoldings = Db.holding.all().filter { $0.avgPrice != nil && $0.qty != nil }
+        // G3: 계좌 목록 로드 (세그먼트 컨트롤 노출 여부 판단)
+        accounts = Db.account.all() as! [AccountInfo]
         guard !allHoldings.isEmpty else {
             rows = []
             loading = false
@@ -608,7 +635,7 @@ struct PortfolioView: View {
             let item = WatchItem(code: h.code, name: h.name,
                                  avgPrice: h.avgPrice, qty: h.qty,
                                  targetPrice: h.targetPrice, stopPrice: h.stopPrice)
-            return HoldingRow(item: item, quote: quote, avg: avg, qty: qty, price: price)
+            return HoldingRow(item: item, quote: quote, avg: avg, qty: qty, price: price, accountId: h.accountId)
         }
         lastUpdated = Date()
         loading = false
@@ -683,6 +710,7 @@ private struct HoldingRow {
     let avg: Double
     let qty: Double
     let price: Double
+    let accountId: Int64  // G3: 계좌 필터링용
 
     var invested:  Double { avg * qty }
     var evaluated: Double { price * qty }

@@ -54,9 +54,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.AccountRepository
 import com.haky.edge.db.HoldingRepository
+import com.haky.edge.model.AccountInfo
 import com.haky.edge.model.DriftEntry
 import com.haky.edge.model.PortfolioReview
 import com.haky.edge.model.Quote
@@ -103,6 +107,7 @@ private data class HoldingRow(
     val avg: Double,
     val qty: Double,
     val price: Double,
+    val accountId: Long = 0L,  // G3: 계좌 필터링용
 ) {
     val invested: Double  get() = avg * qty
     val evaluated: Double get() = price * qty
@@ -120,6 +125,8 @@ fun PortfolioScreen(
     api: EdgeApi,
 ) {
     var rows by remember { mutableStateOf<List<HoldingRow>>(emptyList()) }
+    var accounts by remember { mutableStateOf<List<AccountInfo>>(emptyList()) }
+    var selectedAccountId by remember { mutableStateOf<Long?>(null) }
     var sectorMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var portfolioReview by remember { mutableStateOf<PortfolioReview?>(null) }
     var rebalanceCheck by remember { mutableStateOf<RebalanceCheck?>(null) }
@@ -133,6 +140,8 @@ fun PortfolioScreen(
         loading = true
         // G1: holding 테이블이 보유 포지션의 단일 정본
         val allHoldings = holdingRepo.all().filter { it.avgPrice != null && it.qty != null }
+        // G3: 계좌 목록 로드 (세그먼트 컨트롤 노출 여부 판단)
+        accounts = accountRepo.all()
         if (allHoldings.isEmpty()) {
             rows = emptyList()
             loading = false
@@ -150,7 +159,7 @@ fun PortfolioScreen(
             val item = WatchItem(code = h.code, name = h.name,
                                  avgPrice = h.avgPrice, qty = h.qty,
                                  targetPrice = h.targetPrice, stopPrice = h.stopPrice)
-            HoldingRow(item, quote, avg, qty, price)
+            HoldingRow(item, quote, avg, qty, price, h.accountId)
         }
         loading = false
         // 섹터 분류 + 포트폴리오 진단은 화면 표시 차단 없이 별도 로드
@@ -210,25 +219,33 @@ fun PortfolioScreen(
                     }
                 }
                 rows.isEmpty() -> EmptyPortfolio()
-                else -> HoldingsList(
-                    rows = rows,
-                    sectorRows = run {
-                        val map = mutableMapOf<String, Double>()
-                        for (row in rows) map[sectorMap[row.item.code] ?: "기타"] =
-                            (map[sectorMap[row.item.code] ?: "기타"] ?: 0.0) + row.evaluated
-                        map.entries.sortedByDescending { it.value }.map { it.key to it.value }
-                    },
-                    review = portfolioReview,
-                    rebalanceCheck = rebalanceCheck,
-                    reviewLoading = reviewLoading,
-                    onReviewRefresh = { scope.launch { loadReview(true) } },
-                    onResetBaseline = {
-                        scope.launch {
-                            runCatching { api.postRebalanceBaseline() }
-                            rebalanceCheck = runCatching { api.getRebalanceCheck() }.getOrNull()
-                        }
-                    },
-                )
+                else -> {
+                    // G3: 선택 계좌 기준 필터링 (null = 전체)
+                    val displayRows = if (selectedAccountId == null) rows
+                                      else rows.filter { it.accountId == selectedAccountId }
+                    HoldingsList(
+                        rows = displayRows,
+                        accounts = accounts,
+                        selectedAccountId = selectedAccountId,
+                        onAccountSelect = { selectedAccountId = it },
+                        sectorRows = run {
+                            val map = mutableMapOf<String, Double>()
+                            for (row in displayRows) map[sectorMap[row.item.code] ?: "기타"] =
+                                (map[sectorMap[row.item.code] ?: "기타"] ?: 0.0) + row.evaluated
+                            map.entries.sortedByDescending { it.value }.map { it.key to it.value }
+                        },
+                        review = portfolioReview,
+                        rebalanceCheck = rebalanceCheck,
+                        reviewLoading = reviewLoading,
+                        onReviewRefresh = { scope.launch { loadReview(true) } },
+                        onResetBaseline = {
+                            scope.launch {
+                                runCatching { api.postRebalanceBaseline() }
+                                rebalanceCheck = runCatching { api.getRebalanceCheck() }.getOrNull()
+                            }
+                        },
+                    )
+                }
             }
         }
     }
@@ -268,9 +285,13 @@ private fun EmptyPortfolio() {
 
 // ── 보유 종목 리스트 ─────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HoldingsList(
     rows: List<HoldingRow>,
+    accounts: List<AccountInfo>,
+    selectedAccountId: Long?,
+    onAccountSelect: (Long?) -> Unit,
     sectorRows: List<Pair<String, Double>>,
     review: PortfolioReview?,
     rebalanceCheck: RebalanceCheck?,
@@ -278,7 +299,34 @@ private fun HoldingsList(
     onReviewRefresh: () -> Unit,
     onResetBaseline: () -> Unit,
 ) {
+    val customAccounts = accounts.filter { it.isDefault == 0L }
     LazyColumn(modifier = Modifier.fillMaxSize()) {
+        // G3: 커스텀 계좌가 있을 때만 세그먼트 컨트롤 표시
+        if (customAccounts.isNotEmpty()) {
+            item {
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    val options = listOf<Long?>(null) + accounts.map { it.id }
+                    options.forEachIndexed { index, id ->
+                        SegmentedButton(
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                            onClick = { onAccountSelect(id) },
+                            selected = selectedAccountId == id,
+                            label = {
+                                Text(
+                                    if (id == null) "전체"
+                                    else accounts.find { it.id == id }?.name ?: "",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+        }
         item {
             SummaryCard(rows = rows, sectorRows = sectorRows)
             Spacer(Modifier.height(8.dp))
