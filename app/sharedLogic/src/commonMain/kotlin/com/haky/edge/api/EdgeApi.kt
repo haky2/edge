@@ -125,6 +125,16 @@ class EdgeApi(
         }.body()
 
     /**
+     * 해외 종목 간단 AI 코멘트(시세 15분 지연 + 뉴스만 근거 — 수급·공시·재무 없음).
+     * 백엔드가 (code,날짜) 당일 전 유저 공유 캐시. 기존 Analysis 모델 재사용(요약 박스 계약 동일).
+     */
+    @Throws(Exception::class)
+    suspend fun getOverseasAnalysis(code: String): Analysis =
+        client.get("$baseUrl/overseas/analysis") {
+            parameter("code", code)
+        }.body()
+
+    /**
      * 여러 종목 시세를 한 번에 가져온다(관심종목 리스트용). → GET /quotes?codes=a,b,c
      * 백엔드가 병렬 조회하며, 일부 실패분은 응답에서 빠질 수 있어 반환 개수가 요청보다 적을 수 있다.
      */

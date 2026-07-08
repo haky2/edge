@@ -44,6 +44,10 @@ class OverseasMaster(private val http: HttpClient) {
         }
     }
 
+    /** 코드("US:NAS:AAPL") 정확 일치 1건. 코드→이름 변환은 search()가 아니라 이것을 쓴다. */
+    suspend fun findByCode(code: String): OverseasStockInfo? =
+        all().firstOrNull { it.code == code }
+
     /**
      * 검색. 전부 ASCII + 소문자 없음(예: AAPL, 7203, BRK.B) → 심볼 prefix.
      * 그 외(소문자·한글 등: apple, 애플) → 한글명+영문명 부분 일치.

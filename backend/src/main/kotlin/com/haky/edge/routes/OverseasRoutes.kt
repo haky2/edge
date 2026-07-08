@@ -1,6 +1,7 @@
 package com.haky.edge.routes
 
 import com.haky.edge.ErrorResponse
+import com.haky.edge.ai.OverseasAnalysisService
 import com.haky.edge.kis.KisClient
 import com.haky.edge.master.OverseasMaster
 import io.ktor.http.HttpStatusCode
@@ -23,7 +24,7 @@ internal fun parseOverseasCode(code: String): Pair<String, String>? {
     return if (parts.size == 3) Pair(parts[1], parts[2]) else null
 }
 
-fun Route.overseasRoutes(kis: KisClient, overseasMaster: OverseasMaster) {
+fun Route.overseasRoutes(kis: KisClient, overseasMaster: OverseasMaster, overseasAnalysis: OverseasAnalysisService) {
     // GET /overseas/search?q=AAPL  또는  /overseas/search?q=애플
     // 대문자·숫자만 → 심볼 prefix. 소문자·한글 포함 → 이름 부분 일치.
     get("/overseas/search") {
@@ -42,6 +43,19 @@ fun Route.overseasRoutes(kis: KisClient, overseasMaster: OverseasMaster) {
             return@get
         }
         call.respond(kis.getOverseasPrice(excd, symb))
+    }
+
+    // GET /overseas/analysis?code=US:NAS:AAPL — 간단 AI 코멘트(시세+뉴스만 근거). (code,날짜) 당일 공유 캐시.
+    get("/overseas/analysis") {
+        val code = call.request.queryParameters["code"].orEmpty()
+        val (excd, symb) = parseOverseasCode(code) ?: run {
+            call.respond(
+                HttpStatusCode.BadRequest,
+                ErrorResponse("해외 종목코드 형식 오류: '$code' (예: US:NAS:AAPL)"),
+            )
+            return@get
+        }
+        call.respond(overseasAnalysis.analyze(code, excd, symb))
     }
 
     // GET /overseas/quotes?codes=US:NAS:AAPL,US:NAS:MSFT,...

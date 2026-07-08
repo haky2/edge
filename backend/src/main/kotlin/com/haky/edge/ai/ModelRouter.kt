@@ -36,6 +36,7 @@ class ModelRouter(
         const val ASK = "ask" // 종목 자유 질문 Q&A — 대화형(지연 민감)·볼륨 트리거라 기본 Sonnet
         const val PORTFOLIO = "portfolio" // 포트폴리오 종합 진단 — facts가 전부 계산값이라 기본 Sonnet(env로 승격 가능)
         const val PREMORTEM = "premortem" // F5 매수 프리모템 — 매수 기록당 1회(자연 상한)·고판단 지점이라 기본 Opus
+        const val OVERSEAS = "overseas" // O4 해외 간단 코멘트 — 근거가 시세+뉴스뿐이라 판단력 프리미엄 낮음 → 기본 Sonnet
 
         /**
          * 기본 Opus 대상: 브리핑 + 종목 최초 생성 + 매수 프리모템. 나머지(자동 재생성·수동 새로고침·

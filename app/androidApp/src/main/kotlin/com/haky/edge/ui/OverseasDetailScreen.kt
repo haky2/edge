@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -36,12 +37,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.runtime.rememberCoroutineScope
 import com.haky.edge.api.EdgeApi
+import com.haky.edge.model.Analysis
 import com.haky.edge.model.OverseasQuote
 import com.haky.edge.model.WatchItem
 import com.haky.edge.ui.theme.ChangeDown
 import com.haky.edge.ui.theme.ChangeUp
 import com.haky.edge.ui.theme.OrangeAccent
+import com.haky.edge.ui.theme.PurpleAccent
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,6 +62,15 @@ fun OverseasDetailScreen(
     var quote by remember { mutableStateOf<OverseasQuote?>(null) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var analysis by remember { mutableStateOf<Analysis?>(null) }
+    var analyzing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    suspend fun loadAnalysis() {
+        analyzing = true
+        analysis = runCatching { api.getOverseasAnalysis(code = item.code) }.getOrNull()
+        analyzing = false
+    }
 
     LaunchedEffect(item.code) {
         loading = true
@@ -64,6 +81,9 @@ fun OverseasDetailScreen(
         }
         loading = false
     }
+
+    // AI 코멘트는 시세와 독립 병렬 로드 — 백엔드가 당일 공유 캐시라 재진입은 즉시.
+    LaunchedEffect(item.code) { loadAnalysis() }
 
     Scaffold(
         topBar = {
@@ -105,6 +125,14 @@ fun OverseasDetailScreen(
             quote?.let { q ->
                 item { PriceHeaderCard(q) }
                 item { StatsCard(q) }
+            }
+
+            item {
+                OverseasAiCommentCard(
+                    analysis = analysis,
+                    analyzing = analyzing,
+                    onRetry = { scope.launch { loadAnalysis() } },
+                )
             }
 
             item { Spacer(Modifier.height(16.dp)) }
@@ -176,6 +204,96 @@ private fun StatsCard(q: OverseasQuote) {
             StatRow("52주 고점", priceText(q, q.high52w))
             StatRow("52주 저점", priceText(q, q.low52w))
             StatRow("거래량", volumeText(q.volume))
+        }
+    }
+}
+
+// 해외 AI 코멘트 — 국내 AICommentCard의 경량판(모드·재생성·근거두께 없음, 시세+뉴스만 근거).
+@Composable
+private fun OverseasAiCommentCard(
+    analysis: Analysis?,
+    analyzing: Boolean,
+    onRetry: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp), tint = PurpleAccent)
+                Text("AI 코멘트", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "시세·뉴스 기반",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.weight(1f))
+                if (analyzing) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            }
+
+            if (analysis != null) {
+                analysis.summary?.takeIf { it.isNotBlank() }?.let { summary ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(PurpleAccent.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.Filled.PushPin, contentDescription = null, modifier = Modifier.size(14.dp), tint = PurpleAccent)
+                            Text("핵심 요약", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = PurpleAccent)
+                        }
+                        Text(
+                            parseMarkdownBold(summary.trim()),
+                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+
+                val paragraphs = analysis.comment.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() }
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    paragraphs.forEach { p ->
+                        Text(
+                            parseMarkdownBold(p),
+                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.padding(top = 2.dp)) {
+                    Text(
+                        "참고용 · ${analysis.date} ${analysis.generatedAt} 생성 · 국내 종목과 달리 수급·공시 근거 없음",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "투자 판단과 책임은 본인에게 있습니다",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else if (analyzing) {
+                Text("시세·뉴스를 종합해 코멘트를 생성하고 있어요…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Text("코멘트를 불러오지 못했어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "↻ 다시 시도",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = PurpleAccent,
+                    modifier = Modifier.clickable { onRetry() }.padding(top = 4.dp),
+                )
+            }
         }
     }
 }
