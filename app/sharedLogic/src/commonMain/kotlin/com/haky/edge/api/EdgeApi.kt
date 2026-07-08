@@ -37,6 +37,7 @@ import com.haky.edge.model.TargetPriceInfo
 import com.haky.edge.model.MarketEvent
 import com.haky.edge.model.MoodAccuracyReport
 import com.haky.edge.model.PeerValuation
+import com.haky.edge.model.DiscoveryReport
 import com.haky.edge.model.PortfolioReview
 import com.haky.edge.model.RebalanceCheck
 import com.haky.edge.model.ValuationBand
@@ -499,6 +500,11 @@ class EdgeApi(
     suspend fun postRebalanceBaseline() {
         client.post("$baseUrl/rebalance/baseline")
     }
+
+    /** peer 바스켓 유니버스에서 2개 이상 신호가 켜진 지켜볼 후보 발굴(당일 캐시). LLM 0. */
+    @Throws(Exception::class)
+    suspend fun getDiscovery(): DiscoveryReport =
+        client.get("$baseUrl/discovery").body()
 
     /** 향후 N일 거시 이벤트 목록(CPI·FOMC·한은·MSCI·동시만기일 등). 기본 30일. */
     @Throws(Exception::class)
