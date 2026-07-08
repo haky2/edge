@@ -587,7 +587,7 @@ struct BriefingView: View {
                         .padding(.vertical, 2)
                     }
                     // 섹터별 5일/20일 수익률 + 순위변화
-                    ForEach(r.sectors.indices, id: \.self) { i in
+                    ForEach(0..<r.sectors.count, id: \.self) { i in
                         let s = r.sectors[i]
                         HStack(spacing: 0) {
                             Text(s.label)
@@ -607,7 +607,7 @@ struct BriefingView: View {
                             }
                             .font(.caption2.monospacedDigit())
                             Spacer()
-                            rankDeltaBadge(s.rankDelta)
+                            rankDeltaBadge(Int(s.rankDelta))
                         }
                         .padding(.vertical, 1)
                         if i < r.sectors.count - 1 { Divider() }
