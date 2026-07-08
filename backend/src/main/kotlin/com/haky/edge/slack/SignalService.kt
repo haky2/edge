@@ -43,6 +43,7 @@ class SignalService(
     private val backtest: com.haky.edge.ai.BacktestService? = null, // F4 필터·근거용(없으면 전환 신호 skip)
     private val earningsPreview: com.haky.edge.ai.EarningsPreviewService? = null, // F3 리뷰용(없으면 skip)
     private val premortem: com.haky.edge.ai.PremortemService? = null, // F5 무효화 조건 감시(없으면 skip)
+    private val rebalance: com.haky.edge.ai.RebalanceService? = null, // R2 비중 점검 신호(없으면 skip)
 ) {
     private val dataDir = File(System.getenv("DATA_DIR") ?: ".data").also { it.mkdirs() }
     private val stateFile = File(dataDir, "signal_state.json")
@@ -63,6 +64,7 @@ class SignalService(
     private data class ReversalSignal(val code: String, val name: String, val type: FlowType, val toBuy: Boolean, val prevStreak: Int, val todayQty: Long, val backtestNote: String?)
     private data class EarningsReviewSignal(val code: String, val name: String, val review: com.haky.edge.ai.EarningsPreviewService.EarningsReview)
     private data class PremortemSignal(val code: String, val name: String, val reason: String, val descriptions: List<String>)
+    private data class RebalanceSignal(val text: String)
 
     internal enum class FlowType(val label: String) { FOREIGN("외국인"), INSTITUTION("기관") }
 
@@ -187,16 +189,44 @@ class SignalService(
             }
         }
 
+        // 7. 리밸런싱 비중 점검(R2) — 스냅샷 신선도 게이트는 check() 내부, 여기선 14일 쿨다운 추가.
+        val rebalanceSignals = mutableListOf<RebalanceSignal>()
+        rebalance?.let { svc ->
+            runCatching { svc.check() }.getOrNull()?.let { result ->
+                if (result.evaluated) {
+                    for (drift in result.drifts.filter { it.fired }) {
+                        val key = "RB:DRIFT:${drift.code}"
+                        if (withinCooldown(state[key], today, REBALANCE_COOLDOWN_DAYS)) continue
+                        state[key] = today
+                        val sign = if (drift.deltaPp >= 0) "+" else ""
+                        rebalanceSignals += RebalanceSignal(
+                            "*${drift.name}* (${drift.code}) 비중: ${"%.1f".format(drift.baselinePct)}% → ${"%.1f".format(drift.currentPct)}% (기준 대비 ${sign}${"%.1f".format(drift.deltaPp)}%p)"
+                        )
+                    }
+                    if (result.topBandFired) {
+                        val key = "RB:TOP"
+                        if (!withinCooldown(state[key], today, REBALANCE_COOLDOWN_DAYS)) {
+                            state[key] = today
+                            rebalanceSignals += RebalanceSignal(
+                                "역사적 상단권 종목 비중 합 ${"%.1f".format(result.topBandWeightPct!!)}% (${result.topBandStocks.joinToString("·")})"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         val descriptions = flowSignals.map { "${it.name}(${it.code}) ${it.type.label} ${it.streak}일 연속 순매수" } +
             disclosureSignals.map { "${it.name}(${it.code}) 공시: ${it.title}" } +
             valuationSignals.map { "${it.name}(${it.code}) 밸류 저평가(PER 하위 ${it.percentile}%)" } +
             reversalSignals.map { "${it.name}(${it.code}) ${it.type.label} ${if (it.toBuy) "매수" else "매도"} 전환(직전 ${it.prevStreak}일 반대)" } +
             reviewSignals.map { "${it.name}(${it.code}) 실적 리뷰: ${it.review.periodLabel} run-rate ${it.review.verdict}" } +
-            premortemSignals.map { "${it.name}(${it.code}) 무효화 조건 발동: ${it.descriptions.joinToString("; ")}" }
+            premortemSignals.map { "${it.name}(${it.code}) 무효화 조건 발동: ${it.descriptions.joinToString("; ")}" } +
+            rebalanceSignals.map { "비중 점검 신호: ${it.text}" }
 
         var posted = false
         if (descriptions.isNotEmpty()) {
-            posted = slack.postMessage(signalChannel, formatMessage(flowSignals, disclosureSignals, valuationSignals, reversalSignals, reviewSignals, premortemSignals))
+            posted = slack.postMessage(signalChannel, formatMessage(flowSignals, disclosureSignals, valuationSignals, reversalSignals, reviewSignals, premortemSignals, rebalanceSignals))
         }
         // 상태 저장·프리모템 비활성화는 "알릴 게 없거나, 알림이 실제로 나갔을 때"만 —
         // 발송 실패 시 디듀프 상태가 앞서 나가 신호가 조용히 유실되는 걸 막는다(다음 스캔 재시도).
@@ -266,6 +296,7 @@ class SignalService(
         reversals: List<ReversalSignal> = emptyList(),
         reviews: List<EarningsReviewSignal> = emptyList(),
         premortems: List<PremortemSignal> = emptyList(),
+        rebalances: List<RebalanceSignal> = emptyList(),
     ): String = buildString {
         appendLine("🔔 *오늘의 관심종목 신호*")
         appendLine()
@@ -320,6 +351,12 @@ class SignalService(
             }
             appendLine()
         }
+        if (rebalances.isNotEmpty()) {
+            appendLine("⚖️ *비중 점검 신호*")
+            rebalances.forEach { r -> appendLine("• ${r.text}") }
+            appendLine("  _${com.haky.edge.ai.RebalanceService.CAVEAT}_")
+            appendLine()
+        }
         append("_장 마감 후 확정 데이터 기준 · 참고용_")
     }
 
@@ -340,6 +377,7 @@ class SignalService(
         internal const val REVERSAL_MIN_STREAK = 5  // 직전 N일 연속 반대 방향이어야 전환으로 인정
         internal const val REVERSAL_COOLDOWN_DAYS = 7 // 같은 방향 전환 재알림 금지 기간
         internal const val REVERSAL_MIN_CORR = 0.3  // flow-sensitivity r 하한(수급이 가격을 움직이는 종목만)
+        internal const val REBALANCE_COOLDOWN_DAYS = 14 // 리밸런싱 룰별 재알림 금지 기간
 
         /**
          * 수급 전환점 감지(F4, 순수 함수). netByDay = 한 주체의 일별 순매수량, 최신이 앞(확정 일별값).
