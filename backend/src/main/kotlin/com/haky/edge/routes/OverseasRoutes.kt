@@ -2,6 +2,7 @@ package com.haky.edge.routes
 
 import com.haky.edge.ErrorResponse
 import com.haky.edge.kis.KisClient
+import com.haky.edge.master.OverseasMaster
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -22,7 +23,14 @@ internal fun parseOverseasCode(code: String): Pair<String, String>? {
     return if (parts.size == 3) Pair(parts[1], parts[2]) else null
 }
 
-fun Route.overseasRoutes(kis: KisClient) {
+fun Route.overseasRoutes(kis: KisClient, overseasMaster: OverseasMaster) {
+    // GET /overseas/search?q=AAPL  또는  /overseas/search?q=애플
+    // 대문자·숫자만 → 심볼 prefix. 소문자·한글 포함 → 이름 부분 일치.
+    get("/overseas/search") {
+        val q = call.request.queryParameters["q"].orEmpty()
+        call.respond(overseasMaster.search(q))
+    }
+
     // GET /overseas/quote?code=US:NAS:AAPL
     get("/overseas/quote") {
         val code = call.request.queryParameters["code"].orEmpty()

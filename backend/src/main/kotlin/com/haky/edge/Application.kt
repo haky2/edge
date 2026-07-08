@@ -25,6 +25,7 @@ import com.haky.edge.macro.MarketMoodService
 import com.haky.edge.macro.EventSyncService
 import com.haky.edge.macro.SectorBriefingService
 import com.haky.edge.macro.YahooMacroClient
+import com.haky.edge.master.OverseasMaster
 import com.haky.edge.master.StockMaster
 import com.haky.edge.news.NaverNewsClient
 import com.haky.edge.news.NaverTargetPriceClient
@@ -187,6 +188,7 @@ fun Application.module() {
         baseUrl = System.getenv("TOSS_BASE_URL") ?: "https://openapi.tossinvest.com",
     )
     val master = StockMaster(HttpClient(CIO))
+    val overseasMaster = OverseasMaster(HttpClient(CIO))
     val naver = NaverNewsClient(
         clientId = System.getenv("NAVER_CLIENT_ID").orEmpty(),
         clientSecret = System.getenv("NAVER_CLIENT_SECRET").orEmpty(),
@@ -279,7 +281,7 @@ fun Application.module() {
         // 나머지 데이터 라우트는 전부 IP별 레이트리밋 적용(토큰 인증은 configureSecurity 인터셉트에서 전역 처리).
         rateLimit(ApiRateLimit) {
             quoteRoutes(kis)
-            overseasRoutes(kis)
+            overseasRoutes(kis, overseasMaster)
             warningsRoutes(toss)
             marketCalendarRoutes(toss)
             chartRoutes(kis)
