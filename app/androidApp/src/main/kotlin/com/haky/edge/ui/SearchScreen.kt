@@ -43,8 +43,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.WatchlistRepository
+import com.haky.edge.model.OverseasStockInfo
 import com.haky.edge.model.StockInfo
 import com.haky.edge.ui.theme.EdgeTheme
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,6 +59,7 @@ fun SearchScreen(
 ) {
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<StockInfo>>(emptyList()) }
+    var overseasResults by remember { mutableStateOf<List<OverseasStockInfo>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var inWatchlist by remember { mutableStateOf(setOf<String>()) }
@@ -67,12 +71,17 @@ fun SearchScreen(
 
     fun runSearch() {
         val q = query.trim()
-        if (q.isEmpty()) { results = emptyList(); return }
+        if (q.isEmpty()) { results = emptyList(); overseasResults = emptyList(); return }
         scope.launch {
             loading = true
             error = null
             try {
-                results = api.search(query = q)
+                coroutineScope {
+                    val domDeferred = async { api.search(query = q) }
+                    val ovsDeferred = async { api.searchOverseas(query = q) }
+                    results = domDeferred.await()
+                    overseasResults = ovsDeferred.await()
+                }
             } catch (e: Exception) {
                 error = "검색 실패: ${e.message}"
             }
@@ -128,7 +137,7 @@ fun SearchScreen(
                 Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-            } else if (results.isEmpty() && query.isNotEmpty()) {
+            } else if (results.isEmpty() && overseasResults.isEmpty() && query.isNotEmpty()) {
                 Text(
                     "검색 결과가 없어요",
                     style = MaterialTheme.typography.bodySmall,
@@ -138,18 +147,82 @@ fun SearchScreen(
             }
 
             LazyColumn {
-                items(results, key = { it.code }) { stock ->
-                    SearchResultRow(
-                        stock = stock,
-                        isAdded = inWatchlist.contains(stock.code),
-                        onAdd = {
-                            watchlistRepo.add(code = stock.code, name = stock.name)
-                            inWatchlist = inWatchlist + stock.code
-                        },
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(start = 16.dp))
+                if (results.isNotEmpty()) {
+                    item {
+                        Text(
+                            "국내",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                        )
+                    }
+                    items(results, key = { it.code }) { stock ->
+                        SearchResultRow(
+                            stock = stock,
+                            isAdded = inWatchlist.contains(stock.code),
+                            onAdd = {
+                                watchlistRepo.add(code = stock.code, name = stock.name)
+                                inWatchlist = inWatchlist + stock.code
+                            },
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(start = 16.dp))
+                    }
+                }
+                if (overseasResults.isNotEmpty()) {
+                    item {
+                        Text(
+                            "해외",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                        )
+                    }
+                    items(overseasResults, key = { it.code }) { stock ->
+                        OverseasSearchRow(
+                            stock = stock,
+                            isAdded = inWatchlist.contains(stock.code),
+                            onAdd = {
+                                val name = stock.nameEn.ifEmpty { stock.symb }
+                                watchlistRepo.add(code = stock.code, name = name)
+                                inWatchlist = inWatchlist + stock.code
+                            },
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(start = 16.dp))
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun OverseasSearchRow(
+    stock: OverseasStockInfo,
+    isAdded: Boolean,
+    onAdd: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(stock.nameEn.ifEmpty { stock.symb }, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                "${stock.symb} · ${stock.market} · ${stock.currency}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (isAdded) {
+            Icon(
+                Icons.Filled.CheckCircle,
+                contentDescription = "추가됨",
+                tint = EdgeTheme.colors.success,
+            )
+        } else {
+            TextButton(onClick = onAdd) { Text("추가") }
         }
     }
 }

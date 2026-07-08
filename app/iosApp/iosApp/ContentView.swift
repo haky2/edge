@@ -32,6 +32,7 @@ enum Db {
 struct WatchlistView: View {
     @State private var watchlist: [WatchItem] = []
     @State private var quotes: [String: Quote] = [:]
+    @State private var overseasQuotes: [String: OverseasQuote] = [:]
     @State private var supplyBadges: [String: [String]] = [:]  // code → ["외인 3일↑", ...]
     @State private var sparklines: [String: [Double]] = [:]   // code → 7일 종가(오래된→최신)
     @State private var errorText: String?
@@ -52,9 +53,12 @@ struct WatchlistView: View {
                             Text(e).font(.footnote).foregroundColor(.secondary)
                         }
                         ForEach(watchlist, id: \.code) { item in
-                            // 탭하면 상세 화면으로. 리스트가 받아둔 시세를 넘겨 즉시 표시.
                             NavigationLink {
-                                StockDetailView(item: item, quote: quotes[item.code], api: api)
+                                if item.code.hasPrefix("US:") {
+                                    OverseasDetailView(item: item, api: api)
+                                } else {
+                                    StockDetailView(item: item, quote: quotes[item.code], api: api)
+                                }
                             } label: {
                                 row(item)
                             }
@@ -168,6 +172,17 @@ struct WatchlistView: View {
                         .foregroundColor(chgColor)
                 }
                 .frame(width: 90, alignment: .trailing)
+            } else if let oq = overseasQuotes[item.code] {
+                let isUp = oq.changeRate > 0; let isDown = oq.changeRate < 0
+                let chgColor: Color = isUp ? .red : isDown ? .blue : .secondary
+                let symbol = isUp ? "▲" : isDown ? "▼" : "—"
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(overseasPriceText(oq)).font(.body.weight(.semibold))
+                    Text("\(symbol) \(String(format: "%.2f", abs(oq.changeRate)))%")
+                        .font(.caption)
+                        .foregroundColor(chgColor)
+                }
+                .frame(width: 90, alignment: .trailing)
             } else {
                 Text("—").foregroundColor(.secondary)
             }
@@ -192,26 +207,48 @@ struct WatchlistView: View {
         watchlist.remove(atOffsets: offsets)
     }
 
+    private func fetchDomesticQuotes(_ codes: [String]) async -> [Quote] {
+        guard !codes.isEmpty else { return [] }
+        return (try? await api.getQuotes(codes: codes)) ?? []
+    }
+
+    private func fetchOverseasQuotes(_ codes: [String]) async -> [OverseasQuote] {
+        guard !codes.isEmpty else { return [] }
+        return (try? await api.getOverseasQuotes(codes: codes)) ?? []
+    }
+
+    private func overseasPriceText(_ q: OverseasQuote) -> String {
+        let sym = q.currency == "USD" ? "$" : "\(q.currency) "
+        let digits = q.price < 10 ? 4 : q.price < 100 ? 3 : 2
+        return "\(sym)\(String(format: "%.\(digits)f", q.price))"
+    }
+
     private func load() async {
         loading = true
         errorText = nil
-        // 관심종목을 DB에서 다시 읽는다(이후 추가/삭제가 반영되도록).
         let items = Db.watchlist.all()
         watchlist = items
-        do {
-            let codes = items.map { $0.code }
-            let list = try await api.getQuotes(codes: codes)
-            // 코드 → Quote 딕셔너리로 변환해 화면에서 빠르게 합친다.
-            var map: [String: Quote] = [:]
-            for q in list { map[q.code] = q }
-            quotes = map
-            lastUpdated = Date()
-        } catch {
-            errorText = "불러오기 실패: \(error.localizedDescription)\n(백엔드 실행 확인: cd backend && ./run.sh)"
+        let codes = items.map { $0.code }
+        let domesticCodes = codes.filter { !$0.hasPrefix("US:") }
+        let overseasCodes = codes.filter { $0.hasPrefix("US:") }
+        async let domFetch = fetchDomesticQuotes(domesticCodes)
+        async let ovsFetch = fetchOverseasQuotes(overseasCodes)
+        let dList = await domFetch
+        let oList = await ovsFetch
+        var dMap: [String: Quote] = [:]
+        for q in dList { dMap[q.code] = q }
+        var oMap: [String: OverseasQuote] = [:]
+        for q in oList { oMap[q.code] = q }
+        quotes = dMap
+        overseasQuotes = oMap
+        if !codes.isEmpty && dList.isEmpty && oList.isEmpty {
+            errorText = "불러오기 실패 — 백엔드 확인: cd backend && ./run.sh"
         }
+        lastUpdated = Date()
         loading = false
-        Task { await loadSupplyBadges(items: items) }
-        Task { await loadSparklines(items: items) }
+        let domesticItems = items.filter { !$0.code.hasPrefix("US:") }
+        Task { await loadSupplyBadges(items: domesticItems) }
+        Task { await loadSparklines(items: domesticItems) }
     }
 
     // 스파크라인: 종목별 7일 종가를 병렬로 가져온다. 실패 종목은 조용히 skip.

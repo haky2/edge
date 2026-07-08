@@ -32,12 +32,14 @@ import com.haky.edge.db.AccountRepository
 import com.haky.edge.db.ActionLogRepository
 import com.haky.edge.db.HoldingRepository
 import com.haky.edge.db.WatchlistRepository
+import com.haky.edge.model.OverseasQuote
 import com.haky.edge.model.Quote
 import com.haky.edge.model.WatchItem
 
 sealed class AppDestination {
     object Watchlist : AppDestination()
     data class StockDetail(val item: WatchItem, val quote: Quote?) : AppDestination()
+    data class OverseasDetail(val item: WatchItem, val overseasQuote: OverseasQuote?) : AppDestination()
     object Search : AppDestination()
     object Portfolio : AppDestination()
     object Briefing : AppDestination()
@@ -78,6 +80,7 @@ fun EdgeApp(
 
     // 상세/검색/비교 화면에서 뒤로가기 → 이전 탭으로
     val isDetailScreen = destination is AppDestination.StockDetail
+            || destination is AppDestination.OverseasDetail
             || destination is AppDestination.Search
             || destination is AppDestination.Comparison
     BackHandler(enabled = isDetailScreen) {
@@ -125,7 +128,15 @@ fun EdgeApp(
                         onStockClick = { item, quote ->
                             destination = AppDestination.StockDetail(item, quote)
                         },
+                        onOverseasStockClick = { item, ovsQuote ->
+                            destination = AppDestination.OverseasDetail(item, ovsQuote)
+                        },
                         onAddClick = { destination = AppDestination.Search },
+                    )
+                    is AppDestination.OverseasDetail -> OverseasDetailScreen(
+                        item = dest.item,
+                        api = api,
+                        onBack = { destination = tabDestination(activeTab) },
                     )
                     is AppDestination.StockDetail -> StockDetailScreen(
                         item = dest.item,

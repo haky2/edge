@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.WatchlistRepository
+import com.haky.edge.model.OverseasQuote
 import com.haky.edge.model.Quote
 import com.haky.edge.model.WatchItem
 import com.haky.edge.ui.theme.ChangeDown
@@ -79,10 +80,12 @@ fun WatchlistScreen(
     watchlistRepo: WatchlistRepository,
     api: EdgeApi,
     onStockClick: (WatchItem, Quote?) -> Unit,
+    onOverseasStockClick: (WatchItem, OverseasQuote?) -> Unit,
     onAddClick: () -> Unit,
 ) {
     var items by remember { mutableStateOf<List<WatchItem>>(emptyList()) }
     var quotes by remember { mutableStateOf<Map<String, Quote>>(emptyMap()) }
+    var overseasQuotes by remember { mutableStateOf<Map<String, OverseasQuote>>(emptyMap()) }
     var supplyBadges by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
     var sparklines by remember { mutableStateOf<Map<String, List<Double>>>(emptyMap()) }
     var loading by remember { mutableStateOf(false) }
@@ -140,16 +143,23 @@ fun WatchlistScreen(
             error = null
             val watchlist = watchlistRepo.all()
             items = watchlist
+            val domesticCodes = watchlist.map { it.code }.filter { !it.startsWith("US:") }
+            val overseasCodes = watchlist.map { it.code }.filter { it.startsWith("US:") }
             try {
-                val quoteList = api.getQuotes(watchlist.map { it.code })
-                quotes = quoteList.associateBy { it.code }
+                coroutineScope {
+                    val domDeferred = async { if (domesticCodes.isNotEmpty()) api.getQuotes(domesticCodes) else emptyList() }
+                    val ovsDeferred = async { if (overseasCodes.isNotEmpty()) api.getOverseasQuotes(overseasCodes) else emptyList() }
+                    quotes = domDeferred.await().associateBy { it.code }
+                    overseasQuotes = ovsDeferred.await().associateBy { it.code }
+                }
             } catch (e: Exception) {
                 error = "불러오기 실패: ${e.message}"
             }
             loading = false
             loadedAtState.value = System.currentTimeMillis()
-            launch { loadSparklines(watchlist) }
-            launch { loadSupplyBadges(watchlist) }
+            val domesticItems = watchlist.filter { !it.code.startsWith("US:") }
+            launch { loadSparklines(domesticItems) }
+            launch { loadSupplyBadges(domesticItems) }
         }
     }
 
@@ -230,9 +240,16 @@ fun WatchlistScreen(
                                             WatchlistRow(
                                                 item = watchItem,
                                                 quote = quotes[watchItem.code],
+                                                overseasQuote = overseasQuotes[watchItem.code],
                                                 sparklines = sparklines[watchItem.code] ?: emptyList(),
                                                 badges = supplyBadges[watchItem.code] ?: emptyList(),
-                                                onClick = { onStockClick(watchItem, quotes[watchItem.code]) },
+                                                onClick = {
+                                                    if (watchItem.code.startsWith("US:")) {
+                                                        onOverseasStockClick(watchItem, overseasQuotes[watchItem.code])
+                                                    } else {
+                                                        onStockClick(watchItem, quotes[watchItem.code])
+                                                    }
+                                                },
                                             )
                                         }
                                     }
@@ -321,6 +338,7 @@ private fun SwipeToDeleteRow(
 private fun WatchlistRow(
     item: WatchItem,
     quote: Quote?,
+    overseasQuote: OverseasQuote? = null,
     sparklines: List<Double>,
     badges: List<String>,
     onClick: () -> Unit,
@@ -415,6 +433,37 @@ private fun WatchlistRow(
                 )
                 Text(
                     "$symbol ${"%.2f".format(abs(quote.changeRate))}%",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = chgColor,
+                )
+            }
+        } else if (overseasQuote != null) {
+            val oq = overseasQuote
+            val chgColor = when {
+                oq.changeRate > 0 -> ChangeUp
+                oq.changeRate < 0 -> ChangeDown
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            val symbol = when {
+                oq.changeRate > 0 -> "▲"
+                oq.changeRate < 0 -> "▼"
+                else -> "—"
+            }
+            val priceStr = run {
+                val sym = if (oq.currency == "USD") "$" else "${oq.currency} "
+                val digits = if (oq.price < 10) 4 else if (oq.price < 100) 3 else 2
+                "$sym${"%.${digits}f".format(oq.price)}"
+            }
+            Column(
+                horizontalAlignment = Alignment.End,
+                modifier = Modifier.widthIn(min = 72.dp),
+            ) {
+                Text(
+                    priceStr,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                )
+                Text(
+                    "$symbol ${"%.2f".format(abs(oq.changeRate))}%",
                     style = MaterialTheme.typography.labelMedium,
                     color = chgColor,
                 )

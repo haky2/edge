@@ -38,6 +38,8 @@ import com.haky.edge.model.MarketEvent
 import com.haky.edge.model.MoodAccuracyReport
 import com.haky.edge.model.PeerValuation
 import com.haky.edge.model.DiscoveryReport
+import com.haky.edge.model.OverseasQuote
+import com.haky.edge.model.OverseasStockInfo
 import com.haky.edge.model.PortfolioReview
 import com.haky.edge.model.RebalanceCheck
 import com.haky.edge.model.SectorRotation
@@ -100,6 +102,27 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getQuote(code: String): Quote =
         client.get("$baseUrl/quote/$code").body()
+
+    /** 해외 종목 단건 시세(code = "US:NAS:AAPL"). 한투 기본 15분 지연. */
+    @Throws(Exception::class)
+    suspend fun getOverseasQuote(code: String): OverseasQuote =
+        client.get("$baseUrl/overseas/quote") {
+            parameter("code", code)
+        }.body()
+
+    /** 해외 종목 다건 시세(관심종목 리스트용). 형식 오류 코드는 백엔드에서 제외. */
+    @Throws(Exception::class)
+    suspend fun getOverseasQuotes(codes: List<String>): List<OverseasQuote> =
+        client.get("$baseUrl/overseas/quotes") {
+            parameter("codes", codes.joinToString(","))
+        }.body()
+
+    /** 해외 종목 검색. 대문자 → 심볼 prefix, 소문자·한글 → 이름 부분 일치. */
+    @Throws(Exception::class)
+    suspend fun searchOverseas(query: String): List<OverseasStockInfo> =
+        client.get("$baseUrl/overseas/search") {
+            parameter("q", query)
+        }.body()
 
     /**
      * 여러 종목 시세를 한 번에 가져온다(관심종목 리스트용). → GET /quotes?codes=a,b,c
