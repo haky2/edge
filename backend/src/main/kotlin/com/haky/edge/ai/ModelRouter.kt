@@ -3,18 +3,19 @@ package com.haky.edge.ai
 /**
  * AI 코멘트 호출의 트리거별 모델 라우팅.
  *
- * 정책(CLAUDE.md "facts 강화로 Sonnet 충분" 결정과 정합, 2026-07-03 재확정 — docs/decisions.md 참고):
- * 판단력 프리미엄은 하루 기준점이 되는 곳에만 쓰고, 반복·볼륨 트리거는 Sonnet.
- *   briefing               (시장 분위기, 1일 1회)          → Opus
- *   analysis_initial       (종목 최초 생성, 하루 기준점)    → Opus
- *   analysis_auto_refresh  (급변 stale 자동 재생성)          → Sonnet (볼륨 트리거)
- *   analysis_manual        (사용자 수동 새로고침, 연타 가능)  → Sonnet
- *   catalyst               (재료 JSON 분류 — 판단력 불필요)   → Sonnet
+ * 정책(2026-07-08 사용자 결정으로 개정): **사용자에게 보이는 해석 코멘트는 전부 기본 Opus.**
+ * 전 코멘트가 당일(또는 5분 쿨다운) 캐시 뒤에 있어 호출 횟수 자연 상한이 있고, 해석 품질이
+ * 체감 가치라는 판단. 판단력이 필요 없는 JSON 분류(catalyst·섹터 분류)만 Sonnet 유지.
+ *   briefing / analysis_* / ask / portfolio / premortem / overseas /
+ *   macro_impact / sector_briefing / comparison                      → Opus
+ *   catalyst (재료 JSON 분류 — 판단력 불필요, 볼륨 트리거)              → Sonnet
+ *
+ * (구 정책 2026-07-03: 하루 기준점만 Opus, 볼륨 트리거 Sonnet — docs/decisions.md #10·#11.
+ *  비용이 부담되면 env로 구 정책 복귀: `OPUS_TRIGGERS=briefing,analysis_initial,premortem`)
  *
  * 롤백/재튜닝은 코드 수정 없이 env `OPUS_TRIGGERS`(콤마 목록)로 제어:
  *   미설정                → 위 기본 정책
  *   `OPUS_TRIGGERS=`      → 전부 Sonnet (비용 즉시 절감)
- *   `briefing,analysis_initial,analysis_auto_refresh,analysis_manual,catalyst` → 전부 Opus
  *
  * 모델 ID는 `CLAUDE_MODEL`(Sonnet)·`CLAUDE_OPUS_MODEL`(Opus) env로 주입.
  */
@@ -33,19 +34,25 @@ class ModelRouter(
         const val ANALYSIS_AUTO_REFRESH = "analysis_auto_refresh"
         const val ANALYSIS_MANUAL = "analysis_manual"
         const val CATALYST = "catalyst"
-        const val ASK = "ask" // 종목 자유 질문 Q&A — 대화형(지연 민감)·볼륨 트리거라 기본 Sonnet
-        const val PORTFOLIO = "portfolio" // 포트폴리오 종합 진단 — facts가 전부 계산값이라 기본 Sonnet(env로 승격 가능)
-        const val PREMORTEM = "premortem" // F5 매수 프리모템 — 매수 기록당 1회(자연 상한)·고판단 지점이라 기본 Opus
-        const val OVERSEAS = "overseas" // O4 해외 간단 코멘트 — 당일 공유 캐시(1일 1회/종목)라 저빈도 → 기본 Opus(사용자 결정 2026-07-08)
+        const val ASK = "ask" // 종목 자유 질문 Q&A — 지연은 늘지만 해석 품질 우선(일일 상한으로 볼륨 방어)
+        const val PORTFOLIO = "portfolio" // 포트폴리오 종합 진단 — 당일 캐시 1회, 구조 해석
+        const val PREMORTEM = "premortem" // F5 매수 프리모템 — 매수 기록당 1회(자연 상한)·고판단 지점
+        const val OVERSEAS = "overseas" // O4 해외 간단 코멘트 — 당일 공유 캐시(1일 1회/종목)
+        const val MACRO_IMPACT = "macro_impact" // 브리핑 "내 종목 영향" — 당일 캐시 1회
+        const val SECTOR_BRIEFING = "sector_briefing" // 브리핑 "섹터 분석" — 당일 캐시 1회
+        const val COMPARISON = "comparison" // 종목 비교 — (쌍·날짜·모드) 당일 캐시
 
         /**
-         * 기본 Opus 대상: 브리핑 + 종목 최초 생성 + 매수 프리모템 + 해외 코멘트. 나머지(자동 재생성·
-         * 수동 새로고침·재료 판정)는 Sonnet — 재료 판정은 JSON 분류라 판단력 프리미엄이 불필요하고,
-         * 수동/자동 재생성은 볼륨 트리거라 비용 대비 효용이 낮다(CLAUDE.md "facts 강화로 Sonnet 충분" 결정과 정합).
-         * 프리모템은 analysis_initial과 같은 저빈도·고판단 지점(매수당 1회 자연 상한)이라 비용 부담 없이 Opus.
-         * 해외(O4)는 당일 공유 캐시로 종목당 1일 1회 자연 상한 — 사용자 결정(2026-07-08)으로 기본 Opus.
+         * 기본 Opus 대상 = 사용자에게 보이는 해석 코멘트 전부(2026-07-08 사용자 결정).
+         * 전부 당일 캐시(수동 재생성은 5분 쿨다운, Q&A는 일일 상한) 뒤라 호출 횟수 자연 상한이 있다.
+         * CATALYST(재료 JSON 분류)만 제외 — 해석이 아니라 분류 작업이라 판단력 프리미엄이 없고 볼륨만 있다.
+         * (MacroImpactService.inferSectors 같은 라우터 미경유 JSON 분류도 기본 Sonnet 그대로.)
          */
-        val DEFAULT_OPUS_TRIGGERS = setOf(BRIEFING, ANALYSIS_INITIAL, PREMORTEM, OVERSEAS)
+        val DEFAULT_OPUS_TRIGGERS = setOf(
+            BRIEFING, ANALYSIS_INITIAL, ANALYSIS_AUTO_REFRESH, ANALYSIS_MANUAL,
+            ASK, PORTFOLIO, PREMORTEM, OVERSEAS,
+            MACRO_IMPACT, SECTOR_BRIEFING, COMPARISON,
+        )
 
         /**
          * env 문자열 → 트리거 집합.

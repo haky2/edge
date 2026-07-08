@@ -75,6 +75,9 @@ class MacroImpactService(
     private val naver: NaverNewsClient,
     private val yahoo: YahooMacroClient,
     private val eventSync: EventSyncService? = null,
+    // 해석 코멘트 모델 라우팅(기본 Opus). null(테스트 등)이면 ClaudeClient 기본 모델(Sonnet).
+    // 섹터 분류(inferSectors)는 JSON 분류라 라우터를 태우지 않고 Sonnet 그대로.
+    private val modelRouter: com.haky.edge.ai.ModelRouter? = null,
 ) {
     private val cache = ConcurrentHashMap<String, MacroImpact>()
     private val fileCache = FileCache("macro_impact", MacroImpact.serializer())
@@ -109,7 +112,8 @@ class MacroImpactService(
         val eventsText = runCatching { eventSync?.upcomingFactsText() }.getOrNull()
         val facts = buildFacts(indicators, holdingImpacts, watchImpacts, positionMap, eventsText)
         // 상한(ceiling)일 뿐 — 3~4문단이면 보통 그 안에서 end_turn, 길어져도 ClaudeClient가 이어써 안 잘림.
-        val comment = claude.complete(prompt, facts, maxTokens = 2800)
+        val model = modelRouter?.modelFor(com.haky.edge.ai.ModelRouter.MACRO_IMPACT)
+        val comment = claude.complete(prompt, facts, maxTokens = 2800, modelOverride = model)
 
         val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))

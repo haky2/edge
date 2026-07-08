@@ -200,7 +200,7 @@ fun Application.module() {
         model = System.getenv("CLAUDE_MODEL") ?: "claude-sonnet-4-6",
         usageTracker = usageTracker,
     )
-    // 트리거별 모델 라우팅: 기본은 브리핑·종목최초·급변재생성=Opus, 수동새로고침=Sonnet.
+    // 트리거별 모델 라우팅: 기본은 해석 코멘트 전부 Opus, 재료 JSON 분류(catalyst)만 Sonnet.
     // 롤백/재튜닝은 env OPUS_TRIGGERS(콤마 목록)로 코드 수정 없이. (ModelRouter 주석 참고)
     val modelRouter = ModelRouter(
         sonnetModel = System.getenv("CLAUDE_MODEL") ?: "claude-sonnet-4-6",
@@ -215,7 +215,7 @@ fun Application.module() {
     val ecos = EcosClient(apiKey = System.getenv("ECOS_API_KEY").orEmpty())
     val yahoo = YahooMacroClient()
     val eventSync = EventSyncService(claude)
-    val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos, naver, yahoo, eventSync)
+    val macroImpact = MacroImpactService(kis, master, claude, fearGreed, copper, ecos, naver, yahoo, eventSync, modelRouter)
     val krxShortSelling = KrxShortSellingClient()
     val valuationBand = ValuationBandService(kis, dart)
     val peerValuation = PeerValuationService(kis, master, macroImpact)
@@ -228,7 +228,7 @@ fun Application.module() {
         stanceLog = stanceLog)
     // O4 해외 간단 코멘트 — 시세(15분 지연)+뉴스만 근거. (code,날짜) 당일 공유 캐시, 기본 Opus.
     val overseasAnalysis = com.haky.edge.ai.OverseasAnalysisService(kis, naver, overseasMaster, claude, modelRouter)
-    val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand)
+    val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand, modelRouter)
     // 포트폴리오 종합 진단(B) — 집중도·매크로 노출·밸류 분포는 계산, Claude는 구조 해석만.
     val portfolioReview = com.haky.edge.ai.PortfolioReviewService(kis, master, macroImpact, valuationBand, claude, modelRouter)
     // 리밸런싱 트리거(R1) — /portfolio-review가 남긴 포지션 스냅샷을 룰로 평가(비중 드리프트·상단권 쏠림).
@@ -239,7 +239,7 @@ fun Application.module() {
     // C 섹터 자금 순환 — 업종지수 5/20일 상대강도. 시장 분위기 facts에 순환 문단 주입(신호 있을 때만).
     val sectorRotation = com.haky.edge.macro.SectorRotationService(kis)
     val marketMood = MarketMoodService(kis, claude, fearGreed, copper, ecos, yahoo, modelRouter, moodLog, eventSync, sectorRotation)
-    val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact)
+    val sectorBriefing = SectorBriefingService(kis, master, claude, macroImpact, modelRouter)
     val catalystEventLog = com.haky.edge.ai.CatalystEventLog()
     val catalyst = CatalystService(kis, naver, master, claude, dart, valuationBand, macroImpact, modelRouter, catalystEventLog)
     // F1 유사 국면 통계 — 장기 일봉 이력(페이지네이션+파일 캐시) 위 기저율 계산. LLM 0.

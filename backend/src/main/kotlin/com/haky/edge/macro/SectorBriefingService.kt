@@ -39,6 +39,8 @@ class SectorBriefingService(
     private val master: StockMaster,
     private val claude: ClaudeClient,
     private val macroImpact: MacroImpactService,
+    // 해석 코멘트 모델 라우팅(기본 Opus). null이면 ClaudeClient 기본 모델(Sonnet).
+    private val modelRouter: com.haky.edge.ai.ModelRouter? = null,
 ) {
     private val cache = ConcurrentHashMap<String, SectorBriefing>()
     private val fileCache = FileCache("sector_briefing", SectorBriefing.serializer())
@@ -87,7 +89,8 @@ class SectorBriefingService(
 
         val facts = buildFacts(sectorIndices, stockSectors, spotlight)
         // 상한(ceiling)일 뿐 — 2~3문단이면 보통 그 안에서 end_turn, 길어져도 ClaudeClient가 이어써 안 잘림.
-        val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 2800)
+        val model = modelRouter?.modelFor(com.haky.edge.ai.ModelRouter.SECTOR_BRIEFING)
+        val comment = claude.complete(SYSTEM_PROMPT, facts, maxTokens = 2800, modelOverride = model)
 
         val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))

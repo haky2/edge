@@ -152,7 +152,7 @@ class AnalysisService(
         val facts = cf.facts
         // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
         val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
-        // 모델 라우팅(기본): 최초 생성·브리핑=Opus, 수동 새로고침·급변 자동 재생성=Sonnet.
+        // 모델 라우팅(기본): 해석 코멘트 전 트리거 Opus(2026-07-08 사용자 결정).
         // env OPUS_TRIGGERS 로 재조정 가능 — ModelRouter 참고.
         val trigger = when {
             force -> ModelRouter.ANALYSIS_MANUAL
@@ -217,7 +217,7 @@ class AnalysisService(
         val t0 = System.currentTimeMillis()
         val cf = collectFacts(code, position)
         val userMessage = renderAskUserMessage(cf.facts, history, question)
-        // 대화형이라 지연 민감 + 볼륨 트리거 → 기본 Sonnet(ModelRouter.ASK). env OPUS_TRIGGERS로 조정.
+        // 기본 Opus(해석 품질 우선, 일일 상한으로 볼륨 방어). 지연이 부담되면 env OPUS_TRIGGERS로 조정.
         val model = modelRouter.modelFor(ModelRouter.ASK)
         val answer = claude.complete(askPrompt(mode), userMessage, maxTokens = 1500, modelOverride = model)
         println("[Timing] $code: ask total=${System.currentTimeMillis() - t0}ms")

@@ -46,6 +46,8 @@ class ComparisonService(
     private val dart: DartClient,
     private val naverTargetPrice: NaverTargetPriceClient,
     private val valuationBandSvc: ValuationBandService,
+    // 해석 코멘트 모델 라우팅(기본 Opus). null이면 ClaudeClient 기본 모델(Sonnet).
+    private val modelRouter: ModelRouter? = null,
 ) {
     private data class Cached(val comparison: Comparison)
     private val cache = ConcurrentHashMap<String, Cached>()
@@ -105,7 +107,8 @@ class ComparisonService(
 
             val facts = buildCompareFacts(detailA, detailB, barsA, barsB, finA, finB, newsA, newsB)
             val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
-            val comment = claude.complete(prompt, facts, maxTokens = 2000)
+            val model = modelRouter?.modelFor(ModelRouter.COMPARISON)
+            val comment = claude.complete(prompt, facts, maxTokens = 2000, modelOverride = model)
 
             val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
                 .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
