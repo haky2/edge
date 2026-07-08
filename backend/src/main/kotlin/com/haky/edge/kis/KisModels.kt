@@ -244,3 +244,54 @@ data class KisIndexChartBar(
 
 /** 한투 연동 중 발생한 오류(상류 문제)를 일반 버그와 구분하기 위한 예외 — StatusPages에서 502로 매핑된다. */
 class KisException(message: String) : RuntimeException(message)
+
+// ── 해외 종목 시세(O1) ────────────────────────────────────────────────
+// 해외주식 현재가 상세(overseas-price/v1/quotations/price-detail, tr_id HHDFS76200200).
+// 국내 Quote는 Long(원화 정수)이라 소수점 못 담음 → 해외는 OverseasQuote(Double+currency) 분리.
+// 한투 해외시세는 기본 15~20분 지연(실시간은 별도 신청) → delayed=true 기본값.
+
+/** 앱에 내려주는 해외 종목 시세 DTO. code는 "US:NAS:AAPL" 형식 전체 코드. */
+@Serializable
+data class OverseasQuote(
+    val code: String,           // "US:NAS:AAPL"
+    val symb: String,           // "AAPL"
+    val price: Double,          // 현재가 (소수점, USD 등)
+    val change: Double,         // 전일 대비 (부호 포함)
+    val changeRate: Double,     // 등락률 % (부호 포함)
+    val open: Double,
+    val high: Double,
+    val low: Double,
+    val high52w: Double,        // 52주 최고가
+    val low52w: Double,         // 52주 최저가
+    val volume: Long,
+    val currency: String,       // "USD", "HKD" 등 통화코드
+    val delayed: Boolean = true, // 한투 해외는 기본 15분 지연
+)
+
+/** 한투 해외주식 현재가 상세(HHDFS76200200) 응답 껍데기. */
+@Serializable
+data class KisOverseasStockResponse(
+    @SerialName("rt_cd") val rtCd: String = "",
+    @SerialName("msg1") val msg1: String = "",
+    val output: KisOverseasStockOutput? = null,
+)
+
+/**
+ * 해외주식 현재가 output. 숫자는 전부 문자열.
+ * diff/rate는 절댓값으로 오고 sign(1~5)으로 부호를 적용한다(국내 macro와 동일 패턴).
+ */
+@Serializable
+data class KisOverseasStockOutput(
+    @SerialName("rsym") val rsym: String = "",         // 실시간 조회 종목코드 (예: DNASAAPL)
+    @SerialName("last") val price: String = "0",       // 현재가
+    @SerialName("sign") val sign: String = "3",        // 전일대비 부호 (1상한 2상승 3보합 4하한 5하락)
+    @SerialName("diff") val change: String = "0",      // 전일 대비 (abs)
+    @SerialName("rate") val changeRate: String = "0",  // 등락률 (abs)
+    @SerialName("open") val open: String = "0",
+    @SerialName("high") val high: String = "0",
+    @SerialName("low") val low: String = "0",
+    @SerialName("h52p") val high52w: String = "0",     // 52주 최고가
+    @SerialName("l52p") val low52w: String = "0",      // 52주 최저가
+    @SerialName("tvol") val volume: String = "0",      // 거래량
+    @SerialName("crcd") val currency: String = "USD",  // 통화코드
+)

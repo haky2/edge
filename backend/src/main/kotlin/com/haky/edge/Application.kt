@@ -70,6 +70,7 @@ import com.haky.edge.routes.morningBriefRoutes
 import com.haky.edge.routes.eventReminderRoutes
 import com.haky.edge.routes.costSummaryRoutes
 import com.haky.edge.routes.signalRoutes
+import com.haky.edge.routes.overseasRoutes
 import com.haky.edge.routes.prewarmRoutes
 import com.haky.edge.routes.slackCommandRoutes
 import com.haky.edge.routes.slackTestRoutes
@@ -278,6 +279,7 @@ fun Application.module() {
         // 나머지 데이터 라우트는 전부 IP별 레이트리밋 적용(토큰 인증은 configureSecurity 인터셉트에서 전역 처리).
         rateLimit(ApiRateLimit) {
             quoteRoutes(kis)
+            overseasRoutes(kis)
             warningsRoutes(toss)
             marketCalendarRoutes(toss)
             chartRoutes(kis)

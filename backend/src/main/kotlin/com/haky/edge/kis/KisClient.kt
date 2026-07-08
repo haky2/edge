@@ -54,6 +54,9 @@ class KisClient(
     // 현재가 단기 캐시. shouldAutoRefresh가 캐시 적중마다 KIS 실호출하는 것을 막는다.
     // 30초 TTL: AnalysisService의 stale 감지 쿨다운(30분)보다 훨씬 짧아 정확도 손실 없음.
     private val priceCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Quote, Long>>()
+
+    // 해외 시세 단기 캐시. 한투 기본 15분 지연이라 30초 TTL은 지연 정밀도 손실 없음.
+    private val overseasPriceCache = java.util.concurrent.ConcurrentHashMap<String, Pair<OverseasQuote, Long>>()
     private val PRICE_CACHE_TTL_MS = 30_000L
 
     // 수급 당일 캐시(인메모리). 외인/기관 확정값은 장후(~16:30)에 확정되고 다음 장 전까지 바뀌지 않는다.
@@ -145,6 +148,59 @@ class KisClient(
 
     /** 서버 시작 시 미리 호출해 첫 번째 API 요청의 토큰 발급 지연을 없앤다. */
     suspend fun warmup() { token() }
+
+    /**
+     * 해외 종목 현재가 상세(HHDFS76200200). 가격은 소수점 Double, 통화 별도.
+     * excd = 거래소 코드(NAS·NYS·AMS·TSE·HKS 등), symb = 티커(AAPL·MSFT 등).
+     * 한투 해외시세는 기본 15~20분 지연(delayed=true). 실시간은 별도 신청 필요.
+     */
+    suspend fun getOverseasPrice(excd: String, symb: String): OverseasQuote {
+        val accessToken = token()
+        val cacheKey = "$excd:$symb"
+        overseasPriceCache[cacheKey]?.let { (q, ts) ->
+            if (System.currentTimeMillis() - ts < PRICE_CACHE_TTL_MS) return q
+        }
+        var lastMsg = ""
+        repeat(MAX_ATTEMPTS) { attempt ->
+            val resp = rateLimiter.withPermit { requestOverseasPrice(excd, symb, accessToken) }
+            val o = resp.output
+            if (resp.rtCd == "0" && o != null) {
+                val mul = signMultiplier(o.sign)
+                val quote = OverseasQuote(
+                    code = "US:$excd:$symb",
+                    symb = symb,
+                    price = o.price.toDoubleSafe(),
+                    change = kotlin.math.abs(o.change.toDoubleSafe()) * mul,
+                    changeRate = kotlin.math.abs(o.changeRate.toDoubleSafe()) * mul,
+                    open = o.open.toDoubleSafe(),
+                    high = o.high.toDoubleSafe(),
+                    low = o.low.toDoubleSafe(),
+                    high52w = o.high52w.toDoubleSafe(),
+                    low52w = o.low52w.toDoubleSafe(),
+                    volume = o.volume.toLongSafe(),
+                    currency = o.currency.ifBlank { "USD" },
+                )
+                overseasPriceCache[cacheKey] = Pair(quote, System.currentTimeMillis())
+                return quote
+            }
+            lastMsg = resp.msg1.ifBlank { "rt_cd=${resp.rtCd}" }
+            if (attempt < MAX_ATTEMPTS - 1) delay(BACKOFF_MS * (attempt + 1))
+        }
+        throw KisException("한투 해외 시세 조회 실패($excd:$symb): $lastMsg")
+    }
+
+    /** 해외주식 현재가 상세 HTTP 호출 1회. tr_id=HHDFS76200200, EXCD/SYMB 파라미터. */
+    private suspend fun requestOverseasPrice(excd: String, symb: String, accessToken: String): KisOverseasStockResponse =
+        http.get("$baseUrl/uapi/overseas-price/v1/quotations/price-detail") {
+            header("authorization", "Bearer $accessToken")
+            header("appkey", appKey)
+            header("appsecret", appSecret)
+            header("tr_id", "HHDFS76200200") // 해외주식 현재가 상세
+            header("custtype", "P")
+            parameter("AUTH", "")   // 개인 투자자 기본값
+            parameter("EXCD", excd) // 거래소 코드 (NAS, NYS, AMS 등)
+            parameter("SYMB", symb) // 티커 심볼
+        }.body()
 
     /**
      * 6자리 종목코드의 현재가/등락/거래량/고저를 조회해 정규화 Quote로 반환.
