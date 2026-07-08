@@ -66,6 +66,7 @@ import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.model.DartDisclosure
 import com.haky.edge.model.DiscoveryCandidate
 import com.haky.edge.model.EarningsEntry
+import com.haky.edge.model.SectorRotation
 import com.haky.edge.model.MacroIndicator
 import com.haky.edge.model.MarketEvent
 import com.haky.edge.model.MoodAccuracyReport
@@ -140,6 +141,8 @@ fun BriefingScreen(
     var catalystBriefSectors by remember { mutableStateOf<List<com.haky.edge.model.SectorCatalystLine>>(emptyList()) }
     var discoveryLoading by remember { mutableStateOf(false) }
     var discoveryCandidates by remember { mutableStateOf<List<DiscoveryCandidate>>(emptyList()) }
+    var rotationLoading by remember { mutableStateOf(false) }
+    var sectorRotation by remember { mutableStateOf<SectorRotation?>(null) }
 
     // 시장 탭
     var moodLoading by remember { mutableStateOf(false) }
@@ -303,11 +306,18 @@ fun BriefingScreen(
         } finally { discoveryLoading = false }
     }
 
+    suspend fun buildSectorRotation() {
+        rotationLoading = true
+        try {
+            sectorRotation = runCatching { api.getSectorRotation() }.getOrNull()
+        } finally { rotationLoading = false }
+    }
+
     suspend fun load() {
         loading = true; supplyLoading = true; dartLoading = true; macroLoading = true
         moodLoading = true; impactLoading = true; earningsLoading = true; eventsLoading = true
         sectorLoading = true; sectorBriefingLoading = true; catalystBriefLoading = true
-        discoveryLoading = true
+        discoveryLoading = true; rotationLoading = true
         error = null
         supplyRows = emptyList(); dartItems = emptyList(); macroItems = emptyList()
         moodComment = ""; moodGeneratedAt = ""
@@ -316,6 +326,7 @@ fun BriefingScreen(
         sectorBriefingComment = ""; sectorSpotlight = emptyList(); sectorBriefingGeneratedAt = ""
         catalystBriefSectors = emptyList()
         discoveryCandidates = emptyList()
+        sectorRotation = null
 
         val allItems = watchlistRepo.all()
         watchlistIsEmpty = allItems.isEmpty()
@@ -333,6 +344,7 @@ fun BriefingScreen(
             launch { buildSectorBriefing(codes) }
             launch { buildCatalystBrief(codes) }
             launch { buildDiscovery() }
+            launch { buildSectorRotation() }
             launch {
                 val quotes = runCatching { api.getQuotes(codes) }.getOrElse { e ->
                     error = "불러오기 실패: ${e.message}\n(백엔드 연결을 확인해 주세요)"
@@ -613,6 +625,15 @@ fun BriefingScreen(
                                     SectorRowView(s)
                                     if (i < filtered.size - 1) HorizontalDivider()
                                 }
+                            }
+                        }
+                        // ── 섹터 자금 순환 ──
+                        sectorRotation?.let { r ->
+                            item { SectorRotationCard(r, rotationLoading) }
+                        }
+                        if (sectorRotation == null && rotationLoading) {
+                            item {
+                                CollapsibleCard(title = "섹터 자금 순환") { LoadingRow("분석 중…") }
                             }
                         }
                         // ── 섹터 분석 (AI) + 주목 종목 ──
@@ -925,6 +946,91 @@ private fun discoverySignalLabel(type: String) = when (type) {
     "HIGH_NEARBY"   -> "신고가근접"
     "LOW_BOUNCE"    -> "저점반등"
     else            -> type
+}
+
+// ── 섹터 자금 순환 카드 ──
+@Composable
+private fun SectorRotationCard(r: SectorRotation, loading: Boolean) {
+    CollapsibleCard(
+        title = "섹터 자금 순환",
+        trailing = {
+            if (!loading && (r.inflow.isNotEmpty() || r.outflow.isNotEmpty())) {
+                val parts = buildList {
+                    if (r.inflow.isNotEmpty()) add("▲${r.inflow.size}")
+                    if (r.outflow.isNotEmpty()) add("▼${r.outflow.size}")
+                }
+                Text(parts.joinToString(" "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+    ) {
+        // 유입/이탈 배지
+        if (r.inflow.isNotEmpty() || r.outflow.isNotEmpty()) {
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(bottom = 6.dp),
+            ) {
+                r.inflow.forEach { label ->
+                    RotationBadge(label, up = true)
+                }
+                r.outflow.forEach { label ->
+                    RotationBadge(label, up = false)
+                }
+            }
+        }
+        // 섹터별 행
+        r.sectors.forEachIndexed { i, s ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(s.label, style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.width(80.dp), maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Spacer(Modifier.weight(1f))
+                val ret5Color = when {
+                    s.ret5 > 0 -> ChangeUp
+                    s.ret5 < 0 -> ChangeDown
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                Text("%+.1f%%".format(s.ret5), style = MaterialTheme.typography.labelSmall, color = ret5Color)
+                Text(" / ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val ret20Color = when {
+                    s.ret20 > 0 -> ChangeUp
+                    s.ret20 < 0 -> ChangeDown
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                Text("%+.1f%%".format(s.ret20), style = MaterialTheme.typography.labelSmall, color = ret20Color)
+                Spacer(Modifier.width(8.dp))
+                val (deltaText, deltaColor) = when {
+                    s.rankDelta >= 2  -> "▲${s.rankDelta}" to ChangeUp
+                    s.rankDelta <= -2 -> "▼${abs(s.rankDelta)}" to ChangeDown
+                    else              -> "━" to MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                Text(deltaText, style = MaterialTheme.typography.labelSmall, color = deltaColor,
+                    modifier = Modifier.width(28.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+            }
+            if (i < r.sectors.size - 1) HorizontalDivider()
+        }
+        Text("5일 / 20일 수익률 · ▲▼ 단기 순위 변화",
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+@Composable
+private fun RotationBadge(label: String, up: Boolean) {
+    val color = if (up) ChangeUp else ChangeDown
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = color.copy(alpha = 0.1f),
+    ) {
+        Text(
+            "${if (up) "▲" else "▼"} $label",
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
+    }
 }
 
 // ── 시장 지표 행 ──

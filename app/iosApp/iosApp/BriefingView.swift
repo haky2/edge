@@ -68,6 +68,10 @@ struct BriefingView: View {
     @State private var sectorLoading = false
     @State private var sectorItems: [SectorIndex] = []
 
+    // 섹터 자금 순환
+    @State private var rotationLoading = false
+    @State private var sectorRotation: SectorRotation? = nil
+
     // 섹터 분석 (Claude 코멘트 + 주목 종목)
     @State private var sectorBriefingLoading = false
     @State private var sectorBriefingComment = ""
@@ -115,7 +119,7 @@ struct BriefingView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    let isLoading = loading || supplyLoading || dartLoading || macroLoading || moodLoading || impactLoading || earningsLoading || eventsLoading || sectorLoading || sectorBriefingLoading || catalystBriefLoading || discoveryLoading
+                    let isLoading = loading || supplyLoading || dartLoading || macroLoading || moodLoading || impactLoading || earningsLoading || eventsLoading || sectorLoading || sectorBriefingLoading || catalystBriefLoading || discoveryLoading || rotationLoading
                     if isLoading {
                         ProgressView().scaleEffect(0.8)
                     } else {
@@ -200,6 +204,7 @@ struct BriefingView: View {
                 impactSection        // 내 종목 영향
                 marketSection
                 sectorSection
+                sectorRotationSection
                 sectorBriefingSection
                 eventCalendarSection
                 earningsSection
@@ -545,6 +550,97 @@ struct BriefingView: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    // MARK: - 섹션: 섹터 자금 순환
+
+    @ViewBuilder
+    private var sectorRotationSection: some View {
+        if rotationLoading || sectorRotation != nil {
+            Section {
+                let rotation = sectorRotation
+                HStack {
+                    Text("섹터 자금 순환").font(.headline)
+                    Spacer()
+                    if rotationLoading {
+                        ProgressView().scaleEffect(0.8)
+                    } else if let r = rotation {
+                        if !r.inflow.isEmpty || !r.outflow.isEmpty {
+                            let inflowText = r.inflow.isEmpty ? "" : "▲\(r.inflow.count)"
+                            let outflowText = r.outflow.isEmpty ? "" : "▼\(r.outflow.count)"
+                            Text([inflowText, outflowText].filter { !$0.isEmpty }.joined(separator: " "))
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+                }
+                if let r = rotation {
+                    // 유입/이탈 요약 배지
+                    if !r.inflow.isEmpty || !r.outflow.isEmpty {
+                        HStack(spacing: 8) {
+                            ForEach(r.inflow, id: \.self) { label in
+                                rotationBadge(label, up: true)
+                            }
+                            ForEach(r.outflow, id: \.self) { label in
+                                rotationBadge(label, up: false)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    // 섹터별 5일/20일 수익률 + 순위변화
+                    ForEach(r.sectors.indices, id: \.self) { i in
+                        let s = r.sectors[i]
+                        HStack(spacing: 0) {
+                            Text(s.label)
+                                .font(.caption2)
+                                .frame(width: 80, alignment: .leading)
+                                .lineLimit(1)
+                            Spacer()
+                            Group {
+                                let ret5Color: Color = s.ret5 > 0 ? .red : s.ret5 < 0 ? Color(red: 0.2, green: 0.4, blue: 1.0) : .secondary
+                                Text(String(format: "%+.1f%%", s.ret5))
+                                    .foregroundColor(ret5Color)
+                                Text(" / ")
+                                    .foregroundColor(.secondary)
+                                let ret20Color: Color = s.ret20 > 0 ? .red : s.ret20 < 0 ? Color(red: 0.2, green: 0.4, blue: 1.0) : .secondary
+                                Text(String(format: "%+.1f%%", s.ret20))
+                                    .foregroundColor(ret20Color)
+                            }
+                            .font(.caption2.monospacedDigit())
+                            Spacer()
+                            rankDeltaBadge(s.rankDelta)
+                        }
+                        .padding(.vertical, 1)
+                        if i < r.sectors.count - 1 { Divider() }
+                    }
+                    Text("5일 / 20일 수익률 · ▲▼ 단기 순위 변화")
+                        .font(.caption2).foregroundColor(Color(.tertiaryLabel))
+                }
+            }
+        }
+    }
+
+    private func rotationBadge(_ label: String, up: Bool) -> some View {
+        HStack(spacing: 2) {
+            Text(up ? "▲" : "▼").font(.caption2)
+            Text(label).font(.caption2)
+        }
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(up ? Color.red.opacity(0.1) : Color(red: 0.2, green: 0.4, blue: 1.0).opacity(0.1))
+        .foregroundColor(up ? .red : Color(red: 0.2, green: 0.4, blue: 1.0))
+        .cornerRadius(4)
+    }
+
+    private func rankDeltaBadge(_ delta: Int) -> some View {
+        let text: String
+        let color: Color
+        if delta >= 2 {
+            text = "▲\(delta)"; color = .red
+        } else if delta <= -2 {
+            text = "▼\(abs(delta))"; color = Color(red: 0.2, green: 0.4, blue: 1.0)
+        } else {
+            text = "━"; color = .secondary
+        }
+        return Text(text).font(.caption2.monospacedDigit()).foregroundColor(color).frame(width: 28)
     }
 
     // MARK: - 섹션: 섹터 분석 (Claude)
@@ -1480,6 +1576,7 @@ struct BriefingView: View {
         sectorBriefingLoading = true
         catalystBriefLoading = true
         discoveryLoading = true
+        rotationLoading = true
         errorText = nil
         supplyRows = []
         dartItems = []
@@ -1498,6 +1595,7 @@ struct BriefingView: View {
         sectorBriefingGeneratedAt = ""
         catalystBriefSectors = []
         discoveryCandidates = []
+        sectorRotation = nil
 
         let allItems = Db.watchlist.all()
         watchlistIsEmpty = allItems.isEmpty
@@ -1515,6 +1613,7 @@ struct BriefingView: View {
         async let sectorBriefingTask: Void  = buildSectorBriefing(codes: codes)
         async let catalystBriefTask: Void   = buildCatalystBrief(codes: codes)
         async let discoveryTask: Void       = buildDiscovery()
+        async let rotationTask: Void        = buildSectorRotation()
 
         let quotes: [Quote]
         do {
@@ -1524,7 +1623,7 @@ struct BriefingView: View {
             loading = false
             supplyLoading = false
             dartLoading = false
-            _ = await (macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, eventsTask, impactTask, sectorBriefingTask, catalystBriefTask, discoveryTask)
+            _ = await (macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, eventsTask, impactTask, sectorBriefingTask, catalystBriefTask, discoveryTask, rotationTask)
             return
         }
         let quoteMap = Dictionary(uniqueKeysWithValues: quotes.map { ($0.code, $0) })
@@ -1540,7 +1639,7 @@ struct BriefingView: View {
         // supply·dart·macro·impact·sectorBriefing은 섹션 내부 스피너 유지하며 병렬 진행
         async let supplyTask: Void = buildSupply(allItems: allItems, quoteMap: quoteMap)
         async let dartTask: Void   = buildDart(codes: codes, allItems: allItems)
-        _ = await (supplyTask, dartTask, macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, eventsTask, impactTask, sectorBriefingTask, catalystBriefTask, discoveryTask)
+        _ = await (supplyTask, dartTask, macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, eventsTask, impactTask, sectorBriefingTask, catalystBriefTask, discoveryTask, rotationTask)
 
         supplyLoading = false
         dartLoading = false
@@ -1557,6 +1656,11 @@ struct BriefingView: View {
         defer { discoveryLoading = false }
         guard let result = try? await api.getDiscovery() else { return }
         discoveryCandidates = result.candidates
+    }
+
+    private func buildSectorRotation() async {
+        defer { rotationLoading = false }
+        sectorRotation = try? await api.getSectorRotation()
     }
 
     private func buildSectorBriefing(codes: [String], force: Bool = false) async {

@@ -40,6 +40,7 @@ import com.haky.edge.model.PeerValuation
 import com.haky.edge.model.DiscoveryReport
 import com.haky.edge.model.PortfolioReview
 import com.haky.edge.model.RebalanceCheck
+import com.haky.edge.model.SectorRotation
 import com.haky.edge.model.ValuationBand
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -505,6 +506,11 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getDiscovery(): DiscoveryReport =
         client.get("$baseUrl/discovery").body()
+
+    /** KOSPI 6개 업종지수 5일/20일 상대강도 순환 판정(당일 캐시). LLM 0. */
+    @Throws(Exception::class)
+    suspend fun getSectorRotation(): SectorRotation =
+        client.get("$baseUrl/sector-rotation").body()
 
     /** 향후 N일 거시 이벤트 목록(CPI·FOMC·한은·MSCI·동시만기일 등). 기본 30일. */
     @Throws(Exception::class)
