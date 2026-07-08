@@ -226,7 +226,7 @@ fun Application.module() {
         // Q&A 일일 상한 — 자유 질문은 캐시가 없어 호출당 풀 LLM 비용. env로 재조정 가능.
         askDailyLimit = System.getenv("ASK_DAILY_LIMIT")?.toIntOrNull() ?: 200,
         stanceLog = stanceLog)
-    // O4 해외 간단 코멘트 — 시세(15분 지연)+뉴스만 근거. (code,날짜) 당일 공유 캐시, 기본 Sonnet.
+    // O4 해외 간단 코멘트 — 시세(15분 지연)+뉴스만 근거. (code,날짜) 당일 공유 캐시, 기본 Opus.
     val overseasAnalysis = com.haky.edge.ai.OverseasAnalysisService(kis, naver, overseasMaster, claude, modelRouter)
     val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand)
     // 포트폴리오 종합 진단(B) — 집중도·매크로 노출·밸류 분포는 계산, Claude는 구조 해석만.

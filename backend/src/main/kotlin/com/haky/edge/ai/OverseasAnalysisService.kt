@@ -24,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap
  * 응답은 기존 `Analysis` DTO를 그대로 재사용한다(### 핵심 요약 파싱 계약 포함) —
  * 앱의 마크다운 렌더·요약 박스 코드를 해외 카드가 재사용할 수 있게.
  * 캐시: (code, date) 당일 전 유저 공유(인메모리+파일). 포지션·모드 구분 없음(간단 코멘트).
+ * 모델: 기본 Opus(ModelRouter.OVERSEAS — 당일 캐시로 종목당 1일 1회 자연 상한, 사용자 결정 2026-07-08).
  */
 class OverseasAnalysisService(
     private val kis: KisClient,
