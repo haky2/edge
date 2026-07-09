@@ -45,6 +45,36 @@ class CacheKeyTest {
         assertEquals("009150:2026-06-11:DEFENSIVE:86000:5:0:0", key)
     }
 
+    // ── 투자 논지(thesis) 키 분리 ─────────────────────────────────────────
+
+    @Test fun `Analysis 논지 없음·빈 문자열·공백은 기존 키 그대로(공유 캐시 불변)`() {
+        val base = AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, null)
+        assertEquals(base, AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, null, null))
+        assertEquals(base, AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, null, ""))
+        assertEquals(base, AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, null, "  "))
+    }
+
+    @Test fun `Analysis 논지 있으면 키 분리, 논지가 다르면 다른 키`() {
+        val noThesis = AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, null)
+        val t1 = AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, null, "수주 모멘텀")
+        val t2 = AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, null, "밸류 저평가")
+        assertNotEquals(noThesis, t1)
+        assertNotEquals(t1, t2)
+    }
+
+    @Test fun `Analysis 같은 논지는 같은 키(캐시 적중), 앞뒤 공백 무시`() {
+        val k1 = AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, null, "수주 모멘텀")
+        val k2 = AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, null, " 수주 모멘텀 ")
+        assertEquals(k1, k2)
+    }
+
+    @Test fun `Analysis 포지션+논지 조합 키에 둘 다 반영`() {
+        val pos = Position(avgPrice = 86000.0, qty = 10L)
+        val posOnly = AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, pos)
+        val both = AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, pos, "수주 모멘텀")
+        assertNotEquals(posOnly, both)
+    }
+
     // ── MacroImpactService.buildKey ───────────────────────────────────────
 
     @Test fun `MacroImpact 키 형식 date_H_sorted_W_sorted_mode`() {

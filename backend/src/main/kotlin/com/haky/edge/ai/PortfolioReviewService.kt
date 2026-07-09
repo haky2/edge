@@ -74,10 +74,11 @@ class PortfolioReviewService(
         positions: Map<String, HoldingPosition>,
         mode: AnalysisMode = AnalysisMode.DEFENSIVE,
         force: Boolean = false,
+        theses: Map<String, String> = emptyMap(),
     ): PortfolioReview {
         require(positions.isNotEmpty()) { "보유 포지션이 비어 있습니다" }
         val today = effectiveMarketDate()
-        val key = buildKey(today, positions, mode)
+        val key = buildKey(today, positions, mode, theses)
 
         val cached = cache[key] ?: fileCache.get(key)?.also { cache[key] = it }
         if (cached != null) {
@@ -126,7 +127,7 @@ class PortfolioReviewService(
         val topStock = stocks.firstOrNull()
         val topSector = sectors.firstOrNull()
 
-        val facts = buildFacts(stocks, totalValue, totalCost, totalPnl, totalPnlPct, sectors, exposures, valuation)
+        val facts = buildFacts(stocks, totalValue, totalCost, totalPnl, totalPnlPct, sectors, exposures, valuation, theses)
         val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
         val model = modelRouter.modelFor(ModelRouter.PORTFOLIO)
         val raw = claude.complete(prompt, facts, maxTokens = 2500, modelOverride = model)
@@ -167,6 +168,7 @@ class PortfolioReviewService(
         sectors: List<SectorWeight>,
         exposures: List<MacroExposure>,
         valuation: List<ValuationBucket>,
+        theses: Map<String, String> = emptyMap(),
     ): String = buildString {
         appendLine("포트폴리오 스냅샷(실제 보유 ${stocks.size}종목, 전부 계산된 사실):")
         appendLine(
@@ -181,6 +183,10 @@ class PortfolioReviewService(
                 "  - ${s.name}(${s.code}): 비중 ${"%.1f".format(pct(s.value, totalValue))}%, " +
                     "손익 ${signed(s.pnlPct)}%, 섹터 ${s.sectorLabel}$vb"
             )
+            // 종목 줄 바로 아래에 논지를 붙인다 — P8이 "가설" 라벨에 걸려 논지 인용을 막는다.
+            theses[s.code]?.trim()?.takeIf { it.isNotBlank() }?.let {
+                appendLine("    투자 논지(사용자 기록, 가설이며 사실 아님): \"$it\"")
+            }
         }
         appendLine()
         appendLine("섹터 집중도(평가 비중):")
@@ -237,12 +243,17 @@ class PortfolioReviewService(
         internal fun pct(part: Long, total: Long): Double =
             if (total > 0) part.toDouble() / total * 100 else 0.0
 
-        /** 캐시 키: 날짜 + 정렬된 포지션 집합 + 모드. 포지션이 다르면(수량·평단 변경 포함) 새 키. */
-        internal fun buildKey(today: String, positions: Map<String, HoldingPosition>, mode: AnalysisMode): String =
-            "$today|" + positions.entries
+        /** 캐시 키: 날짜 + 정렬된 포지션 집합 + 모드 (+논지 해시). 포지션·논지가 다르면 새 키. */
+        internal fun buildKey(today: String, positions: Map<String, HoldingPosition>, mode: AnalysisMode, theses: Map<String, String> = emptyMap()): String {
+            val base = "$today|" + positions.entries
                 .sortedBy { it.key }
                 .joinToString(",") { "${it.key}:${it.value.avgPrice.toLong()}:${it.value.qty}" } +
                 "|${mode.name}"
+            // 논지는 자유 텍스트라 해시로 접는다 — 논지 없으면 기존 키 그대로(구버전 앱 캐시 호환).
+            val t = theses.entries.filter { it.value.isNotBlank() }.sortedBy { it.key }
+                .joinToString(",") { "${it.key}=${it.value.trim()}" }
+            return if (t.isEmpty()) base else "$base|t${t.hashCode()}"
+        }
 
         /** 섹터별 평가 비중(내림차순). 세부 섹터 label(주력 첫 섹터) 기준. */
         internal fun sectorWeights(stocks: List<StockCalc>, totalValue: Long): List<SectorWeight> =
@@ -330,6 +341,11 @@ class PortfolioReviewService(
             P5. 오늘 시장이 오를지 내릴지 방향 예측을 하지 마라. 오늘 지표 등락 얘기도 하지 마라(그건 브리핑의 몫) — 이 진단은 날씨가 아니라 "집의 구조"다.
             P6. 어려운 금융 영어는 한국어로 바꾸거나 괄호 설명을 붙여라.
             P7. 형식: 불릿·번호 목록·소제목·구분선 금지(핵심 요약 블록 제외, 이야기처럼 흐르는 연속 문단). 핵심 수치(비중%·손익%·노출%)는 **굵게**.
+            P8. "투자 논지" 줄이 붙은 종목이 있으면(하나도 없으면 이 규칙 전체를 무시) — 사용자가 직접 기록한 보유 이유(가설)다. 개별 논지의 옳고 그름 판정은 종목 분석의 몫이니 하지 말고, 여기서는 논지들이 모여 만드는 **구조**만 진단하라:
+                - 여러 종목의 논지가 사실상 같은 한 가지 베팅(같은 테마·같은 변수)이면 그 중복을 짚어라 — 종목 수는 여럿이어도 논지가 하나면 분산이 아니다.
+                - 논지와 그 종목의 실제 섹터·매크로 노출이 어긋나 보이면 짚어라(예: 논지는 A인데 손익은 B 변수에 좌우되는 구조).
+                - 비중이 큰데 논지가 기록되지 않은 종목이 있으면 사실로만 언급하라(기록하라는 설교 금지).
+                - 논지 속 주장·수치는 사실 데이터가 아니다 — 진단의 근거로 인용하지 마라(P1은 논지 텍스트에도 그대로 적용된다).
         """.trimIndent()
 
         private val PORTFOLIO_DEFENSIVE = """

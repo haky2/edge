@@ -25,6 +25,7 @@ data class AskRequest(
     val stopPrice: Double? = null,
     val mode: String? = null,                 // defensive(기본) | aggressive
     val history: List<AskTurn> = emptyList(), // 후속 질문 맥락 — 서버는 최근 3턴만 사용
+    val thesis: String? = null,               // 투자 논지(선택) — facts에 "검증할 가설"로 주입
 )
 
 fun Route.askRoutes(analysis: AnalysisService) {
@@ -46,6 +47,11 @@ fun Route.askRoutes(analysis: AnalysisService) {
             call.respond(HttpStatusCode.BadRequest, ErrorResponse("질문은 ${AnalysisService.ASK_MAX_QUESTION_CHARS}자 이내로 입력해 주세요"))
             return@post
         }
+        val thesis = req.thesis?.trim()?.takeIf { it.isNotBlank() }
+        if (thesis != null && thesis.length > AnalysisService.THESIS_MAX_CHARS) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("투자 논지는 ${AnalysisService.THESIS_MAX_CHARS}자 이내로 입력해 주세요"))
+            return@post
+        }
         val position = if (req.avgPrice != null && req.qty != null) Position(
             avgPrice = req.avgPrice,
             qty = req.qty,
@@ -53,7 +59,7 @@ fun Route.askRoutes(analysis: AnalysisService) {
             stopPrice = req.stopPrice ?: 0.0,
         ) else null
         try {
-            call.respond(analysis.ask(code, question, position, AnalysisMode.from(req.mode), req.history))
+            call.respond(analysis.ask(code, question, position, AnalysisMode.from(req.mode), req.history, thesis))
         } catch (e: AskDailyLimitException) {
             call.respond(HttpStatusCode.TooManyRequests, ErrorResponse(e.message ?: "오늘 질문 한도를 모두 사용했습니다"))
         }

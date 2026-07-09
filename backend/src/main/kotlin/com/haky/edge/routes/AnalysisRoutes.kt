@@ -31,6 +31,12 @@ fun Route.analysisRoutes(analysis: AnalysisService) {
         ) else null
         val mode = AnalysisMode.from(call.request.queryParameters["mode"])
         val force = call.request.queryParameters["refresh"] == "true"
-        call.respond(analysis.analyze(code, position, mode, force = force))
+        // 투자 논지(선택) — 있으면 facts에 "검증할 가설"로 주입되고 캐시가 논지별로 분리된다.
+        val thesis = call.request.queryParameters["thesis"]?.trim()?.takeIf { it.isNotBlank() }
+        if (thesis != null && thesis.length > AnalysisService.THESIS_MAX_CHARS) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("투자 논지는 ${AnalysisService.THESIS_MAX_CHARS}자 이내로 입력해 주세요"))
+            return@get
+        }
+        call.respond(analysis.analyze(code, position, mode, force = force, thesis = thesis))
     }
 }

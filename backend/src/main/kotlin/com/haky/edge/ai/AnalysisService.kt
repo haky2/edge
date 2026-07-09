@@ -118,13 +118,14 @@ class AnalysisService(
     private val cache = ConcurrentHashMap<String, Cached>()
     private val fileCache = FileCache("analysis", Analysis.serializer())
 
-    suspend fun analyze(code: String, position: Position? = null, mode: AnalysisMode = AnalysisMode.DEFENSIVE, force: Boolean = false): Analysis {
+    suspend fun analyze(code: String, position: Position? = null, mode: AnalysisMode = AnalysisMode.DEFENSIVE, force: Boolean = false, thesis: String? = null): Analysis {
         // 주말 통합 거래일: 일요일은 토요일로 접어 토요일 분석을 재사용(데이터 동일). 평일·토요일은 당일.
         val today = effectiveMarketDate()
         // 캐시 키: 포지션 없으면 (code,date,mode) 전 유저 공유. 포지션 있으면 평단·수량·목표가·손절가까지 포함해
         // 사용자별 분리 — 공격 모드의 평단 기반 매매 판단이 다른 사용자에게 새지 않게.
         // 목표가·손절가도 키에 포함: facts에 반영되는데 캐시 적중으로 옛 코멘트가 나오는 불일치 방지.
-        val key = buildKey(code, today, mode, position)
+        // 논지도 동일 원리 — facts에 들어가므로 키에 해시로 포함(없으면 기존 공유 키 불변).
+        val key = buildKey(code, today, mode, position, thesis)
         var isRefresh = false
         if (force) {
             // 수동 새로고침 연타 가드: 마지막 생성 후 FORCE_COOLDOWN_MINUTES 안이면 캐시 반환.
@@ -148,7 +149,7 @@ class AnalysisService(
 
         // 사실 수집 — ask()와 공용인 collectFacts()가 병렬로 모은다.
         val t0 = System.currentTimeMillis()
-        val cf = collectFacts(code, position)
+        val cf = collectFacts(code, position, thesis)
         val facts = cf.facts
         // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
         val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
@@ -193,8 +194,8 @@ class AnalysisService(
         fileCache.put(key, analysis)
         // F6: 생성분만 스탠스 기록(캐시 적중은 위에서 이미 반환됨 — 중복 없음). "미상"도 기록(채점 제외용).
         stanceLog.append(StanceEntry(code, today, mode.name.lowercase(), stance, cf.quote.price.toDouble(), now, extractRegime(facts)))
-        // S4: 공개 분석(포지션 없음)만 #ai코멘트 채널 아카이브. 포지션 포함은 개인정보라 skip.
-        if (position == null && aiCommentChannel.isNotBlank() && notifyScope != null) {
+        // S4: 공개 분석(포지션·논지 없음)만 #ai코멘트 채널 아카이브. 포지션·논지 포함은 개인정보라 skip.
+        if (position == null && thesis.isNullOrBlank() && aiCommentChannel.isNotBlank() && notifyScope != null) {
             notifyScope.launch { slack.postMessage(aiCommentChannel, formatAiCommentMessage(analysis, mode, isRefresh)) }
         }
         return analysis
@@ -212,10 +213,11 @@ class AnalysisService(
         position: Position? = null,
         mode: AnalysisMode = AnalysisMode.DEFENSIVE,
         history: List<AskTurn> = emptyList(),
+        thesis: String? = null,
     ): AskAnswer {
         tickAskLimit()
         val t0 = System.currentTimeMillis()
-        val cf = collectFacts(code, position)
+        val cf = collectFacts(code, position, thesis)
         val userMessage = renderAskUserMessage(cf.facts, history, question)
         // 기본 Opus(해석 품질 우선, 일일 상한으로 볼륨 방어). 지연이 부담되면 env OPUS_TRIGGERS로 조정.
         val model = modelRouter.modelFor(ModelRouter.ASK)
@@ -253,10 +255,10 @@ class AnalysisService(
     )
 
     /** F5 프리모템 등 다른 서비스가 종목 분석과 *같은 사실 데이터*를 쓰도록 facts 텍스트만 노출. */
-    suspend fun factsText(code: String, position: Position? = null): String = collectFacts(code, position).facts
+    suspend fun factsText(code: String, position: Position? = null): String = collectFacts(code, position, null).facts
 
     /** 사실 수집 — 독립 호출은 전부 병렬, name·quote 확보 후 의존 2건(뉴스·sectorRS) 합류. */
-    private suspend fun collectFacts(code: String, position: Position?): CollectedFacts = coroutineScope {
+    private suspend fun collectFacts(code: String, position: Position?, thesis: String? = null): CollectedFacts = coroutineScope {
         val t0 = System.currentTimeMillis()
         val quoteD          = async { kis.getPrice(code) }
         val nameD           = async { master.findByCode(code)?.name ?: code }
@@ -308,7 +310,7 @@ class AnalysisService(
             .takeIf { it.isNotEmpty() }
             ?.let { "투자유의(거래소 지정, 현재 발동 중): " + it.joinToString(", ") { w -> w.label } }
         val calendar = calendarD.await()
-        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position)
+        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis)
         val richness = FactsRichness(
             newsCount = news.size,
             hasInvestorFlow = flows.isNotEmpty(),
@@ -346,6 +348,7 @@ class AnalysisService(
         warningsText: String?,
         calendar: com.haky.edge.toss.MarketCalendar?,
         position: Position? = null,
+        thesis: String? = null,
     ): String {
         val sb = StringBuilder()
         sb.appendLine("종목: $name ($code)")
@@ -546,6 +549,13 @@ class AnalysisService(
                         " (현재가 대비 ${if (toStop >= 0) "+" else ""}${"%.1f".format(toStop)}%)"
                 )
             }
+        }
+        // 사용자가 기록한 투자 논지 — "사실 데이터"가 아니라 점검 대상 가설임을 라벨로 명시.
+        // C12가 이 라벨("가설")에 걸려 확증편향·논지 인용을 막는다.
+        if (!thesis.isNullOrBlank()) {
+            sb.appendLine()
+            sb.appendLine("내 투자 논지 (사용자가 직접 기록한 보유/관심 이유 — 검증할 가설이며, 사실 데이터가 아님):")
+            sb.appendLine("  \"${thesis.trim()}\"")
         }
         return sb.toString()
     }
@@ -924,9 +934,12 @@ class AnalysisService(
         }
 
         /** 캐시 키 빌더. 포지션 없으면 전 유저 공유, 있으면 사용자별 분리. */
-        internal fun buildKey(code: String, today: String, mode: AnalysisMode, position: Position?): String =
-            if (position == null) "$code:$today:${mode.name}"
+        internal fun buildKey(code: String, today: String, mode: AnalysisMode, position: Position?, thesis: String? = null): String {
+            val base = if (position == null) "$code:$today:${mode.name}"
             else "$code:$today:${mode.name}:${position.avgPrice.toLong()}:${position.qty}:${position.targetPrice.toLong()}:${position.stopPrice.toLong()}"
+            // 논지는 자유 텍스트라 해시로 접는다 — 논지가 바뀌면 새 코멘트, 없으면 기존 키 그대로(공유 캐시 불변).
+            return if (thesis.isNullOrBlank()) base else "$base:t${thesis.trim().hashCode()}"
+        }
 
         /**
          * Claude 응답에서 `### 핵심 요약` 블록을 파싱해 (summary, body)로 분리.
@@ -992,6 +1005,11 @@ class AnalysisService(
                 - "리레이팅 국면": 과거 밴드·트레일링 PER 기준의 고평가 단정을 하지 마라. 대신 이익 추정 속도(연환산 PER·분기 YoY)와 주가 속도 중 무엇이 빠른지, 목표가 추세, 수급으로 판단하라. 단 낙관 단정도 금지 — "이익이 계속 따라와야 유지되는 가격"이라는 조건을 반드시 명시하고, 이익 추정이 꺾이면 되돌림 폭이 클 수 있다는 리스크를 함께 짚어라.
                 - "디레이팅 경계": 역사적으로 싸 보여도 이익·목표가가 꺾이는 중이면 밸류 함정일 수 있음을 우선 짚어라. "싸니까 기회"로 시작하지 마라.
                 국면 판정은 룰 계산 결과이며 근거가 함께 적혀 있다 — 근거를 코멘트에서 재확인하며 쓰되, 판정과 실제 데이터가 어긋나 보이면 판정을 무시하지 말고 그 어긋남 자체를 짚어라.
+            C12. "내 투자 논지" 항목이 있으면(없으면 이 규칙 전체를 무시) — 사용자가 직접 기록한 보유/관심 이유, 즉 검증 대상 가설이다. 종합 단락에서 그 논지가 오늘의 사실 데이터와 여전히 부합하는지 점검하라:
+                - 논지를 뒷받침하는 사실과 흔드는 사실을 똑같은 무게로 찾아라. 논지에 유리한 재료만 골라 쓰는 것(확증편향)을 금지한다. 점검 결과가 "유효"든 "약화"든 근거를 함께 적어라.
+                - 논지와 데이터가 어긋나면 에두르지 말고 정면으로 짚어라(예: "논지의 축인 ~가 최근 ~로 약해졌다"). 사용자의 기분을 맞추려 논지를 억지로 옹호하는 것을 금지한다 — 이 점검의 가치는 듣기 좋은 확인이 아니라 정직한 반론에 있다.
+                - 판정하기에 사실 데이터가 부족하면(논지가 데이터 밖 주제면) 부족하다고 말하라. 억지로 판정하지 마라.
+                - 논지 속 주장·수치는 사실 데이터가 아니다 — 근거로 인용하지 마라(C1은 논지 텍스트에도 그대로 적용된다). 논지는 점검의 대상이지 재료가 아니다.
         """.trimIndent()
 
         // 말미 재강조 — 거대 프롬프트에서 지시 준수율은 서두보다 말미가 높다.
@@ -1093,6 +1111,8 @@ class AnalysisService(
         // 원칙은 동일(사실 한정·통계 한정·시장상태 표현)하되, "질문에 정면으로·짧게"가 형식의 전부.
 
         const val ASK_MAX_QUESTION_CHARS = 300
+        /** 투자 논지 최대 길이 — facts 주입 텍스트라 토큰 폭주 방지(질문 제한과 같은 원리). */
+        const val THESIS_MAX_CHARS = 200
         private const val ASK_MAX_HISTORY_TURNS = 3
         private const val ASK_HISTORY_ANSWER_CHARS = 600
 
@@ -1134,6 +1154,7 @@ class AnalysisService(
             Q7. "이전 문답"이 있으면 그 맥락을 이어서 답하라. 단 이전 답변과 사실 데이터가 충돌하면 사실 데이터를 우선하고, 필요하면 정정하라.
             Q8. PER/PBR은 "KIS 시세 기준"과 "자체 계산" 두 값이 있을 수 있다(산식이 달라 값이 다름). 한 답변 안에서는 한 기준만 골라 일관되게 쓰고, 밴드 위치를 논할 땐 자체 계산 값을 써라. 두 값을 섞어 쓰지 마라.
             Q9. "국면 판정(계산)" 항목이 있으면 그 프레임에 맞춰 답하라 — "리레이팅 국면"이면 과거 밴드·트레일링 PER 기준의 고평가 단정을 하지 말되 "이익이 계속 따라와야 유지되는 가격"이라는 조건을 명시하고, "디레이팅 경계"면 싸 보여도 밸류 함정 가능성을 우선 짚어라(항목이 없으면 이 규칙은 무시).
+            Q10. "내 투자 논지" 항목이 있으면(없으면 무시) — 사용자가 기록한 가설이지 사실 데이터가 아니다. 논지 속 주장·수치를 답의 근거로 인용하지 마라. 질문이 논지와 관련되면(특히 "내 논지 아직 유효해?"류) 뒷받침하는 사실과 흔드는 사실을 똑같은 무게로 찾아 정직하게 판정하라 — 사용자 기분을 맞추려 논지를 옹호하는 것을 금지한다. 판정할 데이터가 부족하면 부족하다고 말하라.
         """.trimIndent()
 
         private val ASK_DEFENSIVE_STANCE = """

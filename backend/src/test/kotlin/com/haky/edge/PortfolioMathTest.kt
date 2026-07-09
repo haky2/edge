@@ -85,6 +85,21 @@ class PortfolioMathTest {
     }
 
     @Test
+    fun `캐시 키 - 논지 없으면 기존 키 불변, 논지·내용 변경 시 분리`() {
+        val pos = mapOf("005930" to HoldingPosition(70000.0, 10))
+        val base = PortfolioReviewService.buildKey("2026-07-10", pos, AnalysisMode.DEFENSIVE)
+        // 빈 맵·빈 값은 기존 키 그대로(구버전 앱 호환)
+        assertEquals(base, PortfolioReviewService.buildKey("2026-07-10", pos, AnalysisMode.DEFENSIVE, emptyMap()))
+        assertEquals(base, PortfolioReviewService.buildKey("2026-07-10", pos, AnalysisMode.DEFENSIVE, mapOf("005930" to " ")))
+        // 논지가 있으면 분리, 내용이 다르면 다른 키, 같으면 같은 키
+        val t1 = PortfolioReviewService.buildKey("2026-07-10", pos, AnalysisMode.DEFENSIVE, mapOf("005930" to "HBM 회복"))
+        val t2 = PortfolioReviewService.buildKey("2026-07-10", pos, AnalysisMode.DEFENSIVE, mapOf("005930" to "밸류 저평가"))
+        assertTrue(base != t1)
+        assertTrue(t1 != t2)
+        assertEquals(t1, PortfolioReviewService.buildKey("2026-07-10", pos, AnalysisMode.DEFENSIVE, mapOf("005930" to " HBM 회복 ")))
+    }
+
+    @Test
     fun `pct - 총액 0 방어`() {
         assertEquals(0.0, PortfolioReviewService.pct(100, 0))
     }
