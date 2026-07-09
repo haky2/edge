@@ -65,6 +65,7 @@ import com.haky.edge.model.DriftEntry
 import com.haky.edge.model.PortfolioReview
 import com.haky.edge.model.Quote
 import com.haky.edge.model.RebalanceCheck
+import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.model.WatchItem
 import com.haky.edge.ui.theme.PurpleAccent
 import com.haky.edge.ui.theme.ChangeDown
@@ -145,6 +146,7 @@ private fun mergedByCode(rows: List<HoldingRow>): List<HoldingRow> {
 fun PortfolioScreen(
     holdingRepo: HoldingRepository,
     accountRepo: AccountRepository,
+    watchlistRepo: WatchlistRepository,
     api: EdgeApi,
 ) {
     var rows by remember { mutableStateOf<List<HoldingRow>>(emptyList()) }
@@ -163,6 +165,8 @@ fun PortfolioScreen(
         loading = true
         // G1: holding 테이블이 보유 포지션의 단일 정본
         val allHoldings = holdingRepo.all().filter { it.avgPrice != null && it.qty != null }
+        // thesis는 watchlist 테이블 기반 — holding에 없으므로 별도 로드
+        val thesisMap = watchlistRepo.all().mapNotNull { it.thesis?.let { t -> it.code to t } }.toMap()
         // G3: 계좌 목록 로드 (세그먼트 컨트롤 노출 여부 판단)
         accounts = accountRepo.all()
         // 삭제된 계좌를 가리키는 선택 해제 — 세그먼트가 숨어도 필터만 남아 빈 화면이 고착되는 것 방지
@@ -183,10 +187,11 @@ fun PortfolioScreen(
             val qty = (h.qty ?: return@mapNotNull null).toDouble()
             val quote = quoteMap[h.code]
             val price = quote?.let { it.price.toDouble() } ?: avg
-            // StockDetailScreen 연결용 WatchItem — holding 포지션 데이터를 담아 전달
+            // StockDetailScreen 연결용 WatchItem — holding 포지션 + watchlist 논지를 담아 전달
             val item = WatchItem(code = h.code, name = h.name,
                                  avgPrice = h.avgPrice, qty = h.qty,
-                                 targetPrice = h.targetPrice, stopPrice = h.stopPrice)
+                                 targetPrice = h.targetPrice, stopPrice = h.stopPrice,
+                                 thesis = thesisMap[h.code])
             HoldingRow(item, quote, avg, qty, price, h.accountId)
         }
         loading = false
@@ -981,9 +986,11 @@ private suspend fun loadPortfolioReview(
 ) {
     if (rows.isEmpty()) { onResult(null); return }
     // 다계좌 동일 종목은 병합해 전달 — code 키 맵이라 병합 없이는 마지막 계좌 값만 남는다
-    val positions = mergedByCode(rows).associate { row ->
-        row.item.code to Pair(row.avg, row.qty.toLong())
-    }
-    val result = runCatching { api.getPortfolioReview(positions, mode, refresh) }.getOrNull()
+    val merged = mergedByCode(rows)
+    val positions = merged.associate { row -> row.item.code to Pair(row.avg, row.qty.toLong()) }
+    val theses = merged.mapNotNull { row ->
+        row.item.thesis?.takeIf { it.isNotBlank() }?.let { row.item.code to it }
+    }.toMap()
+    val result = runCatching { api.getPortfolioReview(positions, theses, mode, refresh) }.getOrNull()
     onResult(result)
 }

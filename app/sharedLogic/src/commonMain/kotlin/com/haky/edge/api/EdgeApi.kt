@@ -41,7 +41,9 @@ import com.haky.edge.model.DiscoveryReport
 import com.haky.edge.model.OverseasQuote
 import com.haky.edge.model.OverseasStockInfo
 import com.haky.edge.model.PortfolioReview
+import com.haky.edge.model.PortfolioReviewRequest
 import com.haky.edge.model.RebalanceCheck
+import com.haky.edge.model.ReviewPositionEntry
 import com.haky.edge.model.SectorRotation
 import com.haky.edge.model.ValuationBand
 import io.ktor.client.HttpClient
@@ -208,15 +210,16 @@ class EdgeApi(
 
     /**
      * 종목 종합 코멘트(시세·52주·PER·수급·뉴스 → Claude 해석). 백엔드가 당일·모드별 캐시.
-     * 포지션 없는 일반 버전 — 전 유저 공유 캐시.
+     * 포지션 없는 일반 버전 — 전 유저 공유 캐시. thesis 있으면 개인 캐시 키로 분리.
      * mode="defensive"(기본) | "aggressive"(개별 종목 매매 판단까지).
      * refresh=true: 캐시를 건너뛰고 즉시 재생성(수동 재생성 버튼 전용).
      */
     @Throws(Exception::class)
-    suspend fun getAnalysis(code: String, mode: String = "defensive", refresh: Boolean = false): Analysis =
+    suspend fun getAnalysis(code: String, mode: String = "defensive", refresh: Boolean = false, thesis: String? = null): Analysis =
         client.get("$baseUrl/analysis/$code") {
             if (mode != "defensive") parameter("mode", mode)
             if (refresh) parameter("refresh", "true")
+            if (!thesis.isNullOrBlank()) parameter("thesis", thesis)
         }.body()
 
     /**
@@ -379,6 +382,7 @@ class EdgeApi(
     /**
      * 포지션 기반 개인화 코멘트. 평단·수량·목표가·손절가를 Claude에 전달해 내 포지션 기준 해석 제공.
      * targetPrice·stopPrice 미입력 시 0.0 전달(백엔드가 0.0 = 미입력으로 처리).
+     * thesis 있으면 논지 유효성을 함께 점검(캐시 키 분리).
      * refresh=true: 캐시를 건너뛰고 즉시 재생성(수동 재생성 버튼 전용).
      */
     @Throws(Exception::class)
@@ -390,6 +394,7 @@ class EdgeApi(
         stopPrice: Double,
         mode: String = "defensive",
         refresh: Boolean = false,
+        thesis: String? = null,
     ): Analysis = client.get("$baseUrl/analysis/$code") {
         parameter("avgPrice", avgPrice)
         parameter("qty", qty)
@@ -397,6 +402,7 @@ class EdgeApi(
         if (stopPrice > 0.0) parameter("stopPrice", stopPrice)
         if (mode != "defensive") parameter("mode", mode)
         if (refresh) parameter("refresh", "true")
+        if (!thesis.isNullOrBlank()) parameter("thesis", thesis)
     }.body()
 
     /** 종목 공매도 거래량·잔고 요약. KRX 데이터, 당일 캐시. 데이터 없으면 null. */
@@ -488,7 +494,7 @@ class EdgeApi(
     /**
      * 종목 자유 질문 Q&A. analyze()와 같은 사실 데이터를 근거로 질문에만 답한다.
      * history: 이전 대화 턴(서버 무상태 — 앱이 직전 3턴을 되보냄).
-     * avgPrice·qty 있으면 내 포지션 기준 해석 포함.
+     * avgPrice·qty 있으면 내 포지션 기준 해석 포함. thesis 있으면 논지 유효성도 점검.
      */
     @Throws(Exception::class)
     suspend fun ask(
@@ -500,29 +506,33 @@ class EdgeApi(
         stopPrice: Double? = null,
         mode: String = "defensive",
         history: List<AskTurn> = emptyList(),
+        thesis: String? = null,
     ): AskAnswer = client.post("$baseUrl/ask/$code") {
         contentType(ContentType.Application.Json)
-        setBody(AskRequest(question, avgPrice, qty, targetPrice, stopPrice, mode, history))
+        setBody(AskRequest(question, avgPrice, qty, targetPrice, stopPrice, mode, history, thesis?.trim()?.ifBlank { null }))
     }.body()
 
     /**
      * 포트폴리오 종합 진단. 보유 전체 구조 분석(집중도·매크로 노출·밸류 분포 + Claude 해석).
-     * positions: code → (avgPrice, qty). 개인별 캐시(날짜+포지션집합+모드).
+     * positions: code → (avgPrice, qty). theses: code → 투자 논지(최대 200자).
+     * 개인별 캐시(날짜+포지션집합+논지해시+모드). thesis 없으면 구버전 캐시 호환.
+     * JSON body POST — 한글 논지 여러 건을 URL에 담으면 한도 초과 위험.
      */
     @Throws(Exception::class)
     suspend fun getPortfolioReview(
         positions: Map<String, Pair<Double, Long>>,
+        theses: Map<String, String> = emptyMap(),
         mode: String = "defensive",
         refresh: Boolean = false,
-    ): PortfolioReview = client.get("$baseUrl/portfolio-review") {
-        if (positions.isNotEmpty()) {
-            parameter("positions", positions.entries.joinToString(",") { (code, pos) ->
-                "$code:${pos.first.toLong()}:${pos.second}"
-            })
+    ): PortfolioReview {
+        val entries = positions.map { (code, pos) ->
+            ReviewPositionEntry(code, pos.first, pos.second, theses[code]?.trim()?.ifBlank { null })
         }
-        if (mode != "defensive") parameter("mode", mode)
-        if (refresh) parameter("refresh", "true")
-    }.body()
+        return client.post("$baseUrl/portfolio-review") {
+            contentType(ContentType.Application.Json)
+            setBody(PortfolioReviewRequest(entries, mode.takeIf { it != "defensive" }, refresh))
+        }.body()
+    }
 
     /** 리밸런싱 비중 점검 결과. 스냅샷 없거나 낡으면 evaluated=false. */
     @Throws(Exception::class)

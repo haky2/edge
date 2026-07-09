@@ -38,6 +38,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.haky.edge.db.AccountRepository
 import com.haky.edge.db.HoldingRepository
+import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.model.AccountInfo
 import com.haky.edge.model.WatchItem
 import java.util.Locale
@@ -48,6 +49,7 @@ fun PositionInputSheet(
     item: WatchItem,
     holdingRepo: HoldingRepository,
     accountRepo: AccountRepository,
+    watchlistRepo: WatchlistRepository,
     onDismiss: () -> Unit,
     onSave: (WatchItem) -> Unit,
 ) {
@@ -85,6 +87,8 @@ fun PositionInputSheet(
     var stopTfv by remember(existing) {
         mutableStateOf(existing?.stopPrice?.toLong()?.let(::priceToTfv) ?: TextFieldValue(""))
     }
+    var thesisText by remember { mutableStateOf(item.thesis ?: "") }
+    val thesisMaxChars = 200
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -170,6 +174,29 @@ fun PositionInputSheet(
                 stopTfv = digitsToTfv(digits)
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(16.dp))
+
+            SectionLabel("투자 논지")
+            OutlinedTextField(
+                value = thesisText,
+                onValueChange = { if (it.length <= thesisMaxChars) thesisText = it },
+                placeholder = { Text("왜 이 종목을 들고 있나(관심 갖나)?") },
+                minLines = 3,
+                maxLines = 5,
+                supportingText = {
+                    Text(
+                        "${thesisText.length}/$thesisMaxChars",
+                        color = if (thesisText.length >= thesisMaxChars)
+                            MaterialTheme.colorScheme.error
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+
             Spacer(modifier = Modifier.height(24.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -192,9 +219,12 @@ fun PositionInputSheet(
                             targetPrice = targetPrice,
                             stopPrice   = stopPrice,
                         )
+                        val thesisSaved = thesisText.trim().ifBlank { null }
+                        watchlistRepo.updateThesis(item.code, thesisSaved)
                         val updated = WatchItem(code = item.code, name = item.name,
                                                 avgPrice = avgPrice, qty = qty,
-                                                targetPrice = targetPrice, stopPrice = stopPrice)
+                                                targetPrice = targetPrice, stopPrice = stopPrice,
+                                                thesis = thesisSaved)
                         onSave(updated)
                     },
                     modifier = Modifier.weight(1f),

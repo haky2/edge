@@ -14,6 +14,7 @@ data class WatchItem(
     val qty: Long? = null,
     val targetPrice: Double? = null,
     val stopPrice: Double? = null,
+    val thesis: String? = null,
 )
 
 /**

@@ -22,10 +22,10 @@ class WatchlistRepository(driverFactory: DriverFactory) {
         }
     }
 
-    /** sort_order 순으로 전체 반환(화면 리스트용). 포지션 필드 포함. */
+    /** sort_order 순으로 전체 반환(화면 리스트용). 포지션 및 논지 필드 포함. */
     fun all(): List<WatchItem> =
-        queries.selectAll { code, name, avgPrice, qty, targetPrice, stopPrice ->
-            WatchItem(code, name, avgPrice, qty, targetPrice, stopPrice)
+        queries.selectAll { code, name, avgPrice, qty, targetPrice, stopPrice, thesis ->
+            WatchItem(code, name, avgPrice, qty, targetPrice, stopPrice, thesis)
         }.executeAsList()
 
     // 포지션 쓰기(updatePosition)는 G1에서 HoldingRepository.savePosition*으로 이관·제거됨.
@@ -36,6 +36,10 @@ class WatchlistRepository(driverFactory: DriverFactory) {
         val order = queries.count().executeAsOne()
         queries.insert(code, name, order, nowMillis())
     }
+
+    /** 투자 논지 저장. 빈 문자열은 null로 처리(논지 없음). */
+    fun updateThesis(code: String, thesis: String?) =
+        queries.updateThesis(thesis?.trim()?.ifBlank { null }, code)
 
     /** 관심종목 삭제. */
     fun remove(code: String) = queries.deleteByCode(code)

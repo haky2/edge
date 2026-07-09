@@ -130,7 +130,8 @@ struct PortfolioView: View {
                 avgPrice: KotlinDouble(double: avg),
                 qty: KotlinLong(longLong: Int64(qtySum)),
                 targetPrice: g.compactMap { $0.item.targetPrice }.first,
-                stopPrice: g.compactMap { $0.item.stopPrice }.first
+                stopPrice: g.compactMap { $0.item.stopPrice }.first,
+                thesis: first.item.thesis
             )
             return HoldingRow(item: item, quote: first.quote, avg: avg, qty: qtySum,
                               price: first.price, accountId: first.accountId)
@@ -647,6 +648,14 @@ struct PortfolioView: View {
         loading = true
         // G1: holding 테이블이 보유 포지션의 단일 정본
         let allHoldings = Db.holding.all().filter { $0.avgPrice != nil && $0.qty != nil }
+        // thesis는 watchlist 테이블 기반 — holding에 없으므로 별도 로드
+        let thesisMap: [String: String] = Dictionary(
+            uniqueKeysWithValues: (Db.watchlist.all() as! [WatchItem])
+                .compactMap { i -> (String, String)? in
+                    guard let t = i.thesis, !t.isEmpty else { return nil }
+                    return (i.code, t)
+                }
+        )
         // G3: 계좌 목록 로드 (세그먼트 컨트롤 노출 여부 판단)
         accounts = Db.account.all() as! [AccountInfo]
         // 삭제된 계좌를 가리키는 선택 해제 — 세그먼트가 숨어도 필터만 남아 빈 화면이 고착되는 것 방지
@@ -668,10 +677,11 @@ struct PortfolioView: View {
             let qty = Double(qtyNum.int64Value)
             let quote = quoteMap[h.code]
             let price = quote.map { Double($0.price) } ?? avg
-            // StockDetailView 연결용 WatchItem — holding 포지션 데이터를 담아 전달
+            // StockDetailView 연결용 WatchItem — holding 포지션 + watchlist 논지를 담아 전달
             let item = WatchItem(code: h.code, name: h.name,
                                  avgPrice: h.avgPrice, qty: h.qty,
-                                 targetPrice: h.targetPrice, stopPrice: h.stopPrice)
+                                 targetPrice: h.targetPrice, stopPrice: h.stopPrice,
+                                 thesis: thesisMap[h.code])
             return HoldingRow(item: item, quote: quote, avg: avg, qty: qty, price: price, accountId: h.accountId)
         }
         lastUpdated = Date()
@@ -690,14 +700,19 @@ struct PortfolioView: View {
         if force { portfolioReview = nil; reviewCommentExpanded = false }
         // 다계좌 동일 종목은 병합해 전달 — code 키 딕셔너리라 병합 없이는 마지막 계좌 값만 남는다
         var positions: [String: KotlinPair<KotlinDouble, KotlinLong>] = [:]
+        var theses: [String: String] = [:]
         for row in Self.mergedByCode(rows) {
             positions[row.item.code] = KotlinPair(
                 first: KotlinDouble(value: row.avg),
                 second: KotlinLong(value: Int64(row.qty))
             )
+            if let t = row.item.thesis, !t.isEmpty {
+                theses[row.item.code] = t
+            }
         }
         async let reviewTask = api.getPortfolioReview(
             positions: positions,
+            theses: theses,
             mode: analysisMode.rawValue,
             refresh: force
         )

@@ -1,0 +1,4 @@
+-- v5 → v6: watchlist에 thesis(투자 논지) 컬럼 추가.
+-- 기존 DB는 NULL로 초기화(논지 미입력 상태 = 기존 분석 캐시 키 불변).
+
+ALTER TABLE watchlist ADD COLUMN thesis TEXT;

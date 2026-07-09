@@ -159,6 +159,7 @@ fun EdgeApp(
                     is AppDestination.Portfolio -> PortfolioScreen(
                         holdingRepo = holdingRepo,
                         accountRepo = accountRepo,
+                        watchlistRepo = watchlistRepo,
                         api = api,
                     )
                     is AppDestination.Briefing -> BriefingScreen(

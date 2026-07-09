@@ -158,10 +158,10 @@ fun StockDetailScreen(
                     api.getAnalysisPersonalized(
                         watchItem.code, avg, qty,
                         watchItem.targetPrice ?: 0.0, watchItem.stopPrice ?: 0.0,
-                        mode = mode, refresh = force,
+                        mode = mode, refresh = force, thesis = watchItem.thesis,
                     )
                 } else {
-                    api.getAnalysis(watchItem.code, mode = mode, refresh = force)
+                    api.getAnalysis(watchItem.code, mode = mode, refresh = force, thesis = watchItem.thesis)
                 }
             } catch (_: Exception) {}
             analyzing = false
@@ -359,6 +359,7 @@ fun StockDetailScreen(
             item = watchItem,
             holdingRepo = holdingRepo,
             accountRepo = accountRepo,
+            watchlistRepo = watchlistRepo,
             onDismiss = { showPositionSheet = false },
             onSave = { updated ->
                 watchItem = updated
@@ -1383,6 +1384,7 @@ private fun StockAskSheet(
                     stopPrice = item.stopPrice ?: 0.0,
                     mode = mode,
                     history = turns,
+                    thesis = item.thesis,
                 )
                 turns = turns + AskTurn(question = q, answer = ans.answer)
             } catch (_: Exception) {

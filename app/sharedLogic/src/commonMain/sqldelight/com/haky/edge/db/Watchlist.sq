@@ -7,14 +7,15 @@ CREATE TABLE watchlist (
     name         TEXT NOT NULL,
     sort_order   INTEGER NOT NULL,
     added_at     INTEGER NOT NULL,   -- epoch millis
-    avg_price    REAL,               -- 평단가(원)
-    qty          INTEGER,            -- 보유 수량
-    target_price REAL,               -- 목표가
-    stop_price   REAL                -- 손절가
+    avg_price    REAL,               -- 평단가(원) — G1 이후 항상 NULL(holding이 정본)
+    qty          INTEGER,            -- 보유 수량  — G1 이후 항상 NULL
+    target_price REAL,               -- 목표가     — G1 이후 항상 NULL
+    stop_price   REAL,               -- 손절가     — G1 이후 항상 NULL
+    thesis       TEXT                -- 투자 논지(사용자가 직접 기록한 보유/관심 이유, 최대 200자)
 );
 
 selectAll:
-SELECT code, name, avg_price, qty, target_price, stop_price
+SELECT code, name, avg_price, qty, target_price, stop_price, thesis
 FROM watchlist ORDER BY sort_order ASC;
 
 count:
@@ -26,6 +27,9 @@ VALUES (?, ?, ?, ?);
 
 -- 포지션 쓰기는 G1부터 holding 테이블이 정본(HoldingRepository.savePosition*).
 -- watchlist 포지션 컬럼은 스키마 호환용으로만 남아 있고 항상 NULL이다.
+
+updateThesis:
+UPDATE watchlist SET thesis = ? WHERE code = ?;
 
 deleteByCode:
 DELETE FROM watchlist WHERE code = ?;

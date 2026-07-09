@@ -14,10 +14,13 @@ struct PositionEditView: View {
     @State private var qty: String
     @State private var target: String
     @State private var stop: String
+    @State private var thesis: String
 
     // 계좌 선택 (계좌가 1개=기본만 있으면 피커 숨김)
     @State private var accounts: [AccountInfo] = []
     @State private var selectedAccountId: Int64
+
+    private static let thesisMaxChars = 200
 
     init(item: WatchItem, onSave: @escaping (WatchItem) -> Void) {
         self.code = item.code
@@ -31,6 +34,7 @@ struct PositionEditView: View {
         _qty    = State(initialValue: existing?.qty.map         { String($0.int64Value) } ?? "")
         _target = State(initialValue: existing?.targetPrice.map { Self.fmtPrice(Int($0.doubleValue)) } ?? "")
         _stop   = State(initialValue: existing?.stopPrice.map   { Self.fmtPrice(Int($0.doubleValue)) } ?? "")
+        _thesis = State(initialValue: item.thesis ?? "")
     }
 
     private var hasCustomAccounts: Bool { accounts.count > 1 }
@@ -58,6 +62,28 @@ struct PositionEditView: View {
                     priceField("목표가", $target)
                     priceField("손절가", $stop)
                 }
+                Section {
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextEditor(text: $thesis)
+                            .frame(minHeight: 80)
+                            .onChange(of: thesis) { v in
+                                if v.count > Self.thesisMaxChars {
+                                    thesis = String(v.prefix(Self.thesisMaxChars))
+                                }
+                            }
+                        HStack {
+                            Spacer()
+                            Text("\(thesis.count)/\(Self.thesisMaxChars)")
+                                .font(.caption2)
+                                .foregroundColor(thesis.count >= Self.thesisMaxChars ? .red : .secondary)
+                        }
+                    }
+                } header: {
+                    Text("투자 논지")
+                } footer: {
+                    Text("왜 이 종목을 들고 있나(관심 갖나)? — AI가 매 분석에서 논지와 사실의 일치 여부를 점검합니다.")
+                        .font(.caption)
+                }
             }
             .navigationTitle("포지션 입력")
             .navigationBarTitleDisplayMode(.inline)
@@ -74,7 +100,7 @@ struct PositionEditView: View {
             accounts = Db.account.all() as! [AccountInfo]
         }
         .onChange(of: selectedAccountId) { newId in
-            // 계좌 전환 시 해당 계좌의 holding으로 필드 갱신
+            // 계좌 전환 시 해당 계좌의 holding으로 포지션 필드 갱신(논지는 watchlist 기반이라 유지)
             let existing = Db.holding.getHolding(code: code, accountId: newId)
             avg    = existing?.avgPrice.map    { Self.fmtPrice(Int($0.doubleValue)) } ?? ""
             qty    = existing?.qty.map         { String($0.int64Value) } ?? ""
@@ -113,6 +139,7 @@ struct PositionEditView: View {
         let qtyL    = parseLong(qty)
         let targetD = parseDouble(target)
         let stopD   = parseDouble(stop)
+        let thesisTrimmed = thesis.trimmingCharacters(in: .whitespacesAndNewlines)
 
         Db.holding.savePositionForAccount(
             code: code,
@@ -123,13 +150,15 @@ struct PositionEditView: View {
             targetPrice: targetD.map { KotlinDouble(double: $0) },
             stopPrice:   stopD.map   { KotlinDouble(double: $0) }
         )
+        Db.watchlist.updateThesis(code: code, thesis: thesisTrimmed.isEmpty ? nil : thesisTrimmed)
         // StockDetailView @State item 갱신용 WatchItem
         let updated = WatchItem(
             code: code, name: name,
             avgPrice:    avgD.map    { KotlinDouble(double: $0) },
             qty:         qtyL.map    { KotlinLong(longLong: $0) },
             targetPrice: targetD.map { KotlinDouble(double: $0) },
-            stopPrice:   stopD.map   { KotlinDouble(double: $0) }
+            stopPrice:   stopD.map   { KotlinDouble(double: $0) },
+            thesis:      thesisTrimmed.isEmpty ? nil : thesisTrimmed
         )
         onSave(updated)
         dismiss()

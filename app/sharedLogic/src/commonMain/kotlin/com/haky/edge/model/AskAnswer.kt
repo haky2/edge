@@ -27,4 +27,5 @@ data class AskRequest(
     val stopPrice: Double? = null,
     val mode: String? = null,
     val history: List<AskTurn> = emptyList(),
+    val thesis: String? = null,
 )

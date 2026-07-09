@@ -14,7 +14,24 @@ data class MacroExposure(val label: String, val favorablePct: Double, val advers
 @Serializable
 data class ValuationBucket(val label: String, val weightPct: Double, val count: Int)
 
-/** GET /portfolio-review 응답. 수치 필드는 전부 계산(사실), comment/summary만 Claude 해석. */
+/** POST /portfolio-review 요청 바디 — 종목 1건. */
+@Serializable
+data class ReviewPositionEntry(
+    val code: String,
+    val avgPrice: Double,
+    val qty: Long,
+    val thesis: String? = null,
+)
+
+/** POST /portfolio-review 요청 바디 전체. */
+@Serializable
+data class PortfolioReviewRequest(
+    val positions: List<ReviewPositionEntry>,
+    val mode: String? = null,
+    val refresh: Boolean = false,
+)
+
+/** POST /portfolio-review 응답. 수치 필드는 전부 계산(사실), comment/summary만 Claude 해석. */
 @Serializable
 data class PortfolioReview(
     val date: String,

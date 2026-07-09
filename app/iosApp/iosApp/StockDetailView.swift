@@ -572,6 +572,16 @@ struct StockDetailView: View {
                 let reached = price <= s
                 row("손절가", "\(Int(s).formatted()) 원  " + (reached ? "⚠️ 도달" : String(format: "(%+.1f%%)", gap)))
             }
+
+            if let t = item.thesis, !t.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("투자 논지").font(.caption).foregroundColor(.secondary)
+                    Text(t).font(.footnote)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 8)
+            }
         }
         .cardStyle()
     }
@@ -2397,10 +2407,16 @@ struct StockDetailView: View {
                 targetPrice: item.targetPrice?.doubleValue ?? 0.0,
                 stopPrice: item.stopPrice?.doubleValue ?? 0.0,
                 mode: analysisMode.rawValue,
-                refresh: force
+                refresh: force,
+                thesis: item.thesis
             )
         } else {
-            analysis = try? await api.getAnalysis(code: item.code, mode: analysisMode.rawValue, refresh: force)
+            analysis = try? await api.getAnalysis(
+                code: item.code,
+                mode: analysisMode.rawValue,
+                refresh: force,
+                thesis: item.thesis
+            )
         }
         analyzing = false
     }
@@ -2567,7 +2583,8 @@ struct StockAskSheetView: View {
                 targetPrice: item.targetPrice,
                 stopPrice: item.stopPrice,
                 mode: mode.rawValue,
-                history: turns
+                history: turns,
+                thesis: item.thesis
             )
             turns.append(AskTurn(question: q, answer: ans.answer))
         } catch {
