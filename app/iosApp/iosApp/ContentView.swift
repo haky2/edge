@@ -134,7 +134,8 @@ struct WatchlistView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.name).font(.body)
                 HStack(spacing: 4) {
-                    Text(item.code).font(.caption2).foregroundColor(.secondary)
+                    Text(item.code.hasPrefix("US:") ? (item.code.split(separator: ":").last.map(String.init) ?? item.code) : item.code)
+                        .font(.caption2).foregroundColor(.secondary)
                     if let badges = supplyBadges[item.code] {
                         ForEach(badges, id: \.self) { badge in
                             Text(badge)

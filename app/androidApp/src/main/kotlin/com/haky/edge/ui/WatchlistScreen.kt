@@ -360,7 +360,7 @@ private fun WatchlistRow(
                 modifier = Modifier.padding(top = 2.dp),
             ) {
                 Text(
-                    item.code,
+                    if (item.code.startsWith("US:")) item.code.substringAfterLast(":") else item.code,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
