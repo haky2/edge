@@ -83,8 +83,10 @@ class OverseasMaster(private val http: HttpClient) {
             val nameEn = fields[7].trim()
             val currency = if (fields.size > 9) fields[9].trim() else "USD"
             if (symb.isBlank() || excd.isBlank()) continue
-            // 심볼은 알파벳·숫자·점·하이픈·슬래시만 허용(특수문자나 공백이 있는 비정상 행 방어)
-            if (!symb.all { it.isLetterOrDigit() || it == '.' || it == '-' || it == '/' }) continue
+            // 심볼 문자셋은 OverseasRoutes.OVERSEAS_CODE_REGEX([A-Z0-9.\-])와 반드시 일치해야 한다.
+            // 더 넓게 통과시키면(예: 슬래시·소문자) 검색·추가는 되는데 시세·코멘트 라우트가
+            // 형식 오류로 거부하는 '좀비 종목'이 생긴다. 여기서 걸러 아예 검색에 안 나오게 한다.
+            if (!symb.all { it in 'A'..'Z' || it in '0'..'9' || it == '.' || it == '-' }) continue
             result.add(
                 OverseasStockInfo(
                     code = "US:$excd:$symb",

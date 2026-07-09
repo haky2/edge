@@ -305,7 +305,8 @@ fun ComparePickerSheet(
                 style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
             HorizontalDivider()
-            watchlist.filter { it.code != currentCode }.forEach { item ->
+            // 해외 종목(US:)은 제외 — /comparison 은 국내 전용(수급·밸류밴드 근거)이라 400 거부됨.
+            watchlist.filter { it.code != currentCode && !it.code.startsWith("US:") }.forEach { item ->
                 Row(
                     modifier = Modifier.fillMaxWidth()
                         .clickable {

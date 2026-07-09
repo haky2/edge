@@ -311,7 +311,8 @@ struct ComparePickerView: View {
 
     var body: some View {
         NavigationStack {
-            List(watchlist.filter { $0.code != currentCode }, id: \.code) { item in
+            // 해외 종목(US:)은 제외 — /comparison 은 국내 전용(수급·밸류밴드 근거)이라 400 거부됨.
+            List(watchlist.filter { $0.code != currentCode && !$0.code.hasPrefix("US:") }, id: \.code) { item in
                 Button {
                     onSelect(item)
                     dismiss()

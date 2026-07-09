@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-07-09 — O4+Opus 승격 배포 + O5 해외 경로 감사 (Fable)
+
+**한 일**
+- **push+배포**: 57af4a7(O4 해외 AI 코멘트)·0004df1(해외 Opus)·a439c7e(전 트리거 Opus 승격) 운영 반영. 해석 코멘트 전부 기본 Opus 라이브(롤백 env `OPUS_TRIGGERS`).
+- **O5 감사 (커밋 "fix(O5)")**: 해외 경로 전면 점검. **MED ① 비교 피커 해외 노출** — iOS·Android 피커가 관심종목 전체를 보여줘 해외 선택 시 /comparison(국내 전용) 400 → US: 접두사 제외. **MED ② 마스터 심볼 문자셋 불일치** — OverseasMaster가 `/`·소문자 심볼을 통과시키는데 OVERSEAS_CODE_REGEX는 `[A-Z0-9.\-]`만 허용 → 검색·추가는 되고 시세·코멘트는 영원히 실패하는 좀비 종목 가능성. master 필터를 regex 문자셋으로 통일(검색에 안 나오면 깨진 상태 진입 불가).
+- **양호 확인**: 전 국내 라우트가 6자리 regex 방어(단건 400·배치 무해 필터) — US: 코드가 새어 들어가도 500 없음. 브리핑·포트폴리오·통계는 compactMap으로 해외를 조용히 스킵. 통화 표기 3곳(백엔드 priceText·iOS·Android) 규칙 일치. 캐시 키 정상.
+- **LOW 백로그**(메모리 기록): 해외 코멘트 stale 감지 없음(당일 캐시 설계상 허용), 해외-only 관심목록 엣지케이스, US: 원문 코드 캡션 노출, EdgeApp overseasQuote 미사용 파라미터.
+
+**다음**
+- O5 커밋 push + 백엔드 배포(OverseasMaster分). 클라分은 재릴리스에 포함.
+- 재릴리스(7월 "Batch F"): versionCode/Name 올리고 assembleRelease + 실기기 스모크 + 지인 APK 재배포.
+
+---
+
 ## 2026-07-08 — R3·D2·C3 클라 배선 + 일괄 배포 + G3 그룹 뷰 + G4 감사 (Sonnet→Fable)
 
 **한 일**
