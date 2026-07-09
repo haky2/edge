@@ -6,6 +6,28 @@
 
 ---
 
+## 2026-07-10 — 투자 논지(thesis) 슬라이스 2: 클라 iOS+Android (Sonnet)
+
+**한 일**
+- **투자 논지 클라이언트 배선 (커밋 6e01e07)**: 슬라이스 1+3 백엔드의 thesis 파라미터를 앱까지 연결.
+- `5.sqm` 마이그레이션: `watchlist.thesis TEXT` 컬럼 추가. DB selectAll·updateThesis 쿼리 추가.
+- `WatchItem` 모델에 `thesis: String?` 필드 추가. `hydrate()`는 `copy()`를 쓰므로 자동 전파(수정 없음).
+- iOS `PositionEditView`: "투자 논지" 섹션(TextEditor, 200자 제한+카운터). 저장 시 `Db.watchlist.updateThesis()` 호출 + WatchItem.thesis 갱신.
+- Android `PositionInputSheet`: `watchlistRepo: WatchlistRepository` 파라미터 추가, OutlinedTextField(논지, 200자), 저장 시 `watchlistRepo.updateThesis()` 호출.
+- iOS `StockDetailView`: `positionCard`에 논지 표시(입력된 경우). `loadAnalysis()`·`sendQuestion()`에 `thesis: item.thesis` 전달.
+- Android `StockDetailScreen`: `loadAnalysis`·`ask` 호출에 `thesis = watchItem.thesis` 전달.
+- `getPortfolioReview` GET → POST 전환: SharedLogic에 `ReviewPositionEntry`·`PortfolioReviewRequest` DTO 추가. iOS/Android 모두 theses 맵 빌드 후 POST.
+- iOS `PortfolioView` 내 `load()` 함수에서 watchlist all()로 thesisMap 로드 → WatchItem 생성 시 주입.
+- Android `PortfolioScreen`에 `watchlistRepo` 파라미터 추가. 동일 패턴.
+- `AskRequest`에 `thesis: String?` 추가.
+- **빌드 검증**: SharedLogic compileKotlinIosArm64·Android compileDebugKotlin·iOS BUILD SUCCEEDED·백엔드 tests 전부 통과.
+
+**다음**
+- **push + 배포**: 미push 커밋 3개(63c6829 백엔드·1b064c9 devlog·6e01e07 클라). 배포하면 백엔드 논지 점검 라이브.
+- 앱 재빌드 배포(versionCode=3, "1.2") — 5.sqm 마이그레이션이 앱 업데이트 시 기존 사용자에게 자동 적용.
+
+---
+
 ## 2026-07-10 — 투자 논지(thesis) 슬라이스 1+3: 백엔드 (Fable)
 
 **한 일**
