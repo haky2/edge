@@ -68,6 +68,6 @@ LOW 백로그(`low-backlog-spec.md`, Sonnet/Opus 몫)와 별개로 Fable 급 작
 
 ## 진행 기록
 - [x] A 감사 4탄 — HIGH 0·MED 4 수정·LOW 4 백로그 이관 (2026-07-10, devlog 참고)
-- [ ] B1 / [ ] B2
+- [x] B1 백엔드 (2026-07-10) — POST /trade-review, TradeReviewService, TRADE_REVIEW 트리거(기본 Opus), 유닛 8+실호출 검증 / [ ] B2 클라(Sonnet) — 매도 기록 시 복기 제안 + 복기 카드, iOS+Android 동시
 - [ ] C1 / [ ] C2
 - [ ] D1 / [ ] D2
