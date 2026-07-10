@@ -36,6 +36,8 @@ struct StockDetailView: View {
     @State private var analog: AnalogReport?        // 유사 국면 통계(F1)
     @State private var premortem: Premortem?        // 매수 프리모템(F5)
     @State private var premortemExpanded = false
+    @State private var tradeReview: TradeReview?    // 매매 복기(B2)
+    @State private var tradeReviewExpanded = false
     @State private var earningsExpanded = false
     @State private var signalExpanded = false
     @State private var indicatorHelpExpanded = false
@@ -105,6 +107,7 @@ struct StockDetailView: View {
                 // ── 내 기록 ──
                 if let pm = premortem { premortemCard(pm) }
                 if !logEntries.isEmpty { logCard() }
+                if let tr = tradeReview { tradeReviewCard(tr) }
             }
             .padding()
         }
@@ -156,7 +159,13 @@ struct StockDetailView: View {
             loadLogs()
             Task { premortem = try? await api.getPremortem(code: item.code) }  // 방금 생성됐을 수 있음
         }) {
-            ActionLogSheetView(code: item.code, name: item.name, logRepo: logRepo, currentPrice: quote?.price ?? 0, api: api, item: item)
+            ActionLogSheetView(
+                code: item.code, name: item.name, logRepo: logRepo,
+                currentPrice: quote?.price ?? 0, api: api, item: item,
+                onSellWithReview: { review in
+                    if let r = review { tradeReview = r }
+                }
+            )
         }
         .sheet(isPresented: $showComparePicker) {
             ComparePickerView(
@@ -1662,6 +1671,95 @@ struct StockDetailView: View {
         .cardStyle()
     }
 
+    // 매매 복기 카드(B2) — 완결된 매매의 과정/결과 분리 복기
+    private func tradeReviewCard(_ tr: TradeReview) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("매매 복기").font(.subheadline.weight(.semibold))
+                Spacer()
+                let pctColor: Color = tr.realizedPct >= 0 ? .red : .blue
+                Text(String(format: "%+.1f%%", tr.realizedPct)).font(.caption2.weight(.semibold))
+                    .foregroundColor(pctColor)
+                Image(systemName: tradeReviewExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { tradeReviewExpanded.toggle() } }
+            if tradeReviewExpanded {
+                Divider()
+                VStack(alignment: .leading, spacing: 10) {
+                    // 기간 요약
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("매수").font(.caption2).foregroundColor(.secondary)
+                            Text(String(tr.buyDate.prefix(10))).font(.caption)
+                        }
+                        Image(systemName: "arrow.right").font(.caption2).foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("매도").font(.caption2).foregroundColor(.secondary)
+                            Text(String(tr.sellDate.prefix(10))).font(.caption)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("보유").font(.caption2).foregroundColor(.secondary)
+                            Text("\(tr.holdingTradingDays)거래일").font(.caption)
+                        }
+                    }
+                    if let highClose = tr.periodHighClose, let highDate = tr.periodHighDate,
+                       let vsHigh = tr.sellVsHighPct {
+                        // KotlinLong? / KotlinDouble? → .int64Value / .doubleValue
+                        let hcVal = highClose.int64Value
+                        let vsVal = vsHigh.doubleValue
+                        Divider()
+                        HStack {
+                            Text("구간 최고").font(.caption2).foregroundColor(.secondary)
+                            Text("\(hcVal.formatted())원 (\(String(highDate.prefix(10))))")
+                                .font(.caption)
+                            Spacer()
+                            Text(String(format: "매도가 %+.1f%%", vsVal))
+                                .font(.caption2)
+                                .foregroundColor(vsVal >= 0 ? .red : .blue)
+                        }
+                    }
+                    if let a5 = tr.afterSell5dPct {
+                        let a5Val = a5.doubleValue
+                        let a20Val = tr.afterSell20dPct?.doubleValue
+                        Divider()
+                        HStack {
+                            Text("매도 후 추이").font(.caption2).foregroundColor(.secondary)
+                            Spacer()
+                            Text(String(format: "5일 %+.1f%%", a5Val)).font(.caption2)
+                                .foregroundColor(a5Val >= 0 ? .red : .blue)
+                            if let a20 = a20Val {
+                                Text(String(format: "/ 20일 %+.1f%%", a20)).font(.caption2)
+                                    .foregroundColor(a20 >= 0 ? .red : .blue)
+                            }
+                        }
+                    }
+                    if let summary = tr.summary {
+                        Divider()
+                        HStack(alignment: .top, spacing: 6) {
+                            Text("📝").font(.caption)
+                            Text(markdown(summary)).font(.caption)
+                        }
+                        .padding(8)
+                        .background(Color.orange.opacity(0.08))
+                        .cornerRadius(6)
+                    }
+                    Text(markdown(tr.comment)).font(.caption)
+                    if tr.partialHistory {
+                        Text("⚠️ 매수일이 일봉 이력 범위 밖 — 구간 수치는 잡힌 범위만의 값").font(.caption2).foregroundColor(.orange)
+                    }
+                    Text("생성: \(String(tr.generatedAt.prefix(16)).replacingOccurrences(of: "T", with: " "))")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                .padding(.top, 8).padding(.bottom, 4)
+            }
+        }
+        .cardStyle()
+    }
+
     // 유사 국면 통계 카드(F1) — 오늘 상태와 비슷했던 과거 시점들의 이후 실제 수익률 분포
     private func analogCard(_ an: AnalogReport) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -2601,13 +2699,15 @@ struct ActionLogSheetView: View {
     let name: String?
     let logRepo: ActionLogRepository
     let currentPrice: Int64        // 기록 시점 현재가. 0 = 미기록.
-    var api: EdgeApi? = nil        // F5 프리모템 생성용(nil이면 토글 숨김)
-    var item: WatchItem? = nil     // 평단·손절가 전달용
+    var api: EdgeApi? = nil        // 프리모템·복기 생성용(nil이면 토글 숨김)
+    var item: WatchItem? = nil     // 평단·손절가·논지 전달용
+    var onSellWithReview: ((TradeReview?) -> Void)? = nil  // B2: 매도 후 복기 결과 전달
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedAction = "interest"
     @State private var reason = ""
-    @State private var makePremortem = true   // 매수 시 무효화 조건 생성(F5)
+    @State private var makePremortem = true    // 매수 시 무효화 조건 생성(F5)
+    @State private var makeTradeReview = true  // 매도 시 매매 복기 생성(B2)
 
     private let actions: [(id: String, label: String)] = [
         ("interest", "관심"),
@@ -2640,6 +2740,15 @@ struct ActionLogSheetView: View {
                         }
                     }
                 }
+                if selectedAction == "sell" && api != nil {
+                    Section {
+                        Toggle("매매 복기 만들기", isOn: $makeTradeReview)
+                        if makeTradeReview {
+                            Text("AI가 이 매매를 과정/결과 2축으로 복기해줘요. 매수 기록에 사유가 있을수록 정확해져요.")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+                }
             }
             .navigationTitle("행동 기록")
             .navigationBarTitleDisplayMode(.inline)
@@ -2668,12 +2777,54 @@ struct ActionLogSheetView: View {
                                     avgPrice: avg, qty: qty, stopPrice: stop)
                             }
                         }
+                        // B2: 매도 + 토글 on → 최근 매수 로그 조합해 복기 생성(백그라운드)
+                        if selectedAction == "sell", makeTradeReview, let api, let onReview = onSellWithReview {
+                            let allLogs = logRepo.getByCode(code: code, limit: 10)
+                            // 가격이 기록된 가장 최근 매수 로그 찾기
+                            if let buyLog = allLogs.first(where: { $0.action == "buy" && $0.price != nil }),
+                               let buyPriceObj = buyLog.price, buyPriceObj.int64Value > 0, currentPrice > 0 {
+                                let buyDate = epochToISO(buyLog.createdAt)
+                                let sellDate = todayISO()
+                                let buyPrice = Double(buyPriceObj.int64Value)
+                                let sellPrice = Double(currentPrice)
+                                let buyReason = buyLog.reason
+                                let sellReason = reason.isEmpty ? nil : reason
+                                let thesis = item?.thesis
+                                Task.detached {
+                                    let review = try? await api.postTradeReview(
+                                        code: code,
+                                        buyDate: buyDate, buyPrice: buyPrice,
+                                        sellDate: sellDate, sellPrice: sellPrice,
+                                        qty: nil,
+                                        buyReason: buyReason,
+                                        sellReason: sellReason,
+                                        thesis: thesis
+                                    )
+                                    await MainActor.run { onReview(review) }
+                                }
+                            }
+                        }
                         dismiss()
                     }
                     .fontWeight(.semibold)
                 }
             }
         }
+    }
+
+    // epoch millis → "yyyy-MM-dd" (KST)
+    private func epochToISO(_ millis: Int64) -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        fmt.timeZone = TimeZone(identifier: "Asia/Seoul")
+        return fmt.string(from: Date(timeIntervalSince1970: Double(millis) / 1000))
+    }
+
+    private func todayISO() -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        fmt.timeZone = TimeZone(identifier: "Asia/Seoul")
+        return fmt.string(from: Date())
     }
 }
 

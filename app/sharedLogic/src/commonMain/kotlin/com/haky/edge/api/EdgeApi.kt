@@ -45,6 +45,8 @@ import com.haky.edge.model.PortfolioReviewRequest
 import com.haky.edge.model.RebalanceCheck
 import com.haky.edge.model.ReviewPositionEntry
 import com.haky.edge.model.SectorRotation
+import com.haky.edge.model.TradeReview
+import com.haky.edge.model.TradeReviewRequest
 import com.haky.edge.model.ValuationBand
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -489,6 +491,38 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getPremortem(code: String): Premortem? = runCatching {
         client.get("$baseUrl/premortem/$code").body<Premortem>()
+    }.getOrNull()
+
+    /**
+     * 완결된 매매 복기(B2). 클라가 action_log에서 매수·매도 쌍을 조합해 보낸다.
+     * 생성에 수 초 걸림 — 백그라운드 Task로 호출. 실패 시 null(기록 자체에 영향 없음).
+     */
+    @Throws(Exception::class)
+    suspend fun postTradeReview(
+        code: String,
+        buyDate: String,
+        buyPrice: Double,
+        sellDate: String,
+        sellPrice: Double,
+        qty: Long? = null,
+        buyReason: String? = null,
+        sellReason: String? = null,
+        thesis: String? = null,
+    ): TradeReview? = runCatching {
+        client.post("$baseUrl/trade-review") {
+            contentType(ContentType.Application.Json)
+            setBody(TradeReviewRequest(
+                code = code,
+                buyDate = buyDate,
+                buyPrice = buyPrice,
+                sellDate = sellDate,
+                sellPrice = sellPrice,
+                qty = qty,
+                buyReason = buyReason,
+                sellReason = sellReason,
+                thesis = thesis,
+            ))
+        }.body<TradeReview>()
     }.getOrNull()
 
     /**

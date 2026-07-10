@@ -113,6 +113,7 @@ fun StockDetailScreen(
     var backtest by remember { mutableStateOf<com.haky.edge.model.Backtest?>(null) }
     var analog by remember { mutableStateOf<com.haky.edge.model.AnalogReport?>(null) }
     var premortem by remember { mutableStateOf<com.haky.edge.model.Premortem?>(null) }
+    var tradeReview by remember { mutableStateOf<com.haky.edge.model.TradeReview?>(null) }
     var flowSensitivity by remember { mutableStateOf<com.haky.edge.model.FlowSensitivity?>(null) }
     var earnings by remember { mutableStateOf<com.haky.edge.model.EarningsEntry?>(null) }
     var stockSignal by remember { mutableStateOf<com.haky.edge.model.StockImpact?>(null) }
@@ -319,6 +320,7 @@ fun StockDetailScreen(
                     logEntries = logEntries.filter { it.id != id }
                 },
             )
+            tradeReview?.let { TradeReviewCard(it) }
         }
     }
 
@@ -349,6 +351,29 @@ fun StockDetailScreen(
                     runCatching {
                         api.createPremortem(watchItem.code, reason, watchItem.avgPrice, watchItem.qty, watchItem.stopPrice)
                     }.getOrNull()?.let { premortem = it }
+                }
+            },
+            onSellWithTradeReview = { sellReason ->
+                scope.launch {
+                    val logs = actionLogRepo.getByCode(watchItem.code, 10)
+                    val buyLog = logs.filter { it.action == "buy" && it.price != null }.firstOrNull()
+                    if (buyLog != null && buyLog.price != null && (quote?.price ?: 0L) > 0L) {
+                        val buyDate = epochToISO(buyLog.createdAt)
+                        val sellDate = epochToISO(System.currentTimeMillis())
+                        runCatching {
+                            api.postTradeReview(
+                                code = watchItem.code,
+                                buyDate = buyDate,
+                                buyPrice = buyLog.price!!.toLong().toDouble(),
+                                sellDate = sellDate,
+                                sellPrice = (quote?.price ?: 0L).toDouble(),
+                                qty = null,
+                                buyReason = buyLog.reason,
+                                sellReason = sellReason.ifBlank { null },
+                                thesis = watchItem.thesis,
+                            )
+                        }.getOrNull()?.let { tradeReview = it }
+                    }
                 }
             },
         )
@@ -1262,6 +1287,11 @@ private fun ActionBadge(action: String) {
 private fun shortTs(millis: Long): String =
     SimpleDateFormat("MM/dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(millis))
 
+private fun epochToISO(millis: Long): String =
+    SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+        .apply { timeZone = java.util.TimeZone.getTimeZone("Asia/Seoul") }
+        .format(java.util.Date(millis))
+
 // ─── 행동 기록 입력 시트 ──────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1273,13 +1303,15 @@ private fun ActionLogSheet(
     logRepo: ActionLogRepository,
     onDismiss: () -> Unit,
     onSaved: () -> Unit,
-    premortemEnabled: Boolean = false,          // F5 토글 노출 여부(api 있을 때만)
+    premortemEnabled: Boolean = false,          // F5/B2 토글 노출 여부(api 있을 때만)
     onBuyWithPremortem: (reason: String) -> Unit = {},  // 매수+토글 on 시 부모가 프리모템 생성
+    onSellWithTradeReview: (reason: String) -> Unit = {},  // 매도+토글 on 시 부모가 복기 생성(B2)
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedAction by remember { mutableStateOf("interest") }
     var reason by remember { mutableStateOf("") }
-    var makePremortem by remember { mutableStateOf(true) }  // 매수 시 무효화 조건 생성(F5)
+    var makePremortem by remember { mutableStateOf(true) }    // 매수 시 무효화 조건 생성(F5)
+    var makeTradeReview by remember { mutableStateOf(true) }  // 매도 시 매매 복기 생성(B2)
     val actions = listOf("interest" to "관심", "buy" to "매수", "sell" to "매도")
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -1332,6 +1364,19 @@ private fun ActionLogSheet(
                     )
                 }
             }
+            if (selectedAction == "sell" && premortemEnabled) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.material3.Switch(checked = makeTradeReview, onCheckedChange = { makeTradeReview = it })
+                    Text("매매 복기 만들기", style = MaterialTheme.typography.bodyMedium)
+                }
+                if (makeTradeReview) {
+                    Text(
+                        "AI가 이 매매를 과정/결과 2축으로 복기해줘요. 매수 기록에 사유가 있을수록 정확해져요.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
@@ -1347,6 +1392,8 @@ private fun ActionLogSheet(
                     )
                     // F5: 매수 + 토글 on → 부모(생존 스코프)가 프리모템 생성·상태 갱신.
                     if (selectedAction == "buy" && makePremortem && premortemEnabled) onBuyWithPremortem(reason)
+                    // B2: 매도 + 토글 on → 부모(생존 스코프)가 복기 생성·상태 갱신.
+                    if (selectedAction == "sell" && makeTradeReview && premortemEnabled) onSellWithTradeReview(reason)
                     onSaved()
                 }) { Text("저장") }
             }

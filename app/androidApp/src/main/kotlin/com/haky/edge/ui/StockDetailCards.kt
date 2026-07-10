@@ -70,6 +70,7 @@ import com.haky.edge.model.PriceLimits
 import com.haky.edge.model.SignalResult
 import com.haky.edge.model.StockImpact
 import com.haky.edge.model.StockWarning
+import com.haky.edge.model.TradeReview
 import com.haky.edge.model.ValuationBand
 import com.haky.edge.ui.theme.ChangeDown
 import com.haky.edge.ui.theme.ChangeUp
@@ -546,6 +547,84 @@ internal fun PremortemCard(pm: com.haky.edge.model.Premortem) {
                 }
             }
             Text("가설이 틀렸음을 빨리 알기 위한 조건이에요. 발동해도 매매 지시가 아니라 점검 신호예요.",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+// ─── 매매 복기 (B2) ──────────────────────────────────────
+
+@Composable
+internal fun TradeReviewCard(tr: TradeReview) {
+    val pctColor = if (tr.realizedPct >= 0) ChangeUp else ChangeDown
+    CollapsibleCard(
+        title = "매매 복기",
+        trailing = {
+            Text(
+                "%+.1f%%".format(tr.realizedPct),
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = pctColor,
+            )
+        },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // 기간 요약
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("매수", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(tr.buyDate.take(10), style = MaterialTheme.typography.bodySmall)
+                }
+                Text("→", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("매도", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(tr.sellDate.take(10), style = MaterialTheme.typography.bodySmall)
+                }
+                Spacer(Modifier.weight(1f))
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("보유", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${tr.holdingTradingDays}거래일", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (tr.periodHighClose != null && tr.periodHighDate != null && tr.sellVsHighPct != null) {
+                HorizontalDivider()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("구간 최고", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(56.dp))
+                    Text("%,d원 (%s)".format(tr.periodHighClose, tr.periodHighDate!!.take(10)), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    Text("매도가 %+.1f%%".format(tr.sellVsHighPct), style = MaterialTheme.typography.labelSmall,
+                        color = if (tr.sellVsHighPct!! >= 0) ChangeUp else ChangeDown)
+                }
+            }
+            if (tr.afterSell5dPct != null) {
+                HorizontalDivider()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("매도 후 추이", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    Text("5일 %+.1f%%".format(tr.afterSell5dPct), style = MaterialTheme.typography.labelSmall,
+                        color = if (tr.afterSell5dPct!! >= 0) ChangeUp else ChangeDown)
+                    tr.afterSell20dPct?.let { a20 ->
+                        Text(" / 20일 %+.1f%%".format(a20), style = MaterialTheme.typography.labelSmall,
+                            color = if (a20 >= 0) ChangeUp else ChangeDown)
+                    }
+                }
+            }
+            tr.summary?.let { summary ->
+                HorizontalDivider()
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .background(OrangeAccent.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Text("📝", style = MaterialTheme.typography.bodySmall)
+                    Text(parseMarkdownBold(summary), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Text(parseMarkdownBold(tr.comment), style = MaterialTheme.typography.bodySmall)
+            if (tr.partialHistory) {
+                Text("⚠️ 매수일이 일봉 이력 범위 밖 — 구간 수치는 잡힌 범위만의 값",
+                    style = MaterialTheme.typography.labelSmall, color = OrangeAccent)
+            }
+            Text("생성: ${tr.generatedAt.take(16).replace('T', ' ')}",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
