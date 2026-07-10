@@ -38,6 +38,9 @@ struct StockDetailView: View {
     @State private var premortemExpanded = false
     @State private var tradeReview: TradeReview?    // 매매 복기(B2)
     @State private var tradeReviewExpanded = false
+    @State private var deepResearch: DeepResearch?  // 딥리서치(C2)
+    @State private var deepResearchLoading = false
+    @State private var deepResearchExpanded = false
     @State private var earningsExpanded = false
     @State private var signalExpanded = false
     @State private var indicatorHelpExpanded = false
@@ -108,6 +111,7 @@ struct StockDetailView: View {
                 if let pm = premortem { premortemCard(pm) }
                 if !logEntries.isEmpty { logCard() }
                 if let tr = tradeReview { tradeReviewCard(tr) }
+                deepResearchSection()
             }
             .padding()
         }
@@ -117,6 +121,16 @@ struct StockDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showComparePicker = true } label: { Image(systemName: "arrow.left.arrow.right") }
                     .help("다른 종목과 비교")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                if deepResearchLoading {
+                    ProgressView().scaleEffect(0.8)
+                } else {
+                    Button {
+                        Task { await loadDeepResearch() }
+                    } label: { Image(systemName: "doc.text.magnifyingglass") }
+                        .help("딥리서치 — 웹검색 결합 심층 리포트 (수십 초)")
+                }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showAskSheet = true } label: { Image(systemName: "questionmark.bubble") }
@@ -2527,6 +2541,124 @@ struct StockDetailView: View {
         catalystAttempted = true
         // F2 임팩트 통계 — 로딩 상태 별도 없음(데이터 있으면 표시, 없으면 숨김)
         catalystImpact = try? await api.getCatalystImpact(code: item.code)
+    }
+
+    private func loadDeepResearch() async {
+        guard !deepResearchLoading else { return }
+        deepResearchLoading = true
+        deepResearch = try? await api.getDeepResearch(code: item.code)
+        deepResearchLoading = false
+        if deepResearch != nil {
+            withAnimation(.easeInOut(duration: 0.2)) { deepResearchExpanded = true }
+        }
+    }
+
+    // ── 딥리서치 섹션(C2) ────────────────────────────────────────
+    @ViewBuilder
+    private func deepResearchSection() -> some View {
+        if let dr = deepResearch {
+            deepResearchCard(dr)
+        } else if deepResearchLoading {
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("딥리서치 생성 중… (수십 초 소요)").font(.caption).foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .cardStyle()
+        }
+    }
+
+    private func deepResearchCard(_ dr: DeepResearch) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Image(systemName: "doc.text.magnifyingglass").font(.caption).foregroundColor(.teal)
+                Text("딥리서치").font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(dr.date).font(.caption2).foregroundColor(.secondary)
+                Image(systemName: deepResearchExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { deepResearchExpanded.toggle() } }
+
+            if deepResearchExpanded {
+                Divider()
+                VStack(alignment: .leading, spacing: 12) {
+                    // 핵심 요약
+                    if let summary = dr.summary {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "sparkles").font(.caption2)
+                                Text("핵심 요약").font(.caption.weight(.bold))
+                            }
+                            .foregroundColor(.teal)
+                            Text(markdown(summary))
+                                .font(.callout)
+                                .lineSpacing(4)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.teal.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+
+                    // 본문 — 소제목 단락 구조
+                    let sections = parseCommentSections(dr.comment)
+                    HStack(alignment: .top, spacing: 10) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.teal.opacity(0.35))
+                            .frame(width: 3)
+                        VStack(alignment: .leading, spacing: 14) {
+                            ForEach(sections) { sec in
+                                VStack(alignment: .leading, spacing: 5) {
+                                    if let h = sec.heading {
+                                        Text(h)
+                                            .font(.subheadline.weight(.bold))
+                                            .foregroundColor(.teal)
+                                    }
+                                    ForEach(Array(sec.body.enumerated()), id: \.offset) { _, p in
+                                        Text(markdown(p))
+                                            .font(.callout)
+                                            .lineSpacing(4)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 출처 목록
+                    if !dr.sources.isEmpty {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("출처").font(.caption.weight(.semibold)).foregroundColor(.secondary)
+                            ForEach(Array(dr.sources.enumerated()), id: \.offset) { _, src in
+                                if let url = URL(string: src.url) {
+                                    Link(destination: url) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "link").font(.caption2)
+                                            Text(src.title).font(.caption).lineLimit(2)
+                                        }
+                                        .foregroundColor(.teal)
+                                    }
+                                } else {
+                                    Text("• \(src.title)").font(.caption).foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+
+                    Text("생성: \(dr.generatedAt) KST").font(.caption2).foregroundColor(.secondary)
+                }
+                .padding(.top, 10).padding(.bottom, 4)
+            }
+        }
+        .cardStyle()
     }
 }
 

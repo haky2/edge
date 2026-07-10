@@ -28,9 +28,11 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -114,6 +116,8 @@ fun StockDetailScreen(
     var analog by remember { mutableStateOf<com.haky.edge.model.AnalogReport?>(null) }
     var premortem by remember { mutableStateOf<com.haky.edge.model.Premortem?>(null) }
     var tradeReview by remember { mutableStateOf<com.haky.edge.model.TradeReview?>(null) }
+    var deepResearch by remember { mutableStateOf<com.haky.edge.model.DeepResearch?>(null) }
+    var deepResearchLoading by remember { mutableStateOf(false) }
     var flowSensitivity by remember { mutableStateOf<com.haky.edge.model.FlowSensitivity?>(null) }
     var earnings by remember { mutableStateOf<com.haky.edge.model.EarningsEntry?>(null) }
     var stockSignal by remember { mutableStateOf<com.haky.edge.model.StockImpact?>(null) }
@@ -230,6 +234,23 @@ fun StockDetailScreen(
                             Icon(Icons.AutoMirrored.Filled.CompareArrows, contentDescription = "종목 비교")
                         }
                     }
+                    IconButton(
+                        onClick = {
+                            if (!deepResearchLoading) {
+                                scope.launch {
+                                    deepResearchLoading = true
+                                    deepResearch = runCatching { api.getDeepResearch(watchItem.code) }.getOrNull()
+                                    deepResearchLoading = false
+                                }
+                            }
+                        },
+                    ) {
+                        if (deepResearchLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Filled.Search, contentDescription = "딥리서치")
+                        }
+                    }
                     IconButton(onClick = { showAskSheet = true }) {
                         Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "질문하기")
                     }
@@ -321,6 +342,15 @@ fun StockDetailScreen(
                 },
             )
             tradeReview?.let { TradeReviewCard(it) }
+            deepResearch?.let { DeepResearchCard(it) }
+            if (deepResearchLoading && deepResearch == null) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text(
+                    "딥리서치 생성 중… (수십 초 소요)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 

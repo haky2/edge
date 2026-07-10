@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -70,6 +71,7 @@ import com.haky.edge.model.PriceLimits
 import com.haky.edge.model.SignalResult
 import com.haky.edge.model.StockImpact
 import com.haky.edge.model.StockWarning
+import com.haky.edge.model.DeepResearch
 import com.haky.edge.model.TradeReview
 import com.haky.edge.model.ValuationBand
 import com.haky.edge.ui.theme.ChangeDown
@@ -1191,4 +1193,141 @@ private fun aiCommentFreshLabel(a: Analysis): String {
 private fun todayYmd(): String {
     val c = java.util.Calendar.getInstance()
     return "%04d-%02d-%02d".format(c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH) + 1, c.get(java.util.Calendar.DAY_OF_MONTH))
+}
+
+// ─── 딥리서치 카드 (C2) ───────────────────────────────────
+
+@Composable
+internal fun DeepResearchCard(dr: DeepResearch) {
+    val teal = EdgeTheme.colors.teal
+    val uriHandler = LocalUriHandler.current
+    CollapsibleCard(
+        title = "딥리서치",
+        leadingIcon = Icons.Filled.Search,
+        trailing = {
+            Text(dr.date, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+        initiallyExpanded = true,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // 핵심 요약
+            dr.summary?.takeIf { it.isNotBlank() }?.let { summary ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(teal.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp), tint = teal)
+                        Text("핵심 요약", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = teal)
+                    }
+                    Text(
+                        parseMarkdownBold(summary.trim()),
+                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                    )
+                }
+            }
+
+            // 본문 — 소제목 단락 구조
+            val sections = parseDeepResearchSections(dr.comment)
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(3.dp)
+                        .fillMaxHeight()
+                        .background(teal.copy(alpha = 0.35f), RoundedCornerShape(2.dp))
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.weight(1f)) {
+                    sections.forEach { (heading, body) ->
+                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            if (heading != null) {
+                                Text(heading, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = teal)
+                            }
+                            body.forEach { para ->
+                                Text(
+                                    parseMarkdownBold(para),
+                                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 20.sp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 출처 목록
+            if (dr.sources.isNotEmpty()) {
+                HorizontalDivider()
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("출처", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    dr.sources.forEach { src ->
+                        Row(
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.clickable(onClick = { runCatching { uriHandler.openUri(src.url) } }),
+                        ) {
+                            Text("•", style = MaterialTheme.typography.labelSmall, color = teal)
+                            Text(
+                                src.title,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = teal,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+            }
+
+            Text(
+                "생성: ${dr.generatedAt} KST",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private fun parseDeepResearchSections(comment: String): List<Pair<String?, List<String>>> {
+    val blocks = comment.split("\n\n")
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && it != "---" }
+    val result = mutableListOf<Pair<String?, MutableList<String>>>()
+    var currentHeading: String? = null
+    var currentBody = mutableListOf<String>()
+
+    fun flush() {
+        if (currentHeading != null || currentBody.isNotEmpty()) {
+            result.add(currentHeading to currentBody)
+        }
+        currentHeading = null
+        currentBody = mutableListOf()
+    }
+
+    for (block in blocks) {
+        val h = headingOnlyDr(block)
+        if (h != null) {
+            flush()
+            currentHeading = h
+        } else {
+            currentBody.add(block)
+        }
+    }
+    flush()
+    return result
+}
+
+private fun headingOnlyDr(s: String): String? {
+    if (!s.startsWith("**") || !s.endsWith("**") || s.length <= 4) return null
+    val inner = s.drop(2).dropLast(2)
+    if (inner.contains("**") || inner.contains("\n") || inner.length > 24) return null
+    return inner
 }

@@ -45,6 +45,7 @@ import com.haky.edge.model.PortfolioReviewRequest
 import com.haky.edge.model.RebalanceCheck
 import com.haky.edge.model.ReviewPositionEntry
 import com.haky.edge.model.SectorRotation
+import com.haky.edge.model.DeepResearch
 import com.haky.edge.model.TradeReview
 import com.haky.edge.model.TradeReviewRequest
 import com.haky.edge.model.ValuationBand
@@ -524,6 +525,14 @@ class EdgeApi(
             ))
         }.body<TradeReview>()
     }.getOrNull()
+
+    /**
+     * 종목 딥리서치(C1/C2). 웹검색+사실 데이터 결합 심층 리포트.
+     * 생성에 수십 초 걸릴 수 있음 — 버튼 탭 시 백그라운드 로드, 당일 캐시.
+     */
+    @Throws(Exception::class)
+    suspend fun getDeepResearch(code: String): DeepResearch =
+        client.get("$baseUrl/deep-research/$code").body()
 
     /**
      * 종목 자유 질문 Q&A. analyze()와 같은 사실 데이터를 근거로 질문에만 답한다.

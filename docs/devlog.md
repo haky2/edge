@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-07-11 — 딥리서치 C2: 클라 (Sonnet)
+
+**한 일**
+- **C2 (Sonnet)**: iOS+Android 상세 화면에 딥리서치 진입·로딩·카드 구현.
+  - SharedLogic `DeepResearch`/`ResearchSource` 모델 + `EdgeApi.getDeepResearch(code)`.
+  - iOS: 툴바 `doc.text.magnifyingglass` 버튼 — 탭 시 `loadDeepResearch()` 백그라운드 호출, 로딩 중 스피너+텍스트(카드 영역), 완료 시 자동 펼침. `deepResearchCard()` — 청록(teal) 테마, 핵심 요약 박스, 소제목 단락(`parseCommentSections` 재사용), 출처 목록(Link → Safari).
+  - Android: 툴바 Search 아이콘, scope.launch 백그라운드, 로딩 중 `LinearProgressIndicator`. `DeepResearchCard(dr)` — `CollapsibleCard(initiallyExpanded=true)`, 요약 박스, `height(IntrinsicSize.Min)` 사이드바, `parseDeepResearchSections()`, 출처 클릭 `uriHandler.openUri`.
+  - iOS+Android 빌드 통과.
+
+**다음**
+- D1 SENSITIVITY 실증(Fable) + 백엔드 배포(B1+B2+C1+C2 묶음 일괄).
+
+---
+
 ## 2026-07-10 — 딥리서치 C1: 백엔드 (Fable) + 매매 복기 B2: 클라 (Sonnet)
 
 **한 일**
