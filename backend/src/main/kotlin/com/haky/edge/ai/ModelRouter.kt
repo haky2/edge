@@ -42,6 +42,7 @@ class ModelRouter(
         const val SECTOR_BRIEFING = "sector_briefing" // 브리핑 "섹터 분석" — 당일 캐시 1회
         const val COMPARISON = "comparison" // 종목 비교 — (쌍·날짜·모드) 당일 캐시
         const val TRADE_REVIEW = "trade_review" // 매매 복기 — 완결 매매당 수동 1회(당일 캐시)·고판단 지점
+        const val DEEP_RESEARCH = "deep_research" // C 딥리서치 2단계(합성 리포트) — 일일 상한+당일 캐시, 최고 판단 지점
 
         /**
          * 기본 Opus 대상 = 사용자에게 보이는 해석 코멘트 전부(2026-07-08 사용자 결정).
@@ -52,7 +53,7 @@ class ModelRouter(
         val DEFAULT_OPUS_TRIGGERS = setOf(
             BRIEFING, ANALYSIS_INITIAL, ANALYSIS_AUTO_REFRESH, ANALYSIS_MANUAL,
             ASK, PORTFOLIO, PREMORTEM, OVERSEAS,
-            MACRO_IMPACT, SECTOR_BRIEFING, COMPARISON, TRADE_REVIEW,
+            MACRO_IMPACT, SECTOR_BRIEFING, COMPARISON, TRADE_REVIEW, DEEP_RESEARCH,
         )
 
         /**

@@ -68,6 +68,6 @@ LOW 백로그(`low-backlog-spec.md`, Sonnet/Opus 몫)와 별개로 Fable 급 작
 
 ## 진행 기록
 - [x] A 감사 4탄 — HIGH 0·MED 4 수정·LOW 4 백로그 이관 (2026-07-10, devlog 참고)
-- [x] B1 백엔드 (2026-07-10) — POST /trade-review, TradeReviewService, TRADE_REVIEW 트리거(기본 Opus), 유닛 8+실호출 검증 / [ ] B2 클라(Sonnet) — 매도 기록 시 복기 제안 + 복기 카드, iOS+Android 동시
-- [ ] C1 / [ ] C2
+- [x] B1 백엔드 (2026-07-10) — POST /trade-review, TradeReviewService, TRADE_REVIEW 트리거(기본 Opus), 유닛 8+실호출 검증 / [x] B2 클라 (2026-07-10, 커밋 c833a38) — 매도 시 복기 토글+카드, iOS+Android 동시
+- [x] C1 백엔드 (2026-07-10) — GET /deep-research/{code}, DeepResearchService **2단계 구조**(①웹검색 수집=노트만·Sonnet ②합성 리포트=complete()·DEEP_RESEARCH 트리거 기본 Opus — completeWithWebSearch의 중간 서술 오염 회피, EventSync 패턴 확대). NumberGuard 미적용(웹 수치는 구조적 오탐) 대신 프롬프트 D1~D4 출처 규율(2층 수치 출처·시점 병기 의무, 상충 병기, 내부 용어 금지, 면책 문구 금지). 비용 캡: DEEP_RESEARCH_DAILY_LIMIT(기본 5·429) + (code,날짜) 공유 캐시 + force 불허 + 종목별 in-flight Mutex + 실패 시 쿼터 반환. 유닛 10 + 실호출 2종목(005930·012450) + 재시작 후 캐시 적중 검증 / [ ] C2 클라(Sonnet) — 상세 화면 딥리서치 버튼+로딩 UX(생성 수십 초)+리포트 카드+출처 목록, iOS+Android 동시
 - [ ] D1 / [ ] D2

@@ -47,6 +47,7 @@ import com.haky.edge.routes.earningsPreviewRoutes
 import com.haky.edge.routes.earningsRoutes
 import com.haky.edge.routes.premortemRoutes
 import com.haky.edge.routes.tradeReviewRoutes
+import com.haky.edge.routes.deepResearchRoutes
 import com.haky.edge.routes.rebalanceRoutes
 import com.haky.edge.routes.discoveryRoutes
 import com.haky.edge.routes.investorRoutes
@@ -256,6 +257,9 @@ fun Application.module() {
     val premortem = com.haky.edge.ai.PremortemService(analysis, master, claude, modelRouter)
     // 매매 복기 — 프리모템의 대칭. 완결 매매의 가격 경로(계산) + 과정/결과 분리 해석(Claude).
     val tradeReview = com.haky.edge.ai.TradeReviewService(dailyHistory, master, claude, modelRouter)
+    // C 딥리서치 — 웹검색(과금) 결합 2단계 리포트. 일일 상한 + (code,날짜) 캐시 + force 불허.
+    val deepResearch = com.haky.edge.ai.DeepResearchService(analysis, master, claude, modelRouter,
+        dailyLimit = System.getenv("DEEP_RESEARCH_DAILY_LIMIT")?.toIntOrNull() ?: 5)
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
     val costSummary = CostSummaryService(slack, costChannel, usageTracker)
@@ -309,6 +313,7 @@ fun Application.module() {
             earningsPreviewRoutes(earningsPreview)
             premortemRoutes(premortem)
             tradeReviewRoutes(tradeReview)
+            deepResearchRoutes(deepResearch)
             sectorRoutes(kis)
             sectorRotationRoutes(sectorRotation)
             sectorBriefingRoutes(sectorBriefing)
