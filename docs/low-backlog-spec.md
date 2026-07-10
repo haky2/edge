@@ -78,6 +78,20 @@
 - **수정**: 둘 중 하나 — ① `OverseasDetailScreen`에 `initialQuote` 파라미터를 추가해 첫 페인트에 사용(국내 `StockDetailScreen`의 initialQuote 패턴과 통일, 권장) ② 파라미터 제거. iOS는 해당 없음.
 - **검증**: 에뮬 해외 종목 상세 진입.
 
+### S11. [감사4탄 LOW] 논지 캐시 키 hashCode 충돌
+- **위치**: `ai/AnalysisService.kt` buildKey `t${thesis.hashCode()}` / `ai/PortfolioReviewService.kt` buildKey `t${t.hashCode()}`.
+- **증상**: 32비트 해시라 서로 다른 논지가 같은 키로 접힐 이론적 가능성 — 충돌 시 다른 논지 기준 캐시 코멘트 수신(같은 코드·날짜·모드·포지션 전제라 개인 앱에선 사실상 무시 가능).
+- **수정**: SHA-256 hex 앞 16자로 교체(양쪽 buildKey 공용 헬퍼). CacheKeyTest 갱신.
+
+### S12. [감사4탄 LOW] POST /portfolio-review 중복 code last-wins
+- **위치**: `routes/PortfolioReviewRoutes.kt` post — `positions ... .toMap()`.
+- **증상**: 같은 code 2건이 오면 마지막 것만 남음(클라는 mergedByCode로 병합해 보내므로 실경로 없음, 서버 방어만 부재).
+- **수정**: 중복 감지 시 400 또는 수량가중 병합(G4 mergeMoveHoldings 원칙). 400이 단순.
+
+### S13. [감사4탄 LOW] 논지 저장 직후 화면의 분석은 이전 논지 기준
+- **위치**: iOS `StockDetailView` onSave / Android `StockDetailScreen` onSave — 논지 변경 후 loadAnalysis 자동 재조회 없음(다음 진입·새로고침에 반영).
+- **수정**: onSave에서 논지가 바뀐 경우 분석 카드에 "논지가 바뀌었어요 — 새로고침" 힌트 또는 자동 재조회(비용: 캐시 키가 달라져 풀 LLM 생성이므로 힌트 쪽 권장).
+
 ---
 
 ## Opus 급 (판단 필요 — 방향은 제시, 세부는 판단)
@@ -91,6 +105,10 @@
 - **위치**: `slack/SignalService.kt:147~148` — `seen += rceptNo`가 `runCatching { ep.review(...) }` **앞**. 리뷰 생성이 실패(DART 일시 오류 등)해도 접수번호가 seen으로 영속(:152) → 그 실적 리뷰는 재시도 없이 소실.
 - **수정 방향**: 성공 시에만 seen 추가 — `review()`가 non-null을 반환한 경우에만 `seen += rceptNo`. 재시도 폭주 걱정은 없음: 공시 조회 창이 `days = 2`(:119)라 실패해도 최대 2일 재시도 후 자연 소멸. **판단 포인트**: review()가 null을 반환하는 게 "실패"인지 "해당 없음"인지 — 해당 없음(예: 비교 기준 부재)이라면 매 스캔 재시도가 낭비이므로 null 의미를 구분(예외=미기록, 정상 null=seen 기록)해야 함. EarningsPreviewService.review 내부를 읽고 결정.
 - **검증**: 유닛 — 예외 시 seen 미기록, 정상 null 시 기록.
+
+### O4. [감사4탄 LOW] GET /analysis 논지 쿼리 파라미터 — 액세스 로그 노출
+- **위치**: `routes/AnalysisRoutes.kt` — thesis를 GET 쿼리로 수신 → Cloud Run 액세스 로그에 URL(논지 원문 %인코딩) 잔존. 기존 position 쿼리(평단·수량)와 동급의 노출이라 LOW.
+- **수정 방향**: POST /analysis 신설 + GET 유지(구버전 호환, ask/포폴 POST 전례). 단 로그 정책(개인 앱·본인 로그)상 수용 가능 여부가 판단 포인트 — position 쿼리도 같은 결정에 묶임.
 
 ### O3. 네이버 목표가 — 실패 negative 캐시 + 구조 변경 무감지
 - **위치**: `news/NaverTargetPriceClient.kt:27~29` — `runCatching { fetch }.getOrNull()`이 예외·파싱실패를 전부 null로 뭉개 당일 캐시. 페이지 구조가 바뀌면 전 종목이 조용히 null(RegimeDetector·비교·분석 facts에서 목표가만 사라짐).

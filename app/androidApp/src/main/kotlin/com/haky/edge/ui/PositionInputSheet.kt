@@ -220,7 +220,7 @@ fun PositionInputSheet(
                             stopPrice   = stopPrice,
                         )
                         val thesisSaved = thesisText.trim().ifBlank { null }
-                        watchlistRepo.updateThesis(item.code, thesisSaved)
+                        watchlistRepo.updateThesis(item.code, item.name, thesisSaved)
                         val updated = WatchItem(code = item.code, name = item.name,
                                                 avgPrice = avgPrice, qty = qty,
                                                 targetPrice = targetPrice, stopPrice = stopPrice,

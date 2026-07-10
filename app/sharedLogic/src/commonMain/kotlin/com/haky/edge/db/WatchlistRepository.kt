@@ -31,15 +31,30 @@ class WatchlistRepository(driverFactory: DriverFactory) {
     // 포지션 쓰기(updatePosition)는 G1에서 HoldingRepository.savePosition*으로 이관·제거됨.
     // watchlist의 포지션 컬럼은 G1 마이그레이션 이후 항상 NULL — 표시는 HoldingRepository.hydrate가 얹는다.
 
-    /** 관심종목 추가(검색 1.4b 연동용). 기존 코드면 이름/순서 갱신. 끝에 붙인다. */
+    /**
+     * 관심종목 추가(검색 1.4b 연동용). 새 코드는 끝에 붙이고, 기존 코드는 이름만 갱신해
+     * 행을 보존한다 — insert가 OR REPLACE라 기존 행에 쓰면 thesis가 NULL로 지워진다.
+     */
     fun add(code: String, name: String) {
-        val order = queries.count().executeAsOne()
-        queries.insert(code, name, order, nowMillis())
+        if (queries.existsByCode(code).executeAsOne() > 0L) {
+            queries.updateName(name, code)
+            return
+        }
+        queries.insert(code, name, queries.count().executeAsOne(), nowMillis())
     }
 
-    /** 투자 논지 저장. 빈 문자열은 null로 처리(논지 없음). */
-    fun updateThesis(code: String, thesis: String?) =
-        queries.updateThesis(thesis?.trim()?.ifBlank { null }, code)
+    /**
+     * 투자 논지 저장. 빈 문자열은 null(논지 없음). 관심목록에 행이 없으면(관심 해제 후
+     * 보유만 남은 종목) 행을 만들어 저장한다 — 없는 행에 UPDATE만 하면 조용히 유실된다.
+     */
+    fun updateThesis(code: String, name: String, thesis: String?) {
+        val t = thesis?.trim()?.ifBlank { null }
+        if (queries.existsByCode(code).executeAsOne() == 0L) {
+            if (t == null) return
+            queries.insert(code, name, queries.count().executeAsOne(), nowMillis())
+        }
+        queries.updateThesis(t, code)
+    }
 
     /** 관심종목 삭제. */
     fun remove(code: String) = queries.deleteByCode(code)

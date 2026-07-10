@@ -750,6 +750,17 @@ private fun PositionCard(item: WatchItem, quote: Quote?, onEditClick: () -> Unit
                 PositionRow("손절가", "${stop.toLong().fmt()}원  ${if (price <= stop) "⚠️ 도달" else "(%+.1f%%)".format(gap)}")
             }
         }
+
+        if (!item.thesis.isNullOrEmpty()) {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            Text(
+                "투자 논지",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(item.thesis!!, style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 

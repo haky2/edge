@@ -6,6 +6,27 @@
 
 ---
 
+## 2026-07-10 — 감사 4탄: 투자 논지 신규분 (Fable)
+
+**한 일**
+- **감사 대상**: O5 감사 이후 미감사분 — 논지 백엔드 63c6829·클라 6e01e07·캡션 69ecd6d·재릴리스 2건. 결과 **HIGH 0 · MED 4 · LOW 4**.
+- **MED ① add()의 INSERT OR REPLACE가 논지 소거** (최대 발견): 검색에서 이미 있는 종목 재추가 → 행 전체 교체 → thesis NULL. 사용자 입력 데이터 조용한 유실. → `existsByCode` 분기: 기존 코드는 `updateName`만(행 보존), 신규만 insert. .sq에 OR REPLACE 함정 주석.
+- **MED ② 관심 해제된 보유 종목 논지 저장 무시**: watchlist 삭제가 holding을 안 지우는 구조라 보유-only 종목 존재 가능 → updateThesis가 UPDATE 0행으로 조용히 유실(화면엔 저장된 듯 보임). → `updateThesis(code, name, thesis)`로 시그니처 변경, 행 없으면 insert 후 저장(논지 기록 = 관심 복귀 의미론).
+- **MED ③ iOS 200자 산정 불일치**: iOS `.count`(grapheme) vs 서버 Kotlin `length`(UTF-16) — 이모지 포함 논지가 한도 근처면 서버 400 → `try?`/`runCatching`이라 분석·Q&A·포폴 **조용히 전면 실패**. → iOS를 `utf16.count` 기준으로 제한·카운터 표시(Android는 이미 일치).
+- **MED ④ Android 포지션 카드 논지 표시 누락**: iOS positionCard에만 반영(동시 반영 정책 위반). → PositionCard 하단에 표시 추가.
+- **양호 확인**: 캐시 키 분리(논지 없으면 공유 키 불변, FileCache sanitize 안전), Slack 아카이브 게이트(position+thesis), 5.sqm(ALTER ADD COLUMN만), POST/GET 병행 호환, hydrate copy() 논지 전파, 전 진입 경로(초기·refresh·ask·포폴) thesis 배선, 다계좌 mergedByCode와 thesisMap 정합, 캡션·버전 커밋 무해.
+- **LOW 4건 → low-backlog-spec.md 이관**: S11(해시 충돌), S12(POST 중복 code), S13(논지 저장 직후 구캐시 표시), O4(GET 쿼리 논지 로그 노출).
+- **검증**: sharedLogic iosArm64 + Android compileDebugKotlin + iOS BUILD SUCCEEDED.
+
+**배운 것**
+- **INSERT OR REPLACE는 "부분 갱신"이 아니다** — 나열 안 한 컬럼은 NULL로 초기화된다. 테이블에 컬럼을 추가하는 슬라이스는 그 테이블에 쓰는 **기존 쿼리 전부**(특히 OR REPLACE·REPLACE INTO)를 재점검해야 한다.
+- 문자수 제한을 클라·서버 양쪽에 둘 때는 **산정 단위**(grapheme vs UTF-16)까지 계약이다.
+
+**다음**
+- fable-tracks-spec.md 트랙 B(매매 복기) 착수. 이번 수정분은 클라 전용이라 백엔드 배포 불필요 — 앱 재빌드에 포함되면 됨.
+
+---
+
 ## 2026-07-10 — 투자 논지(thesis) 슬라이스 2: 클라 iOS+Android (Sonnet)
 
 **한 일**

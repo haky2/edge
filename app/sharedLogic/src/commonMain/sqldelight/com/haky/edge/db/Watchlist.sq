@@ -21,9 +21,17 @@ FROM watchlist ORDER BY sort_order ASC;
 count:
 SELECT count(*) FROM watchlist;
 
+-- ⚠️ OR REPLACE는 행 전체를 교체한다 — 여기 없는 컬럼(thesis)은 NULL로 초기화되므로
+-- 기존 코드에 직접 쓰면 안 된다. 리포지토리 add()가 존재 여부를 확인하고 분기한다.
 insert:
 INSERT OR REPLACE INTO watchlist(code, name, sort_order, added_at)
 VALUES (?, ?, ?, ?);
+
+existsByCode:
+SELECT count(*) FROM watchlist WHERE code = ?;
+
+updateName:
+UPDATE watchlist SET name = ? WHERE code = ?;
 
 -- 포지션 쓰기는 G1부터 holding 테이블이 정본(HoldingRepository.savePosition*).
 -- watchlist 포지션 컬럼은 스키마 호환용으로만 남아 있고 항상 NULL이다.

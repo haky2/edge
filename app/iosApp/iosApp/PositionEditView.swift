@@ -67,15 +67,19 @@ struct PositionEditView: View {
                         TextEditor(text: $thesis)
                             .frame(minHeight: 80)
                             .onChange(of: thesis) { v in
-                                if v.count > Self.thesisMaxChars {
-                                    thesis = String(v.prefix(Self.thesisMaxChars))
+                                // 서버는 Kotlin String.length(UTF-16 단위)로 200자를 검사한다.
+                                // Swift .count(grapheme)로 자르면 이모지 포함 시 서버 400 → 분석이 조용히 실패.
+                                if v.utf16.count > Self.thesisMaxChars {
+                                    var s = v
+                                    while s.utf16.count > Self.thesisMaxChars { s.removeLast() }
+                                    thesis = s
                                 }
                             }
                         HStack {
                             Spacer()
-                            Text("\(thesis.count)/\(Self.thesisMaxChars)")
+                            Text("\(thesis.utf16.count)/\(Self.thesisMaxChars)")
                                 .font(.caption2)
-                                .foregroundColor(thesis.count >= Self.thesisMaxChars ? .red : .secondary)
+                                .foregroundColor(thesis.utf16.count >= Self.thesisMaxChars ? .red : .secondary)
                         }
                     }
                 } header: {
@@ -150,7 +154,7 @@ struct PositionEditView: View {
             targetPrice: targetD.map { KotlinDouble(double: $0) },
             stopPrice:   stopD.map   { KotlinDouble(double: $0) }
         )
-        Db.watchlist.updateThesis(code: code, thesis: thesisTrimmed.isEmpty ? nil : thesisTrimmed)
+        Db.watchlist.updateThesis(code: code, name: name, thesis: thesisTrimmed.isEmpty ? nil : thesisTrimmed)
         // StockDetailView @State item 갱신용 WatchItem
         let updated = WatchItem(
             code: code, name: name,

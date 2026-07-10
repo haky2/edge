@@ -67,7 +67,7 @@ LOW 백로그(`low-backlog-spec.md`, Sonnet/Opus 몫)와 별개로 Fable 급 작
 ---
 
 ## 진행 기록
-- [ ] A 감사 4탄
+- [x] A 감사 4탄 — HIGH 0·MED 4 수정·LOW 4 백로그 이관 (2026-07-10, devlog 참고)
 - [ ] B1 / [ ] B2
 - [ ] C1 / [ ] C2
 - [ ] D1 / [ ] D2
