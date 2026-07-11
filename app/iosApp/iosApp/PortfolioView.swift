@@ -306,17 +306,20 @@ struct PortfolioView: View {
                             Rectangle()
                                 .fill(Color.secondary.opacity(0.2))
                                 .frame(width: 1, height: 6)
+                            // Spacer(minLength: 0) 필수 — 기본 Spacer()는 최소 시스템 간격(~8pt)을
+                            // 요구해, 막대가 반폭(ratio=1.0)인 행에서 전폭을 초과하며 중심선을 밀어냈다
+                            // (실기기: 최대 손실 종목만 기준선 우측으로 삐져나감).
                             if row.pnl >= 0 {
                                 HStack(spacing: 0) {
                                     Color.clear.frame(width: half)
                                     RoundedRectangle(cornerRadius: 2)
                                         .fill(Color.red.opacity(0.65))
                                         .frame(width: fillW, height: 5)
-                                    Spacer()
+                                    Spacer(minLength: 0)
                                 }
                             } else {
                                 HStack(spacing: 0) {
-                                    Spacer()
+                                    Spacer(minLength: 0)
                                     RoundedRectangle(cornerRadius: 2)
                                         .fill(Color.blue.opacity(0.65))
                                         .frame(width: fillW, height: 5)

@@ -610,7 +610,8 @@ struct BriefingView: View {
                             rankDeltaBadge(Int(s.rankDelta))
                         }
                         .padding(.vertical, 1)
-                        if i < r.sectors.count - 1 { Divider() }
+                        // Divider 금지: List에서 Section 직속 Divider는 독립 행(최소 높이 ~44pt)이 되어
+                        // 거대한 빈 블록으로 렌더된다(실기기 발견). 행 구분선은 List가 자동으로 그린다.
                     }
                     Text("5일 / 20일 수익률 · ▲▼ 단기 순위 변화")
                         .font(.caption2).foregroundColor(Color(.tertiaryLabel))
@@ -1441,11 +1442,9 @@ struct BriefingView: View {
                     Text("아직 재료 판정이 없어요. 종목 상세에서 뉴스·공시 영향 카드를 열면 채워집니다.")
                         .font(.footnote).foregroundColor(.secondary)
                 } else {
+                    // Divider 금지 — List Section 직속 Divider는 독립 행이 된다(섹터 자금 순환과 동일 버그).
                     ForEach(catalystBriefSectors.indices, id: \.self) { i in
                         catalystBriefRow(catalystBriefSectors[i])
-                        if i < catalystBriefSectors.count - 1 {
-                            Divider()
-                        }
                     }
                 }
             }
@@ -1500,9 +1499,9 @@ struct BriefingView: View {
                     Text("현재 기준(2개 이상 신호)을 충족한 후보가 없어요.")
                         .font(.footnote).foregroundColor(.secondary)
                 } else {
+                    // Divider 금지 — List Section 직속 Divider는 독립 행이 된다(섹터 자금 순환과 동일 버그).
                     ForEach(discoveryCandidates.indices, id: \.self) { i in
                         discoveryRow(discoveryCandidates[i])
-                        if i < discoveryCandidates.count - 1 { Divider() }
                     }
                 }
             }
