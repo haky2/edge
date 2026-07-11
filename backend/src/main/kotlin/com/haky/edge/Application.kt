@@ -69,6 +69,7 @@ import com.haky.edge.routes.targetPriceRoutes
 import com.haky.edge.routes.valuationBandRoutes
 import com.haky.edge.routes.warningsRoutes
 import com.haky.edge.routes.webSearchTestRoutes
+import com.haky.edge.routes.sensitivityValidationRoutes
 import com.haky.edge.routes.morningBriefRoutes
 import com.haky.edge.routes.eventReminderRoutes
 import com.haky.edge.routes.costSummaryRoutes
@@ -260,6 +261,9 @@ fun Application.module() {
     // C 딥리서치 — 웹검색(과금) 결합 2단계 리포트. 일일 상한 + (code,날짜) 캐시 + force 불허.
     val deepResearch = com.haky.edge.ai.DeepResearchService(analysis, master, claude, modelRouter,
         dailyLimit = System.getenv("DEEP_RESEARCH_DAILY_LIMIT")?.toIntOrNull() ?: 5)
+    // D1 SENSITIVITY 실증 — 1회성 검증 라우트(운영 기능 아님). 지표 이력 × 바스켓 수익률 실측.
+    val sensitivityValidation = com.haky.edge.macro.SensitivityValidationService(
+        dailyHistory, ecosApiKey = System.getenv("ECOS_API_KEY").orEmpty())
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
     val costSummary = CostSummaryService(slack, costChannel, usageTracker)
@@ -328,6 +332,7 @@ fun Application.module() {
             discoveryRoutes(discovery)
             eventRoutes(eventSync)
             webSearchTestRoutes(claude)
+            sensitivityValidationRoutes(sensitivityValidation)
             prewarmRoutes(kis, dart)
             slackTestRoutes(slack, opsChannel)
             morningBriefRoutes(morningBrief)
