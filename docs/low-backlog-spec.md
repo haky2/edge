@@ -79,7 +79,7 @@
 - **검증**: 에뮬 해외 종목 상세 진입.
 
 ### S11. [감사4탄 LOW] 논지 캐시 키 hashCode 충돌
-- **위치**: `ai/AnalysisService.kt` buildKey `t${thesis.hashCode()}` / `ai/PortfolioReviewService.kt` buildKey `t${t.hashCode()}`.
+- **위치**: `ai/AnalysisService.kt` buildKey `t${thesis.hashCode()}` / `ai/PortfolioReviewService.kt` buildKey `t${t.hashCode()}` / (감사5탄 추가) `ai/TradeReviewService.kt` buildKey `r$h` — 트레이드 필드 전체를 32비트 hashCode로 접음(같은 클래스).
 - **증상**: 32비트 해시라 서로 다른 논지가 같은 키로 접힐 이론적 가능성 — 충돌 시 다른 논지 기준 캐시 코멘트 수신(같은 코드·날짜·모드·포지션 전제라 개인 앱에선 사실상 무시 가능).
 - **수정**: SHA-256 hex 앞 16자로 교체(양쪽 buildKey 공용 헬퍼). CacheKeyTest 갱신.
 
@@ -87,6 +87,16 @@
 - **위치**: `routes/PortfolioReviewRoutes.kt` post — `positions ... .toMap()`.
 - **증상**: 같은 code 2건이 오면 마지막 것만 남음(클라는 mergedByCode로 병합해 보내므로 실경로 없음, 서버 방어만 부재).
 - **수정**: 중복 감지 시 400 또는 수량가중 병합(G4 mergeMoveHoldings 원칙). 400이 단순.
+
+### S14. [감사5탄 LOW] 매매 복기 재조회 경로 없음 — 화면 이탈 시 유실
+- **위치**: iOS `StockDetailView.tradeReview` / Android `StockDetailScreen.tradeReview` — onSellWithReview 콜백으로만 설정, 재로드 없음.
+- **증상**: Opus로 생성한 복기가 화면 이탈·앱 재시작이면 사라짐(서버 FileCache엔 있음). 다시 보려면 같은 매도를 재기록해야 함.
+- **수정**: 클라가 마지막 복기 요청 파라미터를 로컬 저장해 상세 진입 시 재POST(당일 서버 캐시 적중 = 무료) 또는 GET 조회 라우트 신설. 내 패턴 탭 누적 리스트(B2 선택 항목)와 묶어 처리 권장.
+
+### S15. [감사5탄 LOW] 복기 매수 쌍 = 최근 매수 1건 고정
+- **위치**: iOS `ActionLogSheetView` 매도 저장부(`allLogs.first(where: buy)`) / Android `StockDetailScreen.onSellWithTradeReview` 동일.
+- **증상**: 분할 매수 시 마지막 매수만 기준 — TradeReviewRoutes 주석("분할 매수는 클라가 평균가로 합쳐 보낸다")과 불일치. 또 getByCode(limit 10) 창 밖의 매수는 못 찾음(관심 로그가 많으면).
+- **수정**: 매도 이전의 연속 매수 로그를 전부 모아 수량 미상이므로 단순 평균가로 합산 + limit 상향(또는 action='buy' 필터 쿼리).
 
 ### S13. [감사4탄 LOW] 논지 저장 직후 화면의 분석은 이전 논지 기준
 - **위치**: iOS `StockDetailView` onSave / Android `StockDetailScreen` onSave — 논지 변경 후 loadAnalysis 자동 재조회 없음(다음 진입·새로고침에 반영).

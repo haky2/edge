@@ -40,6 +40,7 @@ struct StockDetailView: View {
     @State private var tradeReviewExpanded = false
     @State private var deepResearch: DeepResearch?  // 딥리서치(C2)
     @State private var deepResearchLoading = false
+    @State private var deepResearchError = false     // 실패·일일 한도 안내(무피드백 방지)
     @State private var deepResearchExpanded = false
     @State private var earningsExpanded = false
     @State private var signalExpanded = false
@@ -2549,7 +2550,9 @@ struct StockDetailView: View {
     private func loadDeepResearch() async {
         guard !deepResearchLoading else { return }
         deepResearchLoading = true
+        deepResearchError = false
         deepResearch = try? await api.getDeepResearch(code: item.code)
+        deepResearchError = (deepResearch == nil)
         deepResearchLoading = false
         if deepResearch != nil {
             withAnimation(.easeInOut(duration: 0.2)) { deepResearchExpanded = true }
@@ -2569,6 +2572,13 @@ struct StockDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
             .cardStyle()
+        } else if deepResearchError {
+            // 검색 과금 기능이라 일일 한도(기본 5건)가 있다 — 실패의 흔한 원인이라 문구에 포함.
+            Text("딥리서치를 만들지 못했어요 — 하루 한도(5건)를 다 썼거나 일시 오류예요. 잠시 후 다시 시도해 주세요.")
+                .font(.caption).foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .cardStyle()
         }
     }
 

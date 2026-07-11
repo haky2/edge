@@ -41,7 +41,15 @@ class OverseasMaster(private val http: HttpClient) {
         return mutex.withLock {
             val now2 = System.currentTimeMillis()
             stocks?.takeIf { now2 - loadedAt < 24 * 3_600_000L }?.let { return it }
+            // loadOne은 개별 실패를 emptyList로 삼킨다 — 전체 실패(3파일 전부 빈 결과)가
+            // 기존 데이터를 덮어쓰고 24h 캐시되면 해외 검색이 하루 전멸한다. 빈 결과는 스테일 유지.
             val loaded = loadOne(NAS_URL) + loadOne(NYS_URL) + loadOne(AMS_URL)
+            val prev = stocks
+            if (loaded.isEmpty() && prev != null) {
+                println("[OverseasMaster] 마스터 재로드 결과 0건 — 기존 ${prev.size}건 유지")
+                loadedAt = System.currentTimeMillis()
+                return prev
+            }
             stocks = loaded
             loadedAt = System.currentTimeMillis()
             loaded

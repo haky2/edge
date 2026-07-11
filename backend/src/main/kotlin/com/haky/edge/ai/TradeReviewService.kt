@@ -2,11 +2,11 @@ package com.haky.edge.ai
 
 import com.haky.edge.kis.DailyBar
 import com.haky.edge.master.StockMaster
+import com.haky.edge.util.DayScopedCache
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 완결된 매매 1건의 복기 결과. 수치 필드는 전부 일봉으로 계산(사실), summary/comment만 Claude 해석.
@@ -53,7 +53,7 @@ class TradeReviewService(
     private val claude: ClaudeClient,
     private val modelRouter: ModelRouter,
 ) {
-    private val cache = ConcurrentHashMap<String, TradeReview>()
+    private val cache = DayScopedCache<TradeReview>()   // 날짜 회전 시 자동 clear(S1)
     private val fileCache = FileCache("trade_review", TradeReview.serializer())
 
     suspend fun review(
@@ -71,7 +71,7 @@ class TradeReviewService(
         val today = effectiveMarketDate()
         val key = buildKey(today, code, buyDate, buyPrice, sellDate, sellPrice, qty, buyReason, sellReason, thesis)
         if (!force) {
-            val cached = cache[key] ?: fileCache.get(key)?.also { cache[key] = it }
+            val cached = cache.get(today, key) ?: fileCache.get(key)?.also { cache.put(today, key, it) }
             if (cached != null) return cached
         }
 
@@ -97,7 +97,7 @@ class TradeReviewService(
             summary = summary, comment = body,
             generatedAt = LocalDateTime.now(com.haky.edge.util.KST).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
         )
-        cache[key] = review
+        cache.put(today, key, review)
         fileCache.put(key, review)
         // Slack 아카이브 없음 — 매매 기록·사유는 포지션과 동일한 개인정보.
         return review

@@ -276,10 +276,9 @@ fun PortfolioScreen(
                         reviewLoading = reviewLoading,
                         onReviewRefresh = { scope.launch { loadReview(true) } },
                         onResetBaseline = {
-                            scope.launch {
-                                runCatching { api.postRebalanceBaseline() }
-                                rebalanceCheck = runCatching { api.getRebalanceCheck() }.getOrNull()
-                            }
+                            // suspend 람다 — 카드가 스피너 상태를 완료 시점과 동기화한다
+                            runCatching { api.postRebalanceBaseline() }
+                            rebalanceCheck = runCatching { api.getRebalanceCheck() }.getOrNull()
                         },
                     )
                 }
@@ -334,7 +333,7 @@ private fun HoldingsList(
     rebalanceCheck: RebalanceCheck?,
     reviewLoading: Boolean,
     onReviewRefresh: () -> Unit,
-    onResetBaseline: () -> Unit,
+    onResetBaseline: suspend () -> Unit,
 ) {
     val customAccounts = accounts.filter { it.isDefault == 0L }
     LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -741,11 +740,12 @@ private fun PortfolioReviewCard(
     rebalanceCheck: RebalanceCheck?,
     loading: Boolean,
     onRefresh: () -> Unit,
-    onResetBaseline: () -> Unit,
+    onResetBaseline: suspend () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(true) }
     var commentExpanded by remember { mutableStateOf(false) }
     var baselineResetting by remember { mutableStateOf(false) }
+    val resetScope = rememberCoroutineScope()
 
     Surface(
         modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
@@ -929,9 +929,12 @@ private fun PortfolioReviewCard(
                         } else {
                             androidx.compose.material3.TextButton(
                                 onClick = {
-                                    baselineResetting = true
-                                    onResetBaseline()
-                                    baselineResetting = false
+                                    // suspend 콜백 완료까지 스피너 유지 + 더블탭 방지
+                                    resetScope.launch {
+                                        baselineResetting = true
+                                        onResetBaseline()
+                                        baselineResetting = false
+                                    }
                                 },
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
                             ) {

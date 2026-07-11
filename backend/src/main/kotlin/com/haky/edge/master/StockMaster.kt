@@ -42,8 +42,20 @@ class StockMaster(private val http: HttpClient) {
             val now2 = System.currentTimeMillis()
             stocks?.takeIf { now2 - loadedAt < 24 * 3_600_000L }?.let { return it }
             // KOSPI/KOSDAQ 뒷부분 고정 길이가 다르다(228 vs 222) — 아래 loadOne 의 tailLen 설명 참고.
-            val loaded = loadOne(KOSPI_URL, "KOSPI", tailLen = 228) +
-                loadOne(KOSDAQ_URL, "KOSDAQ", tailLen = 222)
+            val loaded = try {
+                loadOne(KOSPI_URL, "KOSPI", tailLen = 228) +
+                    loadOne(KOSDAQ_URL, "KOSDAQ", tailLen = 222)
+            } catch (e: Exception) {
+                // TTL 만료 재로드 실패가 검색·findByCode 전체를 죽이면 안 된다 —
+                // 기존 데이터가 있으면 유지하고 다음 재시도는 24h 뒤(첫 로드 실패만 전파).
+                val prev = stocks
+                if (prev != null) {
+                    println("[StockMaster] 마스터 재로드 실패(${e.message}) — 기존 ${prev.size}건 유지")
+                    loadedAt = System.currentTimeMillis()
+                    return prev
+                }
+                throw e
+            }
             stocks = loaded
             loadedAt = System.currentTimeMillis()
             loaded

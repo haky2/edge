@@ -1,6 +1,7 @@
 package com.haky.edge.ai
 
 import com.haky.edge.master.StockMaster
+import com.haky.edge.util.DayScopedCache
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
@@ -73,7 +74,7 @@ class DeepResearchService(
     private val modelRouter: ModelRouter,
     dailyLimit: Int = 5,
 ) {
-    private val cache = ConcurrentHashMap<String, DeepResearch>()
+    private val cache = DayScopedCache<DeepResearch>()   // 날짜 회전 시 자동 clear(S1)
     private val fileCache = FileCache("deep_research", DeepResearch.serializer())
     private val limiter = DailyLimiter(dailyLimit)
     private val inFlight = ConcurrentHashMap<String, Mutex>()
@@ -81,19 +82,19 @@ class DeepResearchService(
     suspend fun research(code: String): DeepResearch {
         val today = effectiveMarketDate()
         val key = buildKey(code, today)
-        cache[key]?.let { return it }
-        fileCache.get(key)?.let { cache[key] = it; return it }
+        cache.get(today, key)?.let { return it }
+        fileCache.get(key)?.let { cache.put(today, key, it); return it }
 
         // 종목별 직렬화: 생성이 수십 초라 같은 종목 동시 요청이 검색·Opus 비용을 중복 지출하는 걸 막는다.
         return inFlight.computeIfAbsent(code) { Mutex() }.withLock {
             // 락 대기 중 먼저 들어간 요청이 만들었을 수 있음 — 재확인.
-            cache[key]?.let { return@withLock it }
-            fileCache.get(key)?.let { cache[key] = it; return@withLock it }
+            cache.get(today, key)?.let { return@withLock it }
+            fileCache.get(key)?.let { cache.put(today, key, it); return@withLock it }
 
             limiter.tick(kstToday())
             try {
                 val result = generate(code, today)
-                cache[key] = result
+                cache.put(today, key, result)
                 fileCache.put(key, result)
                 result
             } catch (e: Exception) {
