@@ -71,6 +71,7 @@ import com.haky.edge.routes.warningsRoutes
 import com.haky.edge.routes.webSearchTestRoutes
 import com.haky.edge.routes.sensitivityValidationRoutes
 import com.haky.edge.routes.morningBriefRoutes
+import com.haky.edge.routes.weeklyReviewRoutes
 import com.haky.edge.routes.eventReminderRoutes
 import com.haky.edge.routes.costSummaryRoutes
 import com.haky.edge.routes.signalRoutes
@@ -268,6 +269,9 @@ fun Application.module() {
     val sensitivityValidation = com.haky.edge.macro.SensitivityValidationService(
         dailyHistory, ecosApiKey = System.getenv("ECOS_API_KEY").orEmpty())
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
+    // B 주간 회고 — 토요일 아침, 한 주 서버 기록(방향예측·스탠스·목표가·주간 등락) 회고 → #아침브리핑.
+    val weeklyReview = com.haky.edge.slack.WeeklyReviewService(
+        slack, briefingChannel, kis, master, signalCodes, stanceLog, stanceStats, moodLog, targetPriceLog, eventSync, claude, modelRouter)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
     val costSummary = CostSummaryService(slack, costChannel, usageTracker)
     // S3a/b+F4+F3+F5+R2 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가·수급 전환점·실적 리뷰·프리모템 발동·비중 점검 → #알림-신호 채널.
@@ -339,6 +343,7 @@ fun Application.module() {
             prewarmRoutes(kis, dart)
             slackTestRoutes(slack, opsChannel)
             morningBriefRoutes(morningBrief)
+            weeklyReviewRoutes(weeklyReview)
             eventReminderRoutes(eventReminder)
             costSummaryRoutes(costSummary)
             signalRoutes(signalService)

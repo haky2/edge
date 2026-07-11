@@ -112,6 +112,16 @@ class TargetPriceLogService {
         return computeEvents(snapshots, today)
     }
 
+    /**
+     * 주간 회고용: [monday..friday] 창의 목표가 변화(창 직전 마지막 값 → 창 내 마지막 값).
+     * 창 내 스냅샷이 없거나 값이 그대로면 null.
+     */
+    @Synchronized
+    fun weeklyChange(code: String, monday: LocalDate, friday: LocalDate): Pair<Long, Long>? {
+        val snapshots = loadLog()[code] ?: return null
+        return computeWeeklyChange(snapshots, monday, friday)
+    }
+
     private fun parseOrNull(date: String): LocalDate? = runCatching { LocalDate.parse(date) }.getOrNull()
 
     private fun loadLog(): Map<String, List<TargetSnapshot>> {
@@ -170,6 +180,21 @@ class TargetPriceLogService {
                 avgRaiseGapDays = avgGap,
                 snapshotCount = window.size,
             )
+        }
+
+        /**
+         * 주간 변화 순수 함수(테스트 대상). 기준값 = 창 이전 마지막 스냅샷(없으면 창 내 첫 스냅샷),
+         * 끝값 = 창 내 마지막 스냅샷. 창 내 스냅샷 없음·기준=끝·값 동일이면 null(이번 주 변화 없음).
+         */
+        internal fun computeWeeklyChange(snapshots: List<TargetSnapshot>, monday: LocalDate, friday: LocalDate): Pair<Long, Long>? {
+            val dated = snapshots
+                .mapNotNull { s -> runCatching { LocalDate.parse(s.date) }.getOrNull()?.let { it to s } }
+                .sortedBy { it.first }
+            val inWindow = dated.filter { !it.first.isBefore(monday) && !it.first.isAfter(friday) }
+            val end = inWindow.lastOrNull()?.second ?: return null
+            val base = dated.lastOrNull { it.first.isBefore(monday) }?.second ?: inWindow.first().second
+            if (base === end || base.target == end.target || base.target <= 0) return null
+            return base.target to end.target
         }
     }
 }

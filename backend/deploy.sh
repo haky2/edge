@@ -126,6 +126,16 @@ scheduler_upsert slack-morning-brief \
   --attempt-deadline=180s \
   --description="매주 월~금 오전 8:50 KST Slack #아침브리핑 발송 (prewarm 직후)"
 
+# slack-weekly-review: 매주 토요일 오전 9:00 KST — 한 주 회고(방향예측 채점·스탠스 전환·목표가·주간 등락) 발송
+# 주 1회 캐시 + 발송 기록으로 재시도에도 Opus 재생성/중복 발송 없음.
+scheduler_upsert slack-weekly-review \
+  --schedule="0 9 * * 6" --time-zone="Asia/Seoul" \
+  --uri="$URL/slack/weekly-review" --http-method=POST \
+  --headers="X-Edge-Token=${EDGE_TOKEN},Content-Type=application/json" \
+  --message-body="{}" \
+  --attempt-deadline=300s \
+  --description="매주 토요일 오전 9시 KST Slack #아침브리핑 주간 회고 발송"
+
 # signals-scan: 매주 월~금 오후 6:00 KST — 관심종목 연속 순매수 신호 스캔(장 마감 후 수급 확정 시점)
 # 디듀프(streak 시작일)로 같은 신호 반복 발화를 막으므로 매일 돌려도 도배 없음.
 scheduler_upsert signals-scan \
