@@ -55,6 +55,7 @@ struct StockDetailView: View {
     @State private var chartPeriod: ChartPeriod = .m3   // 가격 차트 기간 토글
     @State private var trendLineHelpExpanded = false     // 20일 추세선 설명 토글
     @State private var commentExpanded = false   // AI 코멘트 더보기/접기
+    @State private var analysisThesisChanged = false  // 논지 변경 후 코멘트 갱신 힌트(S13)
     @AppStorage(analysisModeKey) private var modeRaw = AnalysisMode.defensive.rawValue
     private var analysisMode: AnalysisMode { AnalysisMode(rawValue: modeRaw) ?? .defensive }
     @State private var analyzing = false
@@ -162,6 +163,7 @@ struct StockDetailView: View {
         .task { await load() }             // 진입 시 시세·수급·뉴스 갱신(빠름)
         .task { await loadAnalysis() }     // AI 코멘트는 느려서 별도로(동시 진행)
         .task { await loadCatalysts() }    // 재료 판정도 Claude 호출이라 별도(동시 진행)
+        .task { await loadStoredTradeReview() }  // S14: 저장된 복기 파라미터로 재조회
         .onChange(of: modeRaw) {
             analysis = nil   // 이전 모드 코멘트 즉시 제거 → 로딩 상태 바로 표시
             Task { await loadAnalysis() }
@@ -171,7 +173,12 @@ struct StockDetailView: View {
             StockAskSheetView(item: item, api: api, mode: analysisMode)
         }
         .sheet(isPresented: $showEdit) {
-            PositionEditView(item: item, initialAccountId: initialAccountId) { updated in item = updated }
+            PositionEditView(item: item, initialAccountId: initialAccountId) { updated in
+                let prevThesis = item.thesis ?? ""
+                item = updated
+                // S13: 논지가 바뀌었으면 코멘트 갱신 힌트 표시
+                if (updated.thesis ?? "") != prevThesis { analysisThesisChanged = true }
+            }
         }
         .sheet(isPresented: $showLogSheet, onDismiss: {
             loadLogs()
@@ -888,6 +895,25 @@ struct StockDetailView: View {
                 if analyzing { ProgressView().scaleEffect(0.8) }
             }
             .padding(.top, 8)
+
+            // S13: 논지 변경 힌트 — 저장 직후 이전 논지 기준 코멘트가 그대로 있을 때 안내.
+            if analysisThesisChanged {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.triangle.2.circlepath").font(.caption).foregroundColor(.indigo)
+                    Text("논지가 바뀌었어요. 새로고침하면 새 논지 기준으로 코멘트가 만들어져요.")
+                        .font(.caption).foregroundColor(.secondary)
+                    Spacer()
+                    Button {
+                        analysisThesisChanged = false
+                        Task { await loadAnalysis(force: true) }
+                    } label: {
+                        Text("새로고침").font(.caption.weight(.semibold)).foregroundColor(.indigo)
+                    }
+                }
+                .padding(8)
+                .background(Color.indigo.opacity(0.07))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
 
             if let a = analysis {
                 // 핵심 요약 — 풀 코멘트 위에 강조 박스(보라). summary 없으면(옛 캐시) 건너뜀.
@@ -2537,6 +2563,20 @@ struct StockDetailView: View {
         analyzing = false
     }
 
+    // S14: 이전 세션에서 저장한 복기 파라미터로 재POST(당일 서버 캐시 적중 = 무료).
+    private func loadStoredTradeReview() async {
+        guard tradeReview == nil else { return }
+        guard let data = UserDefaults.standard.data(forKey: "trReviewParams_\(item.code)"),
+              let p = try? JSONDecoder().decode(TradeReviewParams.self, from: data) else { return }
+        let review = try? await api.postTradeReview(
+            code: item.code,
+            buyDate: p.buyDate, buyPrice: p.buyPrice,
+            sellDate: p.sellDate, sellPrice: p.sellPrice,
+            qty: nil, buyReason: p.buyReason, sellReason: p.sellReason, thesis: p.thesis
+        )
+        if let r = review { tradeReview = r }
+    }
+
     private func loadCatalysts(force: Bool = false) async {
         catalystsLoading = true
         if force { catalysts = nil }
@@ -2922,23 +2962,37 @@ struct ActionLogSheetView: View {
                                     avgPrice: avg, qty: qty, stopPrice: stop)
                             }
                         }
-                        // B2: 매도 + 토글 on → 최근 매수 로그 조합해 복기 생성(백그라운드)
+                        // B2: 매도 + 토글 on → 분할 매수 평균가 계산해 복기 생성(S15)
                         if selectedAction == "sell", makeTradeReview, let api, let onReview = onSellWithReview {
-                            let allLogs = logRepo.getByCode(code: code, limit: 10)
-                            // 가격이 기록된 가장 최근 매수 로그 찾기
-                            if let buyLog = allLogs.first(where: { $0.action == "buy" && $0.price != nil }),
-                               let buyPriceObj = buyLog.price, buyPriceObj.int64Value > 0, currentPrice > 0 {
-                                let buyDate = epochToISO(buyLog.createdAt)
+                            let allLogs = logRepo.getByCode(code: code, limit: 50)
+                            // S15: 현 포지션 매수 = 가장 최근 sell 이후의 buy 전부
+                            let lastSell = allLogs.first(where: { $0.action == "sell" })
+                            let buyLogs = allLogs.filter { log in
+                                log.action == "buy" && (log.price?.int64Value ?? 0) > 0
+                                    && (lastSell == nil || log.createdAt > lastSell!.createdAt)
+                            }
+                            if !buyLogs.isEmpty, currentPrice > 0 {
+                                let prices = buyLogs.compactMap { $0.price?.int64Value }.filter { $0 > 0 }
+                                let avgBuyPrice = Double(prices.reduce(0, +)) / Double(prices.count)
+                                let buyDate = epochToISO(buyLogs.last!.createdAt)  // 가장 오래된 매수
                                 let sellDate = todayISO()
-                                let buyPrice = Double(buyPriceObj.int64Value)
                                 let sellPrice = Double(currentPrice)
-                                let buyReason = buyLog.reason
+                                let buyReason = buyLogs.last?.reason  // 가장 오래된 매수 사유
                                 let sellReason = reason.isEmpty ? nil : reason
                                 let thesis = item?.thesis
+                                // S14: 파라미터 저장(화면 이탈 후 재진입 시 복원용)
+                                let params = TradeReviewParams(
+                                    buyDate: buyDate, buyPrice: avgBuyPrice,
+                                    sellDate: sellDate, sellPrice: sellPrice,
+                                    buyReason: buyReason, sellReason: sellReason, thesis: thesis
+                                )
+                                if let data = try? JSONEncoder().encode(params) {
+                                    UserDefaults.standard.set(data, forKey: "trReviewParams_\(code)")
+                                }
                                 Task.detached {
                                     let review = try? await api.postTradeReview(
                                         code: code,
-                                        buyDate: buyDate, buyPrice: buyPrice,
+                                        buyDate: buyDate, buyPrice: avgBuyPrice,
                                         sellDate: sellDate, sellPrice: sellPrice,
                                         qty: nil,
                                         buyReason: buyReason,
@@ -2971,6 +3025,18 @@ struct ActionLogSheetView: View {
         fmt.timeZone = TimeZone(identifier: "Asia/Seoul")
         return fmt.string(from: Date())
     }
+}
+
+// MARK: - 매매 복기 파라미터 (S14: UserDefaults 저장/복원)
+
+private struct TradeReviewParams: Codable {
+    let buyDate: String
+    let buyPrice: Double
+    let sellDate: String
+    let sellPrice: Double
+    let buyReason: String?
+    let sellReason: String?
+    let thesis: String?
 }
 
 // MARK: - 차트 헬퍼 타입

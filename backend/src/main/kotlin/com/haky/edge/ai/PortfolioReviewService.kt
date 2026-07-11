@@ -249,10 +249,10 @@ class PortfolioReviewService(
                 .sortedBy { it.key }
                 .joinToString(",") { "${it.key}:${it.value.avgPrice.toLong()}:${it.value.qty}" } +
                 "|${mode.name}"
-            // 논지는 자유 텍스트라 해시로 접는다 — 논지 없으면 기존 키 그대로(구버전 앱 캐시 호환).
+            // 논지는 자유 텍스트라 SHA-256 앞 16자로 접는다(32비트 hashCode 충돌 방지 — S11).
             val t = theses.entries.filter { it.value.isNotBlank() }.sortedBy { it.key }
                 .joinToString(",") { "${it.key}=${it.value.trim()}" }
-            return if (t.isEmpty()) base else "$base|t${t.hashCode()}"
+            return if (t.isEmpty()) base else "$base|t${AnalysisService.shortHash(t)}"
         }
 
         /** 섹터별 평가 비중(내림차순). 세부 섹터 label(주력 첫 섹터) 기준. */

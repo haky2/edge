@@ -57,6 +57,12 @@ fun Route.portfolioReviewRoutes(service: PortfolioReviewService, rebalance: Reba
     //   URL 한도를 위협 → JSON 바디로 받는다. GET은 구버전 앱 호환용으로 유지.
     post("/portfolio-review") {
         val req = call.receive<PortfolioReviewRequest>()
+        // S12: 중복 code 400 방어 — 같은 코드 2건이 오면 last-wins 조용한 병합 대신 명시적 에러.
+        val rawCodes = req.positions.map { it.code.trim() }
+        if (rawCodes.size != rawCodes.distinct().size) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("중복된 종목 코드가 있습니다"))
+            return@post
+        }
         val positions = req.positions.mapNotNull { e ->
             val code = e.code.trim().takeIf { CODE_REGEX.matches(it) } ?: return@mapNotNull null
             if (e.avgPrice <= 0 || e.qty <= 0) return@mapNotNull null

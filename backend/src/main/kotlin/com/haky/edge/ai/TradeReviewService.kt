@@ -125,15 +125,15 @@ class TradeReviewService(
         private val YMD_DASH = DateTimeFormatter.ISO_LOCAL_DATE          // 2026-07-10 (요청 형식)
         private val YMD = DateTimeFormatter.ofPattern("yyyyMMdd")        // DailyBar.date 형식
 
-        /** 캐시 키. 트레이드 필드 전체를 해시로 접는다(자유 텍스트 포함) + 날짜(사후 추이가 자라므로 당일 단위). */
+        /** 캐시 키. 트레이드 필드 전체를 SHA-256 앞 16자로 접는다(32비트 hashCode 충돌 방지 — S11) + 날짜(사후 추이가 자라므로 당일 단위). */
         internal fun buildKey(
             today: String, code: String, buyDate: String, buyPrice: Double,
             sellDate: String, sellPrice: Double, qty: Long?,
             buyReason: String?, sellReason: String?, thesis: String?,
         ): String {
-            val h = listOf(buyDate, buyPrice, sellDate, sellPrice, qty, buyReason?.trim(), sellReason?.trim(), thesis?.trim())
-                .joinToString("|").hashCode()
-            return "$code:$today:r$h"
+            val raw = listOf(buyDate, buyPrice, sellDate, sellPrice, qty, buyReason?.trim(), sellReason?.trim(), thesis?.trim())
+                .joinToString("|")
+            return "$code:$today:r${AnalysisService.shortHash(raw)}"
         }
 
         /**

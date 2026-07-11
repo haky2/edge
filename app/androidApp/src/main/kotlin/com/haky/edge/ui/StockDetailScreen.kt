@@ -141,6 +141,7 @@ fun StockDetailScreen(
     var loading by remember { mutableStateOf(false) }
     var showPositionSheet by remember { mutableStateOf(false) }
     var showComparePicker by remember { mutableStateOf(false) }
+    var analysisThesisChanged by remember { mutableStateOf(false) }  // S13: 논지 변경 힌트
     val scope = rememberCoroutineScope()
 
     fun refresh() {
@@ -216,6 +217,26 @@ fun StockDetailScreen(
         try { stockSignal = api.getStockSignals(code) } catch (_: Exception) {}
         try { targetPrice = api.getTargetPrice(code) } catch (_: Exception) {}
         try { premortem = api.getPremortem(code) } catch (_: Exception) {}
+    }
+    // S14: 저장된 복기 파라미터로 재POST(당일 서버 캐시 적중 = 무료)
+    LaunchedEffect(watchItem.code) {
+        if (tradeReview != null) return@LaunchedEffect
+        val prefs = context.getSharedPreferences("trade_review_params", android.content.Context.MODE_PRIVATE)
+        val json = prefs.getString("params_${watchItem.code}", null) ?: return@LaunchedEffect
+        try {
+            val p = org.json.JSONObject(json)
+            tradeReview = api.postTradeReview(
+                code = watchItem.code,
+                buyDate = p.getString("buyDate"),
+                buyPrice = p.getDouble("buyPrice"),
+                sellDate = p.getString("sellDate"),
+                sellPrice = p.getDouble("sellPrice"),
+                qty = null,
+                buyReason = p.optString("buyReason").takeIf { it.isNotBlank() },
+                sellReason = p.optString("sellReason").takeIf { it.isNotBlank() },
+                thesis = p.optString("thesis").takeIf { it.isNotBlank() },
+            )
+        } catch (_: Exception) {}
     }
 
     Scaffold(
@@ -303,6 +324,21 @@ fun StockDetailScreen(
                 quote = quote,
                 onEditClick = { showPositionSheet = true },
             )
+            // S13: 논지 변경 힌트 — 저장 직후 이전 논지 기준 코멘트가 그대로 있을 때 안내.
+            if (analysisThesisChanged) {
+                androidx.compose.foundation.layout.Row(
+                    modifier = androidx.compose.ui.Modifier.fillMaxWidth()
+                        .background(androidx.compose.ui.graphics.Color(0xFF3F51B5).copy(alpha = 0.07f), androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                        .padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = androidx.compose.ui.Modifier.size(16.dp), tint = PurpleAccent)
+                    Text("논지가 바뀌었어요. 새로고침하면 새 논지 기준으로 코멘트가 만들어져요.", style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant), modifier = androidx.compose.ui.Modifier.weight(1f))
+                    Text("새로고침", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, color = PurpleAccent),
+                        modifier = androidx.compose.ui.Modifier.clickable { analysisThesisChanged = false; loadAnalysis(true) })
+                }
+            }
             AICommentCard(
                 analysis = analysis,
                 analyzing = analyzing,
@@ -396,21 +432,39 @@ fun StockDetailScreen(
             },
             onSellWithTradeReview = { sellReason ->
                 scope.launch {
-                    val logs = actionLogRepo.getByCode(watchItem.code, 10)
-                    val buyLog = logs.filter { it.action == "buy" && it.price != null }.firstOrNull()
-                    if (buyLog != null && buyLog.price != null && (quote?.price ?: 0L) > 0L) {
-                        val buyDate = epochToISO(buyLog.createdAt)
+                    // S15: 현 포지션 매수 = 가장 최근 sell 이후의 buy 전부 → 분할 매수 평균가
+                    val logs = actionLogRepo.getByCode(watchItem.code, 50)
+                    val lastSell = logs.firstOrNull { it.action == "sell" }
+                    val buyLogs = logs.filter { log ->
+                        log.action == "buy" && log.price != null && log.price!! > 0L &&
+                            (lastSell == null || log.createdAt > lastSell.createdAt)
+                    }
+                    if (buyLogs.isNotEmpty() && (quote?.price ?: 0L) > 0L) {
+                        val prices = buyLogs.mapNotNull { it.price?.toLong() }.filter { it > 0L }
+                        val avgBuyPrice = prices.sum().toDouble() / prices.size
+                        val buyDate = epochToISO(buyLogs.last().createdAt)  // 가장 오래된 매수
                         val sellDate = epochToISO(System.currentTimeMillis())
+                        val sellPrice = (quote?.price ?: 0L).toDouble()
+                        val buyReason = buyLogs.last().reason
+                        val srn = sellReason.ifBlank { null }
+                        // S14: 파라미터 저장(화면 이탈 후 재진입 시 복원용)
+                        try {
+                            val json = org.json.JSONObject().apply {
+                                put("buyDate", buyDate); put("buyPrice", avgBuyPrice)
+                                put("sellDate", sellDate); put("sellPrice", sellPrice)
+                                if (buyReason != null) put("buyReason", buyReason)
+                                if (srn != null) put("sellReason", srn)
+                                if (!watchItem.thesis.isNullOrBlank()) put("thesis", watchItem.thesis)
+                            }.toString()
+                            context.getSharedPreferences("trade_review_params", android.content.Context.MODE_PRIVATE)
+                                .edit().putString("params_${watchItem.code}", json).apply()
+                        } catch (_: Exception) {}
                         runCatching {
                             api.postTradeReview(
                                 code = watchItem.code,
-                                buyDate = buyDate,
-                                buyPrice = buyLog.price!!.toLong().toDouble(),
-                                sellDate = sellDate,
-                                sellPrice = (quote?.price ?: 0L).toDouble(),
-                                qty = null,
-                                buyReason = buyLog.reason,
-                                sellReason = sellReason.ifBlank { null },
+                                buyDate = buyDate, buyPrice = avgBuyPrice,
+                                sellDate = sellDate, sellPrice = sellPrice,
+                                qty = null, buyReason = buyReason, sellReason = srn,
                                 thesis = watchItem.thesis,
                             )
                         }.getOrNull()?.let { tradeReview = it }
@@ -428,8 +482,11 @@ fun StockDetailScreen(
             watchlistRepo = watchlistRepo,
             onDismiss = { showPositionSheet = false },
             onSave = { updated ->
+                val prevThesis = watchItem.thesis
                 watchItem = updated
                 showPositionSheet = false
+                // S13: 논지가 바뀌었으면 코멘트 갱신 힌트 표시
+                if ((updated.thesis ?: "") != (prevThesis ?: "")) analysisThesisChanged = true
             },
         )
     }

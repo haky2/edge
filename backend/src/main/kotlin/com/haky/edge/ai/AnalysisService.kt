@@ -942,9 +942,16 @@ class AnalysisService(
         internal fun buildKey(code: String, today: String, mode: AnalysisMode, position: Position?, thesis: String? = null): String {
             val base = if (position == null) "$code:$today:${mode.name}"
             else "$code:$today:${mode.name}:${position.avgPrice.toLong()}:${position.qty}:${position.targetPrice.toLong()}:${position.stopPrice.toLong()}"
-            // 논지는 자유 텍스트라 해시로 접는다 — 논지가 바뀌면 새 코멘트, 없으면 기존 키 그대로(공유 캐시 불변).
-            return if (thesis.isNullOrBlank()) base else "$base:t${thesis.trim().hashCode()}"
+            // 논지는 자유 텍스트라 SHA-256 앞 16자로 접는다(32비트 hashCode 충돌 방지 — S11).
+            return if (thesis.isNullOrBlank()) base else "$base:t${shortHash(thesis.trim())}"
         }
+
+        /** SHA-256 hex 앞 16자 — 자유 텍스트 캐시 키 용도. 32비트 hashCode 충돌 방지(S11). */
+        internal fun shortHash(text: String): String =
+            java.security.MessageDigest.getInstance("SHA-256")
+                .digest(text.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+                .take(16)
 
         /**
          * Claude 응답에서 `### 핵심 요약` 블록을 파싱해 (summary, body)로 분리.

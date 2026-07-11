@@ -75,6 +75,15 @@ class CacheKeyTest {
         assertNotEquals(posOnly, both)
     }
 
+    @Test fun `S11 논지 해시 — SHA-256 앞 16자 사용(32비트 hashCode 충돌 방지 회귀 방지)`() {
+        val key = AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, null, "수주 모멘텀")
+        // 키 형식: base:t<16자 hex>
+        val hashPart = key.substringAfterLast(":t")
+        assertEquals(16, hashPart.length, "SHA-256 앞 16자를 사용해야 합니다")
+        // 모두 hex 문자인지 검증
+        assert(hashPart.all { it in '0'..'9' || it in 'a'..'f' }) { "hex 문자열이어야 합니다: $hashPart" }
+    }
+
     // ── MacroImpactService.buildKey ───────────────────────────────────────
 
     @Test fun `MacroImpact 키 형식 date_H_sorted_W_sorted_mode`() {
