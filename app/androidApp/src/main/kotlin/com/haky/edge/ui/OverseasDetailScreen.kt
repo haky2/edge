@@ -56,10 +56,11 @@ import kotlin.math.abs
 @Composable
 fun OverseasDetailScreen(
     item: WatchItem,
+    initialQuote: OverseasQuote? = null,
     api: EdgeApi,
     onBack: () -> Unit,
 ) {
-    var quote by remember { mutableStateOf<OverseasQuote?>(null) }
+    var quote by remember { mutableStateOf(initialQuote) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var analysis by remember { mutableStateOf<Analysis?>(null) }

@@ -395,9 +395,18 @@ private fun HoldingsList(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     )
-                    rows.forEachIndexed { i, row ->
-                        HoldingRowItem(row)
-                        if (i < rows.size - 1) HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    if (rows.isEmpty() && selectedAccountId != null) {
+                        Text(
+                            "이 계좌에 보유 종목이 없습니다",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    } else {
+                        rows.forEachIndexed { i, row ->
+                            HoldingRowItem(row)
+                            if (i < rows.size - 1) HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        }
                     }
                 }
             }

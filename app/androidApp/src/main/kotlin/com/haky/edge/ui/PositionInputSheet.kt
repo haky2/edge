@@ -52,6 +52,7 @@ fun PositionInputSheet(
     watchlistRepo: WatchlistRepository,
     onDismiss: () -> Unit,
     onSave: (WatchItem) -> Unit,
+    initialAccountId: Long? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -62,7 +63,10 @@ fun PositionInputSheet(
 
     LaunchedEffect(Unit) {
         accounts = accountRepo.all()
-        selectedAccount = accounts.firstOrNull { it.isDefault == 1L }
+        selectedAccount = if (initialAccountId != null)
+            accounts.firstOrNull { it.id == initialAccountId } ?: accounts.firstOrNull { it.isDefault == 1L }
+        else
+            accounts.firstOrNull { it.isDefault == 1L }
     }
 
     val hasCustomAccounts = accounts.size > 1

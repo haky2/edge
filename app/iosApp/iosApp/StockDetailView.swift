@@ -65,12 +65,15 @@ struct StockDetailView: View {
     @State private var compareTarget: WatchItem? = nil
     @State private var showComparison = false
 
-    init(item: WatchItem, quote: Quote?, api: EdgeApi, logRepo: ActionLogRepository = Db.actionLog) {
+    private let initialAccountId: Int64?
+
+    init(item: WatchItem, quote: Quote?, api: EdgeApi, logRepo: ActionLogRepository = Db.actionLog, initialAccountId: Int64? = nil) {
         // 관심종목 탭 경로의 item은 watchlist 기반이라 포지션 필드가 비어 있다(G1 이후 holding이 정본)
         // → holding을 얹어서 내 포지션 카드·차트 기준선·게이지가 어느 경로로 들어와도 보이게.
         _item = State(initialValue: Db.holding.hydrate(item: item))
         self.api = api
         self.logRepo = logRepo
+        self.initialAccountId = initialAccountId
         _quote = State(initialValue: quote) // 리스트가 받아둔 시세로 초기화(바로 보이게)
     }
 
@@ -167,7 +170,7 @@ struct StockDetailView: View {
             StockAskSheetView(item: item, api: api, mode: analysisMode)
         }
         .sheet(isPresented: $showEdit) {
-            PositionEditView(item: item) { updated in item = updated }
+            PositionEditView(item: item, initialAccountId: initialAccountId) { updated in item = updated }
         }
         .sheet(isPresented: $showLogSheet, onDismiss: {
             loadLogs()

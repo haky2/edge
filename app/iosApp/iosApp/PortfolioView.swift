@@ -166,11 +166,19 @@ struct PortfolioView: View {
             }
 
             Section("보유 종목 \(displayRows.count)개") {
-                ForEach(displayRows, id: \.item.code) { row in
-                    NavigationLink {
-                        StockDetailView(item: row.item, quote: row.quote, api: api)
-                    } label: {
-                        holdingRow(row)
+                if displayRows.isEmpty && selectedAccountId != nil {
+                    Text("이 계좌에 보유 종목이 없습니다")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 8)
+                } else {
+                    ForEach(displayRows, id: \.item.code) { row in
+                        NavigationLink {
+                            StockDetailView(item: row.item, quote: row.quote, api: api, initialAccountId: selectedAccountId)
+                        } label: {
+                            holdingRow(row)
+                        }
                     }
                 }
             }

@@ -135,6 +135,7 @@ fun EdgeApp(
                     )
                     is AppDestination.OverseasDetail -> OverseasDetailScreen(
                         item = dest.item,
+                        initialQuote = dest.overseasQuote,
                         api = api,
                         onBack = { destination = tabDestination(activeTab) },
                     )

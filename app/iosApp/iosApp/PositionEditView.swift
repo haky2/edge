@@ -22,14 +22,17 @@ struct PositionEditView: View {
 
     private static let thesisMaxChars = 200
 
-    init(item: WatchItem, onSave: @escaping (WatchItem) -> Void) {
+    init(item: WatchItem, onSave: @escaping (WatchItem) -> Void, initialAccountId: Int64? = nil) {
         self.code = item.code
         self.name = item.name
         self.onSave = onSave
         let defId = Db.holding.defaultAccountId()  // 상수 1 가정 금지 — 프레시 설치 자가 시드 포함
-        _selectedAccountId = State(initialValue: defId)
-        // 기존 기본 계좌 holding에서 초기값 로드
-        let existing = Db.holding.getDefaultHolding(code: item.code)
+        let accountId = initialAccountId ?? defId
+        _selectedAccountId = State(initialValue: accountId)
+        // 지정된 계좌(또는 기본 계좌)의 holding에서 초기값 로드
+        let existing = accountId == defId
+            ? Db.holding.getDefaultHolding(code: item.code)
+            : Db.holding.getHolding(code: item.code, accountId: accountId)
         _avg    = State(initialValue: existing?.avgPrice.map    { Self.fmtPrice(Int($0.doubleValue)) } ?? "")
         _qty    = State(initialValue: existing?.qty.map         { String($0.int64Value) } ?? "")
         _target = State(initialValue: existing?.targetPrice.map { Self.fmtPrice(Int($0.doubleValue)) } ?? "")
