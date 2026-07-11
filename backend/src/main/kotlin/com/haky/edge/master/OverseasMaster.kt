@@ -32,14 +32,18 @@ data class OverseasStockInfo(
 class OverseasMaster(private val http: HttpClient) {
     private val mutex = Mutex()
     @Volatile private var stocks: List<OverseasStockInfo>? = null
+    @Volatile private var loadedAt = 0L
 
-    /** 전체 해외 종목 목록(최초 호출 때 로드, 이후 캐시). NAS+NYS+AMS 합산. */
+    /** 전체 해외 종목 목록(24h TTL 캐시 — 신규 상장 반영, S4). NAS+NYS+AMS 합산. */
     suspend fun all(): List<OverseasStockInfo> {
-        stocks?.let { return it }
+        val now = System.currentTimeMillis()
+        stocks?.takeIf { now - loadedAt < 24 * 3_600_000L }?.let { return it }
         return mutex.withLock {
-            stocks?.let { return it }
+            val now2 = System.currentTimeMillis()
+            stocks?.takeIf { now2 - loadedAt < 24 * 3_600_000L }?.let { return it }
             val loaded = loadOne(NAS_URL) + loadOne(NYS_URL) + loadOne(AMS_URL)
             stocks = loaded
+            loadedAt = System.currentTimeMillis()
             loaded
         }
     }

@@ -12,7 +12,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.ConcurrentHashMap
+import com.haky.edge.util.DayScopedCache
 
 /**
  * 해외 종목 간단 AI 코멘트(O4).
@@ -33,14 +33,14 @@ class OverseasAnalysisService(
     private val claude: ClaudeClient,
     private val modelRouter: ModelRouter,
 ) {
-    private val cache = ConcurrentHashMap<String, Analysis>()
+    private val cache = DayScopedCache<Analysis>()
     private val fileCache = FileCache("overseas_analysis", Analysis.serializer())
 
     suspend fun analyze(code: String, excd: String, symb: String): Analysis {
         val today = effectiveMarketDate()
         val key = "$code:$today"
-        cache[key]?.let { return it }
-        fileCache.get(key)?.let { cache[key] = it; return it }
+        cache.get(today, key)?.let { return it }
+        fileCache.get(key)?.let { cache.put(today, key, it); return it }
 
         val info = overseasMaster.findByCode(code)
         val name = info?.name ?: symb
@@ -72,7 +72,7 @@ class OverseasAnalysisService(
             generatedPrice = quote.price,
             factsRichness = FactsRichness(newsCount = news.size),
         )
-        cache[key] = analysis
+        cache.put(today, key, analysis)
         fileCache.put(key, analysis)
         return analysis
     }

@@ -1,6 +1,7 @@
 package com.haky.edge.macro
 
 import com.haky.edge.kis.MacroIndicator
+import com.haky.edge.util.writeTextAtomic
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -171,7 +172,7 @@ class MarketMoodLogService {
 
     private fun saveLog(entries: List<MoodLogEntry>) {
         runCatching {
-            logFile.writeText(json.encodeToString(listSerializer, entries))
+            logFile.writeTextAtomic(json.encodeToString(listSerializer, entries))
         }
     }
 }

@@ -12,6 +12,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
+import com.haky.edge.util.DayScopedCache
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
 
@@ -79,7 +80,7 @@ class MacroImpactService(
     // 섹터 분류(inferSectors)는 JSON 분류라 라우터를 태우지 않고 Sonnet 그대로.
     private val modelRouter: com.haky.edge.ai.ModelRouter? = null,
 ) {
-    private val cache = ConcurrentHashMap<String, MacroImpact>()
+    private val cache = DayScopedCache<MacroImpact>()
     private val fileCache = FileCache("macro_impact", MacroImpact.serializer())
 
     suspend fun analyze(
@@ -96,8 +97,8 @@ class MacroImpactService(
         // force=true면 캐시 건너뜀(수동 재생성). 지표 수집은 캐시 미스일 때만(적중 시 외부 5소스 호출 낭비 방지).
         val cacheKey = buildKey(today, holdings, watchlist, mode)
         if (!force) {
-            cache[cacheKey]?.let { return it }
-            fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
+            cache.get(today, cacheKey)?.let { return it }
+            fileCache.get(cacheKey)?.let { cache.put(today, cacheKey, it); return it }
         }
 
         val kisIndicators = kis.getMacroIndicators()
@@ -125,7 +126,7 @@ class MacroImpactService(
             watchlist = watchImpacts,
             generatedAt = now,
         )
-        cache[cacheKey] = result
+        cache.put(today, cacheKey, result)
         fileCache.put(cacheKey, result)
         return result
     }

@@ -1,6 +1,7 @@
 package com.haky.edge.macro
 
 import com.haky.edge.ai.ClaudeClient
+import com.haky.edge.util.writeTextAtomic
 import com.haky.edge.util.KST
 import java.io.File
 import java.time.DayOfWeek
@@ -103,7 +104,7 @@ class EventSyncService(private val claude: ClaudeClient) {
         val merged = mergeEvents(ruleEvents, searchEvents)
         val syncedAt = LocalDateTime.now(KST).toString()
 
-        storeFile.writeText(json.encodeToString(EventStore.serializer(), EventStore(merged, syncedAt)))
+        storeFile.writeTextAtomic(json.encodeToString(EventStore.serializer(), EventStore(merged, syncedAt)))
         return EventSyncResult(total = merged.size, fromSearch = searchEvents.size, fromRules = ruleEvents.size, syncedAt = syncedAt)
     }
 

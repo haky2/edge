@@ -29,19 +29,23 @@ data class StockInfo(
  *  - 앞부분에 단축코드/표준코드/한글명, 뒷부분(고정 길이)에 시세구분 등 메타가 붙는다.
  */
 class StockMaster(private val http: HttpClient) {
-    // all() 과 동일한 double-checked locking: 최초 1회만 다운로드/파싱하고 이후엔 캐시 반환.
+    // double-checked locking + 24h TTL: 웜 인스턴스가 오래 살아도 신규 상장이 반영된다(S4).
     private val mutex = Mutex()
     @Volatile private var stocks: List<StockInfo>? = null
+    @Volatile private var loadedAt = 0L
 
-    /** 전체 종목 목록(최초 호출 때 로드, 이후 캐시). */
+    /** 전체 종목 목록(24h TTL 캐시). */
     suspend fun all(): List<StockInfo> {
-        stocks?.let { return it }
+        val now = System.currentTimeMillis()
+        stocks?.takeIf { now - loadedAt < 24 * 3_600_000L }?.let { return it }
         return mutex.withLock {
-            stocks?.let { return it } // 락 대기 중 다른 코루틴이 이미 로드했을 수 있으니 재확인
+            val now2 = System.currentTimeMillis()
+            stocks?.takeIf { now2 - loadedAt < 24 * 3_600_000L }?.let { return it }
             // KOSPI/KOSDAQ 뒷부분 고정 길이가 다르다(228 vs 222) — 아래 loadOne 의 tailLen 설명 참고.
             val loaded = loadOne(KOSPI_URL, "KOSPI", tailLen = 228) +
                 loadOne(KOSDAQ_URL, "KOSDAQ", tailLen = 222)
             stocks = loaded
+            loadedAt = System.currentTimeMillis()
             loaded
         }
     }

@@ -1,6 +1,7 @@
 package com.haky.edge.slack
 
 import com.haky.edge.ai.ValuationBandService
+import com.haky.edge.util.writeTextAtomic
 import com.haky.edge.dart.DartClient
 import com.haky.edge.kis.InvestorFlow
 import com.haky.edge.kis.KisClient
@@ -368,7 +369,7 @@ class SignalService(
     }
 
     private fun saveState(state: Map<String, String>) {
-        runCatching { stateFile.writeText(json.encodeToString(mapSerializer, state)) }
+        runCatching { stateFile.writeTextAtomic(json.encodeToString(mapSerializer, state)) }
     }
 
     companion object {

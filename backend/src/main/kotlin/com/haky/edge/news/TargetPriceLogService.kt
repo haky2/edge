@@ -1,6 +1,7 @@
 package com.haky.edge.news
 
 import com.haky.edge.util.KST
+import com.haky.edge.util.writeTextAtomic
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
@@ -119,7 +120,7 @@ class TargetPriceLogService {
     }
 
     private fun saveLog(map: Map<String, List<TargetSnapshot>>) {
-        runCatching { logFile.writeText(json.encodeToString(mapSerializer, map)) }
+        runCatching { logFile.writeTextAtomic(json.encodeToString(mapSerializer, map)) }
     }
 
     companion object {

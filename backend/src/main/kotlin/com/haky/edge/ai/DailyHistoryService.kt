@@ -1,6 +1,7 @@
 package com.haky.edge.ai
 
 import com.haky.edge.kis.DailyBar
+import com.haky.edge.util.writeTextAtomic
 import com.haky.edge.kis.KisClient
 import com.haky.edge.util.KST
 import kotlinx.serialization.Serializable
@@ -75,7 +76,7 @@ class DailyHistoryService(private val kis: KisClient) {
     }.getOrNull()
 
     private fun save(h: DailyHistory) {
-        runCatching { File(dir, "${h.code}.json").writeText(json.encodeToString(DailyHistory.serializer(), h)) }
+        runCatching { File(dir, "${h.code}.json").writeTextAtomic(json.encodeToString(DailyHistory.serializer(), h)) }
     }
 
     companion object {

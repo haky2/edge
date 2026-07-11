@@ -1,6 +1,7 @@
 package com.haky.edge.ai
 
 import com.haky.edge.master.StockMaster
+import com.haky.edge.util.writeTextAtomic
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
@@ -129,7 +130,7 @@ class PremortemService(
     }
 
     private fun persistLocked() {
-        runCatching { file.writeText(json.encodeToString(mapSer, HashMap(store))) }
+        runCatching { file.writeTextAtomic(json.encodeToString(mapSer, HashMap(store))) }
     }
 
     private fun nowKstIso(): String =

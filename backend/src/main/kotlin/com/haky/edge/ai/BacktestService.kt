@@ -6,7 +6,9 @@ import com.haky.edge.kis.KisClient
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
+import com.haky.edge.util.KST
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 import kotlin.math.pow
@@ -83,11 +85,22 @@ class BacktestService(
         val key = "$code:${effectiveMarketDate()}" // KST 거래일 기준
         kisDataCache[key]?.let { return it }
         val (dailyDesc, flow) = coroutineScope {
-            val d = async { runCatching { kis.getDailyChart(code, bars = 120) }.getOrElse { emptyList() } }
+            // KIS 일봉 단일 호출은 ~100건 상한 → 2회 호출로 최근 120 거래일 확보(S7).
+            val d = async {
+                runCatching {
+                    val dtf = DateTimeFormatter.ofPattern("yyyyMMdd")
+                    val today = LocalDate.now(KST)
+                    val mid = today.minusMonths(3)
+                    val start = today.minusMonths(6)
+                    val b1 = kis.getDailyChartRange(code, start.format(dtf), mid.format(dtf))
+                    val b2 = kis.getDailyChartRange(code, mid.format(dtf), today.format(dtf))
+                    (b1 + b2).distinctBy { it.date }.sortedBy { it.date }.takeLast(120)
+                }.getOrElse { emptyList() }
+            }
             val f = async { runCatching { kis.getInvestorFlow(code, days = 30) }.getOrElse { emptyList() } }
             d.await() to f.await()
         }
-        val data = KisData(dailyDesc.sortedBy { it.date }, flow)
+        val data = KisData(dailyDesc, flow)
         kisDataCache[key] = data
         return data
     }

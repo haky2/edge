@@ -15,6 +15,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import com.haky.edge.util.DayScopedCache
 import java.util.concurrent.ConcurrentHashMap
 
 // ── 앱에 내려주는 공매도 요약 DTO ─────────────────────────────────────────────
@@ -52,7 +53,7 @@ class KrxShortSellingClient {
 
     @Volatile private var jsessionId: String? = null
     private val isinCache = ConcurrentHashMap<String, String>()          // code → KRX ISIN
-    private val dataCache = ConcurrentHashMap<String, ShortSellingSummary>() // "$code:$date" → summary
+    private val dataCache = DayScopedCache<ShortSellingSummary>()
     private val dtf: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd")
 
     companion object {
@@ -63,7 +64,7 @@ class KrxShortSellingClient {
 
     suspend fun getShortSelling(code: String): ShortSellingSummary? {
         val today = LocalDate.now(KST).toString()
-        dataCache["$code:$today"]?.let { return it }
+        dataCache.get(today, "$code:$today")?.let { return it }
 
         var entries = fetchAll(code)
         if (entries.isEmpty()) {
@@ -75,7 +76,7 @@ class KrxShortSellingClient {
         if (entries.isEmpty()) return null
 
         val summary = buildSummary(code, entries)
-        dataCache["$code:$today"] = summary
+        dataCache.put(today, "$code:$today", summary)
         return summary
     }
 

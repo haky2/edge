@@ -1,6 +1,7 @@
 package com.haky.edge
 
 import io.ktor.http.HttpStatusCode
+import java.security.MessageDigest
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationCallPipeline
@@ -62,7 +63,7 @@ fun Application.configureSecurity() {
         if (call.request.path() == "/slack/interaction") return@intercept
         if (expectedToken.isEmpty()) return@intercept // 로컬 개발: 인증 비활성
         val provided = call.request.headers["X-Edge-Token"]
-        if (provided != expectedToken) {
+        if (!MessageDigest.isEqual(provided?.toByteArray(), expectedToken.toByteArray())) {
             call.respond(HttpStatusCode.Unauthorized, ErrorResponse("unauthorized"))
             return@intercept finish() // 파이프라인 중단 — 라우트 핸들러까지 가지 않음
         }

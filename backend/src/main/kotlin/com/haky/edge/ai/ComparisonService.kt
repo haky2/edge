@@ -10,7 +10,7 @@ import com.haky.edge.news.NaverTargetPriceClient
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
-import java.util.concurrent.ConcurrentHashMap
+import com.haky.edge.util.DayScopedCache
 
 /** 두 종목 비교 응답. a/b 핵심 지표 + Claude 비교 코멘트. */
 @Serializable
@@ -50,7 +50,7 @@ class ComparisonService(
     private val modelRouter: ModelRouter? = null,
 ) {
     private data class Cached(val comparison: Comparison)
-    private val cache = ConcurrentHashMap<String, Cached>()
+    private val cache = DayScopedCache<Cached>()
     private val fileCache = FileCache("comparison", Comparison.serializer())
 
     suspend fun compare(
@@ -60,32 +60,35 @@ class ComparisonService(
         force: Boolean = false,
     ): Comparison {
         val today = effectiveMarketDate() // KST 거래일 — FileCache KST 검증과 통일(오전 캐시 미스 방지)
+        // S2: 정렬된 순서로 데이터 수집 — A vs B 캐시 후 B vs A 요청 시 동일 캐시 반환
         val (lo, hi) = if (codeA <= codeB) codeA to codeB else codeB to codeA
-        val key = "$lo:$hi:$today:${mode.name}"
+        val fileKey = "$lo:$hi:$today:${mode.name}"  // fileCache 키(날짜 포함)
+        val memKey  = "$lo:$hi:${mode.name}"          // DayScopedCache 키(날짜 제외)
 
         if (!force) {
-            val cached = cache[key]?.comparison ?: fileCache.get(key)?.also { cache[key] = Cached(it) }
+            val cached = cache.get(today, memKey)?.comparison
+                ?: fileCache.get(fileKey)?.also { cache.put(today, memKey, Cached(it)) }
             if (cached != null) return cached
         }
 
         return coroutineScope {
-            // 두 종목 데이터 병렬 수집
-            val quoteAD  = async { kis.getPrice(codeA) }
-            val quoteBD  = async { kis.getPrice(codeB) }
-            val nameAD   = async { master.findByCode(codeA)?.name ?: codeA }
-            val nameBD   = async { master.findByCode(codeB)?.name ?: codeB }
-            val flowsAD  = async { runCatching { kis.getInvestorFlow(codeA, days = 3) }.getOrElse { emptyList() } }
-            val flowsBD  = async { runCatching { kis.getInvestorFlow(codeB, days = 3) }.getOrElse { emptyList() } }
-            val barsAD   = async { runCatching { kis.getDailyChart(codeA, bars = 20) }.getOrElse { emptyList() } }
-            val barsBD   = async { runCatching { kis.getDailyChart(codeB, bars = 20) }.getOrElse { emptyList() } }
-            val finAD    = async { runCatching { dart.getFinancials(codeA) }.getOrNull() }
-            val finBD    = async { runCatching { dart.getFinancials(codeB) }.getOrNull() }
-            val tpAD     = async { runCatching { naverTargetPrice.getTargetPrice(codeA) }.getOrNull() }
-            val tpBD     = async { runCatching { naverTargetPrice.getTargetPrice(codeB) }.getOrNull() }
-            val vbAD     = async { runCatching { valuationBandSvc.getValuationBand(codeA) }.getOrNull() }
-            val vbBD     = async { runCatching { valuationBandSvc.getValuationBand(codeB) }.getOrNull() }
-            val qiAD     = async { runCatching { dart.getQuarterlyIncome(codeA) }.getOrNull() }
-            val qiBD     = async { runCatching { dart.getQuarterlyIncome(codeB) }.getOrNull() }
+            // 두 종목 데이터 병렬 수집(lo/hi 정렬 순서 유지)
+            val quoteAD  = async { kis.getPrice(lo) }
+            val quoteBD  = async { kis.getPrice(hi) }
+            val nameAD   = async { master.findByCode(lo)?.name ?: lo }
+            val nameBD   = async { master.findByCode(hi)?.name ?: hi }
+            val flowsAD  = async { runCatching { kis.getInvestorFlow(lo, days = 3) }.getOrElse { emptyList() } }
+            val flowsBD  = async { runCatching { kis.getInvestorFlow(hi, days = 3) }.getOrElse { emptyList() } }
+            val barsAD   = async { runCatching { kis.getDailyChart(lo, bars = 20) }.getOrElse { emptyList() } }
+            val barsBD   = async { runCatching { kis.getDailyChart(hi, bars = 20) }.getOrElse { emptyList() } }
+            val finAD    = async { runCatching { dart.getFinancials(lo) }.getOrNull() }
+            val finBD    = async { runCatching { dart.getFinancials(hi) }.getOrNull() }
+            val tpAD     = async { runCatching { naverTargetPrice.getTargetPrice(lo) }.getOrNull() }
+            val tpBD     = async { runCatching { naverTargetPrice.getTargetPrice(hi) }.getOrNull() }
+            val vbAD     = async { runCatching { valuationBandSvc.getValuationBand(lo) }.getOrNull() }
+            val vbBD     = async { runCatching { valuationBandSvc.getValuationBand(hi) }.getOrNull() }
+            val qiAD     = async { runCatching { dart.getQuarterlyIncome(lo) }.getOrNull() }
+            val qiBD     = async { runCatching { dart.getQuarterlyIncome(hi) }.getOrNull() }
 
             val quoteA = quoteAD.await(); val quoteB = quoteBD.await()
             val nameA  = nameAD.await();  val nameB  = nameBD.await()
@@ -102,8 +105,8 @@ class ComparisonService(
             val newsA  = newsAD.await().take(3)
             val newsB  = newsBD.await().take(3)
 
-            val detailA = buildDetail(codeA, nameA, quoteA, flowsA, tpA, vbA, qiA)
-            val detailB = buildDetail(codeB, nameB, quoteB, flowsB, tpB, vbB, qiB)
+            val detailA = buildDetail(lo, nameA, quoteA, flowsA, tpA, vbA, qiA)
+            val detailB = buildDetail(hi, nameB, quoteB, flowsB, tpB, vbB, qiB)
 
             val facts = buildCompareFacts(detailA, detailB, barsA, barsB, finA, finB, newsA, newsB)
             val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
@@ -113,8 +116,8 @@ class ComparisonService(
             val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
                 .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
             val result = Comparison(a = detailA, b = detailB, comment = comment, generatedAt = now)
-            cache[key] = Cached(result)
-            fileCache.put(key, result)
+            cache.put(today, memKey, Cached(result))
+            fileCache.put(fileKey, result)
             result
         }
     }

@@ -1,6 +1,7 @@
 package com.haky.edge.ai
 
 import com.haky.edge.util.KST
+import com.haky.edge.util.writeTextAtomic
 import java.io.File
 import java.time.LocalDate
 import kotlinx.serialization.Serializable
@@ -47,7 +48,7 @@ class ClaudeUsageTracker(dataDir: String) {
             cacheReadTokens = current.cacheReadTokens + cacheRead,
             cacheCreatedTokens = current.cacheCreatedTokens + cacheCreated,
         )
-        f.writeText(json.encodeToString(DailyUsage.serializer(), updated))
+        f.writeTextAtomic(json.encodeToString(DailyUsage.serializer(), updated))
     }
 
     private fun file(date: String = LocalDate.now(KST).toString()) = File(dir, "$date.json")

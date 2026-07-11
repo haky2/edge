@@ -26,6 +26,7 @@ import java.io.File
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import com.haky.edge.util.DayScopedCache
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipInputStream
 import javax.xml.parsers.SAXParserFactory
@@ -109,8 +110,7 @@ class DartClient(private val apiKey: String) {
     }
 
     // 당일 실적 일정 캐시. 정기공시 제출 기한은 하루 안에 바뀌지 않으므로 날짜 단위로 캐싱.
-    private val earningsCache = ConcurrentHashMap<String, EarningsEntry>() // "date|code" → entry
-    private var earningsCacheDate = ""
+    private val earningsCache = DayScopedCache<EarningsEntry>()
 
     /**
      * 종목의 다음 정기공시(분기/반기/사업보고서) 예정일 및 D-day를 반환.
@@ -121,7 +121,7 @@ class DartClient(private val apiKey: String) {
         if (apiKey.isBlank()) return null
         val today = LocalDate.now(KST).toString()
         val cacheKey = "$today|$stockCode"
-        earningsCache[cacheKey]?.let { return it }
+        earningsCache.get(today, cacheKey)?.let { return it }
 
         ensureCorpCodeMap()
         val corpCode = corpCodeMap?.get(stockCode) ?: return null
@@ -154,7 +154,7 @@ class DartClient(private val apiKey: String) {
             dueDate    = nextDue.format(DateTimeFormatter.BASIC_ISO_DATE),
             daysUntil  = daysUntil,
         )
-        earningsCache[cacheKey] = entry
+        earningsCache.put(today, cacheKey, entry)
         return entry
     }
 
@@ -200,7 +200,7 @@ class DartClient(private val apiKey: String) {
     }
 
     // 재무 요약 캐시. 연간 재무는 거의 안 바뀌므로 날짜 단위로 캐싱.
-    private val financialsCache = ConcurrentHashMap<String, FinancialSummary>() // "date|code" → summary
+    private val financialsCache = DayScopedCache<FinancialSummary>()
 
     /**
      * 종목의 최근 연간 재무 요약(매출·영업이익·순이익 + 전년 동기)을 반환.
@@ -211,7 +211,7 @@ class DartClient(private val apiKey: String) {
     suspend fun getFinancials(stockCode: String): FinancialSummary? {
         if (apiKey.isBlank()) return null
         val today = LocalDate.now(KST).toString()
-        financialsCache["$today|$stockCode"]?.let { return it }
+        financialsCache.get(today, "$today|$stockCode")?.let { return it }
 
         ensureCorpCodeMap()
         val corpCode = corpCodeMap?.get(stockCode) ?: return null
@@ -229,7 +229,7 @@ class DartClient(private val apiKey: String) {
             if (resp.status != "000") continue
             val rows = resp.list ?: continue
             val summary = buildFinancialSummary(rows, year) ?: continue
-            financialsCache["$today|$stockCode"] = summary
+            financialsCache.put(today, "$today|$stockCode", summary)
             return summary
         }
         return null
@@ -323,7 +323,7 @@ class DartClient(private val apiKey: String) {
     }
 
     // 분기 실적 캐시. key="date|code|q".
-    private val quarterlyIncomeCache = ConcurrentHashMap<String, Optional<QuarterlyIncome>>()
+    private val quarterlyIncomeCache = DayScopedCache<Optional<QuarterlyIncome>>()
 
     /**
      * 가장 최근 분기/반기보고서에서 당기순이익 + 전년 동기 YoY를 반환.
@@ -334,11 +334,11 @@ class DartClient(private val apiKey: String) {
         if (apiKey.isBlank()) return null
         val today = LocalDate.now(KST).toString()
         val cacheKey = "$today|$stockCode|q"
-        quarterlyIncomeCache[cacheKey]?.let { return it.value }
+        quarterlyIncomeCache.get(today, cacheKey)?.let { return it.value }
 
         ensureCorpCodeMap()
         val corpCode = corpCodeMap?.get(stockCode)
-        if (corpCode == null) { quarterlyIncomeCache[cacheKey] = Optional(null); return null }
+        if (corpCode == null) { quarterlyIncomeCache.put(today, cacheKey, Optional(null)); return null }
 
         val now = LocalDate.now(KST)
         val year = now.year
@@ -382,16 +382,16 @@ class DartClient(private val apiKey: String) {
             else null
 
             val result = QuarterlyIncome(label = c.label, netIncome = ni, netIncomePrev = niPrev, yoyPct = yoy)
-            quarterlyIncomeCache[cacheKey] = Optional(result)
+            quarterlyIncomeCache.put(today, cacheKey, Optional(result))
             return result
         }
 
-        quarterlyIncomeCache[cacheKey] = Optional(null)
+        quarterlyIncomeCache.put(today, cacheKey, Optional(null))
         return null
     }
 
     // 특정 (연도, 보고서)의 누적 순이익 캐시(F3 실적 리뷰용). key="date|code|year|reprt".
-    private val cumulativeNetCache = ConcurrentHashMap<String, Optional<Long>>()
+    private val cumulativeNetCache = DayScopedCache<Optional<Long>>()
 
     /**
      * 특정 (사업연도, reprt_code)의 당기순이익 *누적*(원). F3 실적 리뷰에서
@@ -402,11 +402,11 @@ class DartClient(private val apiKey: String) {
         if (apiKey.isBlank()) return null
         val today = LocalDate.now(KST).toString()
         val cacheKey = "$today|$stockCode|$year|$reprtCode"
-        cumulativeNetCache[cacheKey]?.let { return it.value }
+        cumulativeNetCache.get(today, cacheKey)?.let { return it.value }
 
         ensureCorpCodeMap()
         val corpCode = corpCodeMap?.get(stockCode)
-        if (corpCode == null) { cumulativeNetCache[cacheKey] = Optional(null); return null }
+        if (corpCode == null) { cumulativeNetCache.put(today, cacheKey, Optional(null)); return null }
 
         val resp = runCatching {
             http.get("https://opendart.fss.or.kr/api/fnlttSinglAcnt.json") {
@@ -417,7 +417,7 @@ class DartClient(private val apiKey: String) {
             }.body<DartFinanceResponse>()
         }.getOrNull()
         val rows = resp?.takeIf { it.status == "000" }?.list
-        if (rows == null) { cumulativeNetCache[cacheKey] = Optional(null); return null }
+        if (rows == null) { cumulativeNetCache.put(today, cacheKey, Optional(null)); return null }
 
         val consolidated = rows.any { it.fsDiv == "CFS" }
         val scoped = rows.filter { it.fsDiv == (if (consolidated) "CFS" else "OFS") }
@@ -425,7 +425,7 @@ class DartClient(private val apiKey: String) {
             listOf("당기순이익", "분기순이익", "반기순이익").any { r.accountName.replace(" ", "").contains(it) }
         }
         val value = net?.thisCumulative()
-        cumulativeNetCache[cacheKey] = Optional(value)
+        cumulativeNetCache.put(today, cacheKey, Optional(value))
         return value
     }
 

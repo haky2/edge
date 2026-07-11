@@ -1,6 +1,7 @@
 package com.haky.edge.ai
 
 import com.haky.edge.kis.KisClient
+import com.haky.edge.util.writeTextAtomic
 import com.haky.edge.macro.HoldingPosition
 import com.haky.edge.master.StockMaster
 import kotlinx.coroutines.async
@@ -217,7 +218,7 @@ class RebalanceService(
     @Synchronized
     private fun mutate(transform: (RebalanceStore) -> RebalanceStore) {
         val next = transform(load())
-        file.writeText(json.encodeToString(RebalanceStore.serializer(), next))
+        file.writeTextAtomic(json.encodeToString(RebalanceStore.serializer(), next))
     }
 
     companion object {

@@ -11,7 +11,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.ConcurrentHashMap
+import com.haky.edge.util.DayScopedCache
 import kotlin.math.roundToInt
 
 @Serializable
@@ -57,7 +57,7 @@ class MarketMoodService(
     private val eventSync: EventSyncService? = null,
     private val sectorRotation: SectorRotationService? = null,
 ) {
-    private val cache = ConcurrentHashMap<String, MarketMood>()
+    private val cache = DayScopedCache<MarketMood>()
     private val fileCache = FileCache("market_mood", MarketMood.serializer())
     private val seoulZone = ZoneId.of("Asia/Seoul")
 
@@ -78,8 +78,8 @@ class MarketMoodService(
         // 일요일은 토요일 키로 접혀 재사용. 지표가 바뀌어도 당일은 캐시 재사용. force=true면 캐시 건너뜀.
         val cacheKey = buildKey(effectiveDate, mode)
         if (!force) {
-            cache[cacheKey]?.let { return it }
-            fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
+            cache.get(effectiveDate, cacheKey)?.let { return it }
+            fileCache.get(cacheKey)?.let { cache.put(effectiveDate, cacheKey, it); return it }
         }
 
         val eventsText = runCatching { eventSync?.upcomingFactsText() }.getOrNull()
@@ -99,7 +99,7 @@ class MarketMoodService(
             indicators = indicators,
             generatedAt = now,
         )
-        cache[cacheKey] = result
+        cache.put(effectiveDate, cacheKey, result)
         fileCache.put(cacheKey, result)
         return result
     }

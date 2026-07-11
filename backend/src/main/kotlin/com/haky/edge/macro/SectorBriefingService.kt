@@ -8,7 +8,7 @@ import com.haky.edge.kis.SectorIndex
 import com.haky.edge.master.StockMaster
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
-import java.util.concurrent.ConcurrentHashMap
+import com.haky.edge.util.DayScopedCache
 import kotlin.math.roundToInt
 
 /** 앱에 내려주는 섹터 브리핑 DTO. */
@@ -42,7 +42,7 @@ class SectorBriefingService(
     // 해석 코멘트 모델 라우팅(기본 Opus). null이면 ClaudeClient 기본 모델(Sonnet).
     private val modelRouter: com.haky.edge.ai.ModelRouter? = null,
 ) {
-    private val cache = ConcurrentHashMap<String, SectorBriefing>()
+    private val cache = DayScopedCache<SectorBriefing>()
     private val fileCache = FileCache("sector_briefing", SectorBriefing.serializer())
 
     suspend fun analyze(codes: List<String>, force: Boolean = false): SectorBriefing {
@@ -59,8 +59,8 @@ class SectorBriefingService(
         // force=true면 캐시 건너뜀(수동 재생성).
         val cacheKey = buildKey(today, codes)
         if (!force) {
-            cache[cacheKey]?.let { return it }
-            fileCache.get(cacheKey)?.let { cache[cacheKey] = it; return it }
+            cache.get(today, cacheKey)?.let { return it }
+            fileCache.get(cacheKey)?.let { cache.put(today, cacheKey, it); return it }
         }
 
         // 각 종목의 이름 + 섹터 분류(MacroImpactService 7일 캐시 재사용).
@@ -95,7 +95,7 @@ class SectorBriefingService(
         val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
         val result = SectorBriefing(today, comment, spotlight, generatedAt = now)
-        cache[cacheKey] = result
+        cache.put(today, cacheKey, result)
         fileCache.put(cacheKey, result)
         return result
     }

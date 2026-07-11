@@ -1,5 +1,6 @@
 package com.haky.edge.ai
 
+import com.haky.edge.util.writeTextAtomic
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -52,7 +53,7 @@ class FileCache<T>(
 
     fun put(key: String, value: T) {
         runCatching {
-            fileFor(key).writeText(json.encodeToString(serializer, value))
+            fileFor(key).writeTextAtomic(json.encodeToString(serializer, value))
         }
     }
 

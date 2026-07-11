@@ -1,5 +1,6 @@
 package com.haky.edge.kis
 
+import com.haky.edge.util.DayScopedCache
 import com.haky.edge.util.KST
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -55,13 +56,17 @@ class KisClient(
     // 30초 TTL: AnalysisService의 stale 감지 쿨다운(30분)보다 훨씬 짧아 정확도 손실 없음.
     private val priceCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Quote, Long>>()
 
+    // 상장주식수 캐시(S6). 일중 불변 값이라 24h TTL. getPrice 성공 시 함께 채워 거의 별도 호출 없음.
+    private val listedSharesCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Long>>()
+    private val LISTED_SHARES_TTL_MS = 24 * 3_600_000L
+
     // 해외 시세 단기 캐시. 한투 기본 15분 지연이라 30초 TTL은 지연 정밀도 손실 없음.
     private val overseasPriceCache = java.util.concurrent.ConcurrentHashMap<String, Pair<OverseasQuote, Long>>()
     private val PRICE_CACHE_TTL_MS = 30_000L
 
     // 수급 당일 캐시(인메모리). 외인/기관 확정값은 장후(~16:30)에 확정되고 다음 장 전까지 바뀌지 않는다.
-    // 날짜 prefix("YYYY-MM-DD|code")로 키를 잡아 날짜가 바뀌면 자동 무효화.
-    private val investorCache = java.util.concurrent.ConcurrentHashMap<String, List<InvestorFlow>>()
+    // DayScopedCache: date="오늘|pre/post" 버킷, key=code — 날짜 전환 시 자동 전체 clear.
+    private val investorCache = DayScopedCache<List<InvestorFlow>>()
 
     // 수급 파일 캐시(GCS 영속). 콜드 스타트 시 인메모리 캐시는 날아가지만, 당일 확정값이라 파일에서 재사용 가능.
     // 키에 오늘 날짜("YYYY-MM-DD|code")가 있어 FileCache의 날짜 stale 판정을 통과한다.
@@ -223,6 +228,9 @@ class KisClient(
             if (resp.rtCd == "0" && o != null) {
                 val quote = o.toQuote(code)
                 priceCache[code] = Pair(quote, System.currentTimeMillis())
+                // 상장주식수 부산물 캐시 — getListedShares 별도 호출 대부분 불필요
+                val shares = o.listedShares.toLongSafe()
+                if (shares > 0) listedSharesCache[code] = Pair(shares, System.currentTimeMillis())
                 return quote
             }
             lastMsg = resp.msg1.ifBlank { "rt_cd=${resp.rtCd}" }
@@ -255,13 +263,15 @@ class KisClient(
         // "오늘 확정 수급"이 다음 날에야 보이는 하루 지연이 생긴다(2026-07 감사 H1).
         val today = com.haky.edge.ai.effectiveMarketDate() // KST 거래일 — FileCache KST 검증과 통일
         val postClose = isPostClose()
-        val cacheKey = if (postClose) "$today|post|$code" else "$today|pre|$code"
-        investorCache[cacheKey]?.let { cached ->
+        val bucket = if (postClose) "post" else "pre"
+        val cacheKey = "$today|$bucket|$code"  // fileCache 키(날짜 포함, stale 판정용)
+        val memKey = "$bucket|$code"            // DayScopedCache 키(날짜 제외)
+        investorCache.get(today, memKey)?.let { cached ->
             return if (days <= cached.size) cached.take(days) else cached
         }
         // 콜드 스타트 직후: 같은 버킷의 GCS 파일에서 재사용(인메모리에도 올림).
         investorFileCache.get(cacheKey)?.let { cached ->
-            investorCache[cacheKey] = cached
+            investorCache.put(today, memKey, cached)
             return if (days <= cached.size) cached.take(days) else cached
         }
 
@@ -281,7 +291,7 @@ class KisClient(
                 // 주말은 오늘 행이 영영 없으므로(직전 영업일이 최신) 그대로 캐시. 평일 공휴일은
                 // 캘린더 없이 구분 불가라 저녁 요청이 캐시 없이 재조회될 수 있는데, 호출량이 작아 감수.
                 if (isCacheableInvestorFlows(postClose, flows, today)) {
-                    investorCache[cacheKey] = flows
+                    investorCache.put(today, memKey, flows)
                     investorFileCache.put(cacheKey, flows) // 콜드 스타트 재사용용 GCS 영속
                 }
                 return flows.take(days)
@@ -325,12 +335,18 @@ class KisClient(
      * 내부적으로 inquire-price 를 재호출하므로 이미 당일 시세가 있으면 함께 쓰도록 설계.
      */
     suspend fun getListedShares(code: String): Long {
+        // 24h TTL — getPrice 성공 시 채워지므로 대부분 캐시 적중
+        listedSharesCache[code]?.let { (shares, ts) ->
+            if (System.currentTimeMillis() - ts < LISTED_SHARES_TTL_MS) return shares
+        }
         val accessToken = token()
         var lastMsg = ""
         repeat(MAX_ATTEMPTS) { attempt ->
             val resp = rateLimiter.withPermit { requestPrice(code, accessToken) }
             if (resp.rtCd == "0" && resp.output != null) {
-                return resp.output.listedShares.toLongSafe()
+                val shares = resp.output.listedShares.toLongSafe()
+                listedSharesCache[code] = Pair(shares, System.currentTimeMillis())
+                return shares
             }
             lastMsg = resp.msg1.ifBlank { "rt_cd=${resp.rtCd}" }
             if (attempt < MAX_ATTEMPTS - 1) delay(BACKOFF_MS * (attempt + 1))

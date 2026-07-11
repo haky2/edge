@@ -24,6 +24,8 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
+import com.haky.edge.util.DayScopedCache
+import com.haky.edge.util.writeTextAtomic
 import java.util.concurrent.ConcurrentHashMap
 
 /** 브리핑용: 섹터 단위로 묶은 재료 동향 한 줄. */
@@ -99,7 +101,7 @@ class CatalystService(
     private val eventLog: CatalystEventLog = CatalystEventLog(),
 ) {
     // 30분 버킷 빠른 경로(재료 묶음 + 룰 결과 스냅샷). 같은 30분 내 재호출은 즉시.
-    private val cache = ConcurrentHashMap<String, CatalystReport>()
+    private val cache = DayScopedCache<CatalystReport>()
     private val fileCache = FileCache("catalysts", CatalystReport.serializer())
     // ① 재료 본질 판정 영구 캐시(code|url → 판정). ② summary 캐시(code|url집합 → 산문).
     private val verdictStore = PersistentMap("catalyst/verdicts.json", CatalystVerdict.serializer())
@@ -111,8 +113,8 @@ class CatalystService(
         // 재료는 장중 언제든 추가될 수 있어 30분 버킷으로 스냅샷 캐시(선반영도 그 시점 가격 기준).
         val key = "$today|${System.currentTimeMillis() / 1_800_000}|$days|$code"
         if (!force) {
-            cache[key]?.let { return it }
-            fileCache.get(key)?.let { cache[key] = it; return it }
+            cache.get(today, key)?.let { return it }
+            fileCache.get(key)?.let { cache.put(today, key, it); return it }
         }
 
         return coroutineScope {
@@ -209,8 +211,9 @@ class CatalystService(
 
     /** 30분 버킷 키와 "당일 마지막 리포트" 키에 함께 저장 — 후자는 peekCached의 버킷 경과 폴백용. */
     private fun putReportCaches(bucketKey: String, lastKey: String, report: CatalystReport) {
-        cache[bucketKey] = report; fileCache.put(bucketKey, report)
-        cache[lastKey] = report; fileCache.put(lastKey, report)
+        val today = report.date
+        cache.put(today, bucketKey, report); fileCache.put(bucketKey, report)
+        cache.put(today, lastKey, report); fileCache.put(lastKey, report)
     }
 
     private fun lastKey(today: String, days: Int, code: String) = "$today|last|$days|$code"
@@ -438,7 +441,7 @@ class CatalystService(
         fun put(k: String, v: V) { map[k] = v }
 
         suspend fun persist() {
-            mutex.withLock { runCatching { file.writeText(json.encodeToString(ser, HashMap(map))) } }
+            mutex.withLock { runCatching { file.writeTextAtomic(json.encodeToString(ser, HashMap(map))) } }
         }
     }
 
@@ -446,13 +449,13 @@ class CatalystService(
     fun peekCached(code: String, days: Int = 7): CatalystReport? {
         val today = effectiveMarketDate()
         val key = "$today|${System.currentTimeMillis() / 1_800_000}|$days|$code"
-        cache[key]?.let { return it }
-        fileCache.get(key)?.also { cache[key] = it }?.let { return it }
+        cache.get(today, key)?.let { return it }
+        fileCache.get(key)?.also { cache.put(today, key, it) }?.let { return it }
         // 현재 30분 버킷에 없어도 오늘 만들어진 마지막 리포트로 폴백 — 같은 버킷 내 조회에만
         // 의존하면 브리핑 "테마별 재료 동향"이 사실상 늘 비게 된다(2026-07 감사 M3).
         val lk = lastKey(today, days, code)
-        cache[lk]?.let { return it }
-        return fileCache.get(lk)?.also { cache[lk] = it }
+        cache.get(today, lk)?.let { return it }
+        return fileCache.get(lk)?.also { cache.put(today, lk, it) }
     }
 
     /**
