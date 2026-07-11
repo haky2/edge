@@ -94,6 +94,20 @@ class WeeklyReviewTest {
         assertTrue(ts.any { it.from == "긍정" && it.to == "중립" })
     }
 
+    // ── 내부 라벨 한국어화(실사고: BULLISH·aggressive가 Slack 코멘트에 그대로 복사됨) ──
+
+    @Test
+    fun `내부 라벨은 한국어로 번역돼 facts에 주입된다`() {
+        assertEquals("상승 우위", WeeklyReviewService.directionKo("BULLISH"))
+        assertEquals("하락 우위", WeeklyReviewService.directionKo("BEARISH"))
+        assertEquals("중립", WeeklyReviewService.directionKo("NEUTRAL"))
+        assertEquals("공격 모드", WeeklyReviewService.modeKo("aggressive"))
+        assertEquals("방어 모드", WeeklyReviewService.modeKo("defensive"))
+        assertEquals("7/7(화)", WeeklyReviewService.koreanDate("2026-07-07"))
+        assertEquals("7/10(금)", WeeklyReviewService.koreanDate("2026-07-10"))
+        assertEquals("이상한값", WeeklyReviewService.koreanDate("이상한값")) // 파싱 실패는 원문 유지
+    }
+
     // ── compoundPct ────────────────────────────────────────────────────
 
     @Test

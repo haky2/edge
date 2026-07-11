@@ -205,7 +205,8 @@ class WeeklyReviewService(
             weekMoods.forEach { m ->
                 val actual = m.kospiChange?.let { fmtPct(it) } ?: "판정 보류"
                 val hit = when (m.isCorrect) { true -> "적중"; false -> "빗나감"; null -> "보류" }
-                appendLine("- ${m.date}: 예측 ${m.direction} / 실제 $actual ($hit)")
+                // 내부 라벨(BULLISH 등)은 한국어로 — 그대로 주입하면 모델이 코멘트에 영어를 복사한다.
+                appendLine("- ${koreanDate(m.date)}: 예측 ${directionKo(m.direction)} / 실제 $actual ($hit)")
             }
             if (moodTotal > 0) appendLine("- 방향 예측 누적: $moodCorrect/$moodTotal 적중")
             appendLine()
@@ -218,12 +219,12 @@ class WeeklyReviewService(
         if (weekStances.isNotEmpty()) {
             appendLine("[이번 주 AI 스탠스 생성분]")
             weekStances.sortedBy { it.date }.forEach { e ->
-                appendLine("- ${e.date} ${nameOf[e.code] ?: e.code}(${e.mode}): ${e.stance}")
+                appendLine("- ${koreanDate(e.date)} ${nameOf[e.code] ?: e.code}(${modeKo(e.mode)}): ${e.stance}")
             }
             if (transitions.isNotEmpty()) {
                 appendLine("- 스탠스 전환:")
                 transitions.forEach { t ->
-                    appendLine("  · ${nameOf[t.code] ?: t.code}(${t.mode}): ${t.from} → ${t.to} (${t.date})")
+                    appendLine("  · ${nameOf[t.code] ?: t.code}(${modeKo(t.mode)}): ${t.from} → ${t.to} (${koreanDate(t.date)})")
                 }
             }
             stanceOverall?.let { (n, correct, pct) ->
@@ -240,7 +241,7 @@ class WeeklyReviewService(
         }
         if (upcoming.isNotEmpty()) {
             appendLine("[다음 주 이벤트]")
-            upcoming.forEach { e -> appendLine("- ${e.date} ${e.title} (${e.category}) — ${e.impact}") }
+            upcoming.forEach { e -> appendLine("- ${koreanDate(e.date)} ${e.title} (${e.category}) — ${e.impact}") }
         }
     }
 
@@ -302,6 +303,31 @@ class WeeklyReviewService(
 
         private fun fmtWon(v: Long): String = "%,d원".format(v)
 
+        /** 내부 방향 라벨 → 한국어. 원문 그대로 주입하면 모델이 영어(BULLISH 등)를 코멘트에 복사한다. */
+        internal fun directionKo(direction: String): String = when (direction) {
+            "BULLISH" -> "상승 우위"
+            "BEARISH" -> "하락 우위"
+            "NEUTRAL" -> "중립"
+            else -> direction
+        }
+
+        /** 내부 모드 라벨 → 한국어(공격/방어). */
+        internal fun modeKo(mode: String): String = when (mode) {
+            "aggressive" -> "공격 모드"
+            "defensive" -> "방어 모드"
+            else -> mode
+        }
+
+        /** "2026-07-07" → "7/7(화)" — 모델이 요일 서사를 정확히 쓰게 요일까지 계산해 준다. */
+        internal fun koreanDate(iso: String): String {
+            val d = runCatching { LocalDate.parse(iso) }.getOrNull() ?: return iso
+            val dow = when (d.dayOfWeek) {
+                DayOfWeek.MONDAY -> "월"; DayOfWeek.TUESDAY -> "화"; DayOfWeek.WEDNESDAY -> "수"
+                DayOfWeek.THURSDAY -> "목"; DayOfWeek.FRIDAY -> "금"; DayOfWeek.SATURDAY -> "토"; DayOfWeek.SUNDAY -> "일"
+            }
+            return "${d.monthValue}/${d.dayOfMonth}($dow)"
+        }
+
         // 주간 회고 프롬프트 — 계산 사실은 위 블록이 이미 보여주므로 Claude는 "패턴 해석"만.
         private val WEEKLY_PROMPT = """
             너는 한국 주식 투자 보조 앱의 주간 회고 작성자다. 아래 사실 데이터는 지난 한 주(월~금)의
@@ -319,6 +345,7 @@ class WeeklyReviewService(
                 이벤트 결과나 시장 방향을 단정하지 마라.
             W5. 매매 지시 금지. 격려·덕담·사과·인사말 금지 — 기록과 해석만 남겨라.
             W6. 형식: 소제목·불릿 없이 흐르는 문단 2~3개. 문단 사이 빈 줄 하나. 핵심 수치는 **굵게**.
+                모든 표현은 한국어로 — 영어 약어·시스템 내부 라벨을 그대로 옮기지 마라.
 
             마지막 경고: 너의 학습 지식 속 주가·지수·수치는 낡아서 틀렸다. 위 사실 데이터의 값만 그대로
             복사해 쓰라.
