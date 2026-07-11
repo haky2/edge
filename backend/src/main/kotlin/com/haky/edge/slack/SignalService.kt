@@ -145,8 +145,16 @@ class SignalService(
                     if (!isPeriodicName(d.reportName) || d.reportName.contains("정정")) continue
                     val rceptNo = extractRceptNo(d.url) ?: continue
                     if (rceptNo in seen) continue
-                    seen += rceptNo
+                    // O2: seen은 리뷰 **성공 시에만** 기록한다. 기존엔 review() 호출 전에 기록해서
+                    // DART 일시 오류·공시 접수 직후 재무 API 미반영(actual null)이면 그 실적 리뷰가
+                    // 영영 스킵됐다. 보고서명 파싱 불가만 영구 대상 외라 즉시 seen. 나머지 실패는
+                    // 미기록 → 다음 스캔 재시도, 공시 창(days=2)을 벗어나면 자연 소멸(무한 재시도 없음).
+                    if (com.haky.edge.ai.EarningsPreviewService.reviewPlan(d.reportName) == null) {
+                        seen += rceptNo
+                        continue
+                    }
                     runCatching { ep.review(code, d.reportName) }.getOrNull()?.let { rv ->
+                        seen += rceptNo
                         reviewSignals += EarningsReviewSignal(code, name, rv)
                     }
                 }

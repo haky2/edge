@@ -48,13 +48,23 @@ class RegimeDetectorTest {
         ))
     }
 
-    @Test fun `목표가 하향 + 이익 급감 = 디레이팅 경계`() {
+    @Test fun `목표가 하향 + 이익 급감 = 디레이팅 경계, 밴드 하단 신호 가산`() {
         val r = RegimeDetector.detect(
             price = 100000, consensusTarget = 200000,
             targetTrend = trend("하향", -8.0), quarterlyYoyPct = -45.0, perPercentile = 10,
         )
         assertEquals(true, r?.label?.contains("디레이팅"))
-        assertEquals(2, r?.signals?.size)
+        // 하향 + YoY 급감 + (down 성립이므로) 밴드 하단 보강 = 3개(상단 보강과 대칭)
+        assertEquals(3, r?.signals?.size)
+    }
+
+    @Test fun `실질 신호 1개 + 밴드 상단으로는 판정 성립 안 됨 - O1 부스터 루프홀 회귀 방지`() {
+        // 기존 버그: 상향 추세 1개 + 밴드 상단 보강 = 2개로 MIN_SIGNALS 충족 → 리레이팅 판정.
+        // 보강 신호는 카운트 미포함이어야 한다 — 실질 신호 2개가 안 되면 일반 국면.
+        assertNull(RegimeDetector.detect(
+            price = 300000, consensusTarget = 450000, // 목표가엔 한참 못 미침 — 신호 아님
+            targetTrend = trend("상향"), quarterlyYoyPct = null, perPercentile = 100,
+        ))
     }
 
     @Test fun `데이터 전부 없으면 null`() {

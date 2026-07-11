@@ -211,7 +211,10 @@ fun Application.module() {
         opusTriggers = ModelRouter.parseTriggers(System.getenv("OPUS_TRIGGERS")),
     )
     val dart = DartClient(apiKey = System.getenv("DART_API_KEY").orEmpty())
-    val naverTargetPrice = NaverTargetPriceClient()
+    val naverTargetPrice = NaverTargetPriceClient(
+        // 구조 변경 감지(값→null 전환 3종목째) → #ops 채널 1회 경고(O3)
+        onStructureAlert = { msg -> opsAlerter.alertCustom("naver-target-structure", msg) },
+    )
     val targetPriceLog = TargetPriceLogService()
     val fearGreed = FearGreedClient()
     val copper = CopperClient()

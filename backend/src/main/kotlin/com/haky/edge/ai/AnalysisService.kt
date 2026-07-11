@@ -371,14 +371,19 @@ class AnalysisService(
         if (warningsText != null) sb.appendLine(warningsText)
         // 국면 판정(계산) — 리레이팅/디레이팅을 룰로 감지해 해석 프레임을 지정(C11).
         // 상단 배치: 아래 밸류·실적을 읽기 전에 프레임이 잡혀야 "과거 밴드 기준 고평가" 관성 판정을 막는다.
-        RegimeDetector.detect(
+        val regime = RegimeDetector.detect(
             price = q.price,
             consensusTarget = consensusTarget,
             targetTrend = targetTrend,
             quarterlyYoyPct = quarterlyIncome?.yoyPct,
             perPercentile = valuationBand?.perPercentile,
-        )?.let { regime ->
-            sb.appendLine("국면 판정(계산): ${regime.label} — 근거: ${regime.signals.joinToString("; ")}")
+        )
+        // 판정 입력·결과 진단 로그 — 임계(MIN_SIGNALS 등) 조정 판단의 실측 근거(O1).
+        println("[Regime] ${q.code} price=${q.price} target=$consensusTarget trend=${targetTrend?.direction ?: "-"}" +
+            " yoy=${quarterlyIncome?.yoyPct?.let { "%.0f".format(it) } ?: "-"} perPct=${valuationBand?.perPercentile ?: "-"}" +
+            " → ${regime?.label ?: "일반 국면"}(${regime?.signals?.size ?: 0}신호)")
+        regime?.let {
+            sb.appendLine("국면 판정(계산): ${it.label} — 근거: ${it.signals.joinToString("; ")}")
         }
         if (sectorChangeRate != null) {
             val rs = q.changeRate - sectorChangeRate

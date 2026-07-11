@@ -22,7 +22,8 @@ object RegimeDetector {
     private const val YOY_JUMP_PCT = 50.0        // 분기 순이익 YoY +50% 이상 = 이익 점프
     private const val YOY_DROP_PCT = -30.0       // YoY -30% 이하 = 이익 급감
     private const val BAND_TOP_PERCENTILE = 90   // PER 역사 밴드 백분위 상단
-    private const val MIN_SIGNALS = 2            // 판정 성립 최소 신호 수
+    private const val BAND_BOTTOM_PERCENTILE = 10 // PER 역사 밴드 백분위 하단(디레이팅 보강, 대칭)
+    private const val MIN_SIGNALS = 2            // 판정 성립 최소 **실질** 신호 수(밴드 보강은 미포함)
 
     /**
      * 국면 판정. 리레이팅·디레이팅 신호를 각각 세어 [MIN_SIGNALS] 이상인 쪽을 반환.
@@ -62,14 +63,20 @@ object RegimeDetector {
             if (quarterlyYoyPct <= YOY_DROP_PCT) down += "최근 분기 순이익 YoY ${"%.0f".format(quarterlyYoyPct)}% 급감"
         }
 
-        // ④ 역사 밴드 상단 — 단독으론 "고평가"일 뿐이지만, 위 신호와 겹치면 리레이팅 정황을 보강.
-        //    (상단이라는 이유만으로 리레이팅 판정이 되지 않게 up 신호가 이미 있을 때만 가산)
-        if (perPercentile != null && perPercentile >= BAND_TOP_PERCENTILE && up.isNotEmpty()) {
-            up += "PER 역사 밴드 최상단(백분위 ${perPercentile})인데도 위 신호 지속"
-        }
-
+        // ④ 역사 밴드 극단 — 판정 성립 여부를 **먼저** 실질 신호(①~③)만으로 확정한 뒤,
+        //    성립한 쪽의 근거 표시만 보강한다(카운트 미포함). 기존엔 up 1개 + ④ = 2개로
+        //    "2개 이상 동시 충족" 방어를 부스터가 조용히 무력화했다(O1). 하단 보강은 대칭용:
+        //    상단 보강만 있으면 리레이팅 방향으로만 근거가 두터워지는 비대칭이 생긴다.
         val upOk = up.size >= MIN_SIGNALS
         val downOk = down.size >= MIN_SIGNALS
+        if (perPercentile != null) {
+            if (upOk && perPercentile >= BAND_TOP_PERCENTILE) {
+                up += "PER 역사 밴드 최상단(백분위 ${perPercentile})인데도 위 신호 지속"
+            }
+            if (downOk && perPercentile <= BAND_BOTTOM_PERCENTILE) {
+                down += "PER 역사 밴드 최하단(백분위 ${perPercentile})인데도 하향 신호 지속(밸류 함정 정황)"
+            }
+        }
         return when {
             upOk && downOk -> null // 모순 신호 — 판정 보류(억지 프레임 금지)
             upOk -> Regime("리레이팅 국면(과거 밴드 기준 무력화 가능성)", up)

@@ -106,12 +106,18 @@
 
 ## Opus 급 (판단 필요 — 방향은 제시, 세부는 판단)
 
-### O1. RegimeDetector 부스터 신호로 판정 성립
+### O1. [x] RegimeDetector 부스터 신호로 판정 성립 — 완료(감사5탄 세션, Fable)
+실측(관심 11종목): 구 룰 5/11 리레이팅 발화 — 그중 2건은 분기이익 급감 중(−58%·−123%), 2건은 목표가 오염 데이터(O3 참고) 기반. 8/11이 perPct≥90이라 부스터가 사실상 +1 프리패스였음. 부스터 카운트 제외+하단 보강 대칭 추가, MIN_SIGNALS=2(실질) 유지 — 신 룰은 삼성전자(실질 2신호)만 발화. 임계 재조정 불필요 판정. [Regime] 진단 로그 추가.
+
+### O1-원문. RegimeDetector 부스터 신호로 판정 성립
 - **위치**: `ai/RegimeDetector.kt:67` — ④ PER 밴드 상단 신호가 `up.isNotEmpty()`만 요구 → 실질 신호 1개 + 부스터 = 2개로 `MIN_SIGNALS=2` 충족. "보강용"이라던 ④가 사실상 판정을 성립시킴.
 - **수정 방향**: 부스터는 카운트에서 제외 — `up.size >= MIN_SIGNALS`일 때만 ④를 추가(근거 표시용으로만). 단 이러면 기존 판정보다 리레이팅 레이블이 덜 나옴 → **판정 빈도 변화가 코멘트 톤에 미치는 영향을 보고 임계 재조정 여부 판단**(그래서 Opus). 기존 RegimeTest 7케이스 중 ④ 의존 케이스가 있으면 의도 재정의.
 - **검증**: RegimeTest 갱신 + 관심종목 몇 개 실호출로 레이블 변화 확인.
 
-### O2. EREV — review 실패한 공시도 seen 처리(영영 스킵)
+### O2. [x] EREV — review 실패한 공시도 seen 처리(영영 스킵) — 완료(감사5탄 세션, Fable)
+review() null 의미 구분: reviewPlan null(보고서명 파싱 불가)=영구 → 즉시 seen / actual·prior null(공시 직후 DART 재무 미반영 가능)·예외=일시 → 미기록, days=2 창 안 재시도 후 자연 소멸.
+
+### O2-원문. EREV — review 실패한 공시도 seen 처리(영영 스킵)
 - **위치**: `slack/SignalService.kt:147~148` — `seen += rceptNo`가 `runCatching { ep.review(...) }` **앞**. 리뷰 생성이 실패(DART 일시 오류 등)해도 접수번호가 seen으로 영속(:152) → 그 실적 리뷰는 재시도 없이 소실.
 - **수정 방향**: 성공 시에만 seen 추가 — `review()`가 non-null을 반환한 경우에만 `seen += rceptNo`. 재시도 폭주 걱정은 없음: 공시 조회 창이 `days = 2`(:119)라 실패해도 최대 2일 재시도 후 자연 소멸. **판단 포인트**: review()가 null을 반환하는 게 "실패"인지 "해당 없음"인지 — 해당 없음(예: 비교 기준 부재)이라면 매 스캔 재시도가 낭비이므로 null 의미를 구분(예외=미기록, 정상 null=seen 기록)해야 함. EarningsPreviewService.review 내부를 읽고 결정.
 - **검증**: 유닛 — 예외 시 seen 미기록, 정상 null 시 기록.
@@ -120,7 +126,10 @@
 - **위치**: `routes/AnalysisRoutes.kt` — thesis를 GET 쿼리로 수신 → Cloud Run 액세스 로그에 URL(논지 원문 %인코딩) 잔존. 기존 position 쿼리(평단·수량)와 동급의 노출이라 LOW.
 - **수정 방향**: POST /analysis 신설 + GET 유지(구버전 호환, ask/포폴 POST 전례). 단 로그 정책(개인 앱·본인 로그)상 수용 가능 여부가 판단 포인트 — position 쿼리도 같은 결정에 묶임.
 
-### O3. 네이버 목표가 — 실패 negative 캐시 + 구조 변경 무감지
+### O3. [x] 네이버 목표가 — 실패 negative 캐시 + 구조 변경 무감지 — 완료(감사5탄 세션, Fable)
+**실측으로 라이브 버그까지 발견**: "목표주가" 첫 매치가 토론실 글·뉴스 제목일 때 링크 URL 숫자가 목표가로 오염(307950→종목코드 30.8만원 vs 실제 68.4만원 / 267260→article_id 7,728원 vs 실제 148.8만원) → RegimeDetector·비교/분석 facts 오염. 수정: ①"투자의견" 인접 발생만 인정 ②태그 제거 텍스트에서만 숫자 탐색 ③예외 미캐시(파싱 null만 당일 캐시) ④값→null 전환 3종목째 OpsAlerter.alertCustom 경고(당일 1회). NaverTargetPriceTest 8케이스 + 실호출 4종목 검증.
+
+### O3-원문. 네이버 목표가 — 실패 negative 캐시 + 구조 변경 무감지
 - **위치**: `news/NaverTargetPriceClient.kt:27~29` — `runCatching { fetch }.getOrNull()`이 예외·파싱실패를 전부 null로 뭉개 당일 캐시. 페이지 구조가 바뀌면 전 종목이 조용히 null(RegimeDetector·비교·분석 facts에서 목표가만 사라짐).
 - **수정 방향** 2단:
   1. **예외와 파싱 null 구분** — HTTP/네트워크 예외는 캐시하지 않음(다음 호출 재시도). 파싱 null(페이지는 왔는데 "목표주가" 없음)만 당일 negative 캐시(현행 유지 — 컨센서스 없는 종목은 실제로 null이 정답).

@@ -49,6 +49,19 @@ class OpsAlerter(
         scope.launch { slack.postMessage(opsChannel, text) }
     }
 
+    /**
+     * 라우트 예외 이외의 운영 경고(스크래핑 구조 변경 감지 등). 시그니처 단위 쿨다운 동일 적용.
+     * 발신측이 자체 디듀프를 하더라도 여기 쿨다운이 최후 방어로 남는다.
+     */
+    fun alertCustom(signature: String, text: String) {
+        if (!slack.isConfigured || opsChannel.isBlank()) return
+        val now = System.currentTimeMillis()
+        val prev = lastSentAt[signature]
+        if (prev != null && now - prev < cooldownMs) return
+        lastSentAt[signature] = now
+        scope.launch { slack.postMessage(opsChannel, "⚠️ $text") }
+    }
+
     companion object {
         private const val DEFAULT_COOLDOWN_MS = 5 * 60_000L  // 같은 오류 5분에 1번
         private const val MAX_MESSAGE_LEN = 500
