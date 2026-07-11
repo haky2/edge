@@ -385,28 +385,36 @@ $enumList
 
         // 섹터별 매크로 민감도. note 는 근거 한 줄(앱·Claude facts에 그대로 노출).
         // 매크로 민감도는 대분류(MacroGroup) 기준. 세부 Sector는 group으로 여기에 연결된다.
+        //
+        // ⚠️ 2026-07 실측 교정(D2, docs/sensitivity-validation-2026-07.md · decisions.md 참고):
+        //  - usdkrw: 전 그룹 +1→−1. "원화 약세=수출 우호" 논리는 일별 시계에서 6/6 그룹 실측 반대 —
+        //    원/달러 급등일은 외국인 자금 이탈·리스크오프와 동행. 수출 채산성은 분기 실적 시계.
+        //  - copper: 3칸 −1→+1. "원가 부담" 논리가 실측 반대 — 구리는 글로벌 경기 선행지표(Dr. Copper)로
+        //    작동해 상승일에 시크리컬 전반이 오른다. 전력기기는 구리 수요 자체가 인프라 투자 신호.
+        //  - crude·usdjpy: 일별 실측 무근거(무유의)였으나 반증도 아니라 유지. 방향을 근거로 한 강한
+        //    서술은 피해야 함(note에 실측 수준 표시하지 않음 — 구조 논리로만).
         internal val SENSITIVITY = mapOf(
             MacroGroup.SEMICONDUCTOR to listOf(
-                Sensitivity("usdkrw", +1, "원화 약세 → 수출 채산성 개선"),
+                Sensitivity("usdkrw", -1, "환율 급등(원화 약세) → 외국인 자금 이탈·리스크오프 신호 — 외국인 비중 큰 반도체에 단기 부담"),
                 Sensitivity("nasdaq", +1, "미국 빅테크·AI 반도체와 주가 동조"),
                 Sensitivity("usdjpy", -1, "엔화 약세 → 키옥시아·도시바 등 일본 경쟁사 가격 경쟁력 강화 → 부담"),
                 Sensitivity("crude",  -1, "유가 상승 → 인플레·금리 우려 → 성장주 부담"),
                 Sensitivity("rate3y", -1, "금리 상승 → 성장주 밸류에이션 할인율 확대"),
             ),
             MacroGroup.SHIPBUILDING to listOf(
-                Sensitivity("usdkrw", +1, "수주 대금 달러 결제 → 원화 약세 수혜"),
+                Sensitivity("usdkrw", -1, "환율 급등 → 외국인 자금 이탈·리스크오프 신호 — 단기 부담(달러 수주 채산성은 분기 실적 시계)"),
                 Sensitivity("crude",  +1, "유가 상승 → 유조선·LNG선 발주 수요 증가"),
                 Sensitivity("rate3y", -1, "금리 상승 → 선박금융 조달 비용 증가, 선주 투자 부담"),
             ),
             MacroGroup.DEFENSE to listOf(
-                Sensitivity("usdkrw", +1, "방산 수출 비중 → 원화 약세 우호"),
+                Sensitivity("usdkrw", -1, "환율 급등 → 외국인 자금 이탈·리스크오프 신호 — 단기 부담(수출 채산성은 분기 실적 시계)"),
             ),
             MacroGroup.POWER_EQUIP to listOf(
-                Sensitivity("usdkrw", +1, "변압기 등 수출 비중 → 원화 약세 우호"),
+                Sensitivity("usdkrw", -1, "환율 급등 → 외국인 자금 이탈·리스크오프 신호 — 단기 부담(수출 채산성은 분기 실적 시계)"),
                 Sensitivity("nasdaq", +1, "미국 데이터센터·전력 인프라 투자 테마 연동"),
                 Sensitivity("usdjpy", -1, "엔화 약세 → 히타치 에너지·미쓰비시 전기 등 일본 전력기기 경쟁사 가격 경쟁력 강화"),
                 Sensitivity("crude",  +1, "유가 상승 → 에너지 전환·신재생 투자 가속화"),
-                Sensitivity("copper", -1, "구리 상승 → 변압기·전선 주요 원재료 원가 부담"),
+                Sensitivity("copper", +1, "구리 상승 → 전력 인프라·경기 수요 회복 신호(원가 부담을 압도)"),
                 Sensitivity("rate3y", -1, "금리 상승 → 인프라 투자 할인율 상승, 밸류에이션 부담"),
             ),
             // IT서비스(내수)+로봇·AI(성장·수출)를 묶은 그룹. 내수·수출 혼재라 환율은 중립.
@@ -415,16 +423,16 @@ $enumList
                 Sensitivity("rate3y", -1, "성장 기대가 반영된 높은 주가 배수 → 금리 상승 시 할인율 부담 확대"),
             ),
             MacroGroup.ELECTRONICS to listOf(
-                Sensitivity("usdkrw", +1, "수출 비중 높아 원화 약세 우호(수입 부품이 일부 상쇄)"),
+                Sensitivity("usdkrw", -1, "환율 급등 → 외국인 자금 이탈·리스크오프 신호 — 단기 부담(수출 채산성은 분기 실적 시계)"),
                 Sensitivity("usdjpy", -1, "엔화 약세 → 소니·파나소닉 등 일본 가전·전자 경쟁사 가격 경쟁력 강화"),
                 Sensitivity("crude",  -1, "유가 상승 → 물류·부품 운반비 원가 부담"),
-                Sensitivity("copper", -1, "구리 상승 → PCB·배선 부품 원가 부담"),
+                Sensitivity("copper", +1, "구리 상승 → 글로벌 경기 회복 신호 — 전자 수요 개선 기대(원가 부담보다 우세)"),
             ),
             MacroGroup.AUTOMOBILE to listOf(
-                Sensitivity("usdkrw", +1, "수출 비중 → 원화 약세 시 해외 매출 환산 이익 증가"),
+                Sensitivity("usdkrw", -1, "환율 급등 → 외국인 자금 이탈·리스크오프 신호 — 단기 부담(수출 채산성은 분기 실적 시계)"),
                 Sensitivity("usdjpy", -1, "엔화 약세 → 토요타·혼다 등 일본차 가격 경쟁력 강화 → 현대·기아 점유율 압박"),
                 Sensitivity("crude",  -1, "유가 상승 → 소비자 유지비 부담 → 자동차 수요 심리 위축"),
-                Sensitivity("copper", -1, "구리 상승 → 차량 배선·전장부품 원재료 원가 부담"),
+                Sensitivity("copper", +1, "구리 상승 → 글로벌 경기 회복 신호 — 자동차 수요 개선 기대(원가 부담보다 우세)"),
                 Sensitivity("rate3y", -1, "금리 상승 → 자동차 할부 이자 증가 → 구매 수요 감소"),
             ),
         )

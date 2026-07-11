@@ -34,15 +34,15 @@ class PortfolioMathTest {
 
     @Test
     fun `매크로 노출 - 민감도 방향대로 수혜와 부담 비중 집계`() {
-        // SEMICONDUCTOR: usdkrw +1, rate3y -1 / SHIPBUILDING: usdkrw +1, crude +1, rate3y -1
+        // SEMICONDUCTOR: usdkrw -1(실측 교정), rate3y -1 / SHIPBUILDING: usdkrw -1, crude +1, rate3y -1
         val stocks = listOf(
             stock("000001", "가", 700, groups = setOf(MacroGroup.SEMICONDUCTOR)),
             stock("000002", "나", 300, groups = setOf(MacroGroup.SHIPBUILDING)),
         )
         val ex = PortfolioReviewService.macroExposures(stocks, 1000)
         val usdkrw = ex.first { it.label.contains("원/달러") }
-        assertEquals(100.0, usdkrw.favorablePct) // 둘 다 원화 약세 수혜
-        assertEquals(0.0, usdkrw.adversePct)
+        assertEquals(0.0, usdkrw.favorablePct)   // 환율 급등은 둘 다 부담(리스크오프 신호 — D2 교정)
+        assertEquals(100.0, usdkrw.adversePct)
         val rate = ex.first { it.label.contains("금리") }
         assertEquals(0.0, rate.favorablePct)
         assertEquals(100.0, rate.adversePct)     // 둘 다 금리 상승 부담

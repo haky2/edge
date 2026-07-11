@@ -18,18 +18,18 @@ class MacroSignalTest {
 
     @Test fun `지표 상승과 민감도 양수 → 우호 direction 1`() {
         val sectors = listOf(Sector.MEMORY)
-        val indicators = listOf(indicator("usdkrw", "원/달러", +1.5))   // 원화 약세: SEMI 우호
+        val indicators = listOf(indicator("nasdaq", "나스닥", +1.5))   // 나스닥 상승: SEMI 우호
         val signals = MacroImpactService.computeSignals(sectors, indicators)
-        val usd = signals.first { it.indicator == "원/달러" }
-        assertEquals(1, usd.direction)
+        val nasdaq = signals.first { it.indicator == "나스닥" }
+        assertEquals(1, nasdaq.direction)
     }
 
     @Test fun `지표 하락과 민감도 양수 → 부담 direction -1`() {
         val sectors = listOf(Sector.MEMORY)
-        val indicators = listOf(indicator("usdkrw", "원/달러", -1.0))   // 원화 강세: SEMI 부담
+        val indicators = listOf(indicator("nasdaq", "나스닥", -1.0))   // 나스닥 하락: SEMI 부담
         val signals = MacroImpactService.computeSignals(sectors, indicators)
-        val usd = signals.first { it.indicator == "원/달러" }
-        assertEquals(-1, usd.direction)
+        val nasdaq = signals.first { it.indicator == "나스닥" }
+        assertEquals(-1, nasdaq.direction)
     }
 
     @Test fun `지표 상승과 민감도 음수 → 부담 direction -1`() {
@@ -63,9 +63,9 @@ class MacroSignalTest {
     }
 
     @Test fun `신호 합계 양수이면 우호적`() {
-        val sectors = listOf(Sector.DEFENSE)
-        // DEFENSE 민감도: usdkrw +1. 상승 → 우호
-        val indicators = listOf(indicator("usdkrw", "원/달러", +1.0))
+        val sectors = listOf(Sector.MEMORY)
+        // MEMORY 민감도: nasdaq +1. 상승 → 우호
+        val indicators = listOf(indicator("nasdaq", "나스닥", +1.0))
         val signals = MacroImpactService.computeSignals(sectors, indicators)
         assertEquals("우호적", MacroImpactService.computeNet(signals))
     }
@@ -80,10 +80,10 @@ class MacroSignalTest {
 
     @Test fun `우호와 부담이 상쇄되면 중립`() {
         val sectors = listOf(Sector.MEMORY)
-        // MEMORY: usdkrw +1, nasdaq +1, crude -1, rate3y -1
-        // usdkrw 하락(-1.0) → effDir=-1, nasdaq 상승(+1.0) → effDir=+1 → 합=0
+        // MEMORY: usdkrw -1(실측 교정), nasdaq +1, crude -1, rate3y -1
+        // usdkrw 상승(+1.0) → effDir=-1, nasdaq 상승(+1.0) → effDir=+1 → 합=0
         val indicators = listOf(
-            indicator("usdkrw", "원/달러", -1.0),
+            indicator("usdkrw", "원/달러", +1.0),
             indicator("nasdaq", "나스닥",  +1.0),
         )
         val signals = MacroImpactService.computeSignals(sectors, indicators)
@@ -98,7 +98,25 @@ class MacroSignalTest {
         val signals = MacroImpactService.computeSignals(sectors, indicators)
         val note = signals.first().note
         assertTrue(note.isNotEmpty())
-        assertTrue(note.contains("원화 약세"), "DEFENSE usdkrw note에 '원화 약세' 포함 필요, 실제: $note")
+        assertTrue(note.contains("외국인 자금 이탈"), "DEFENSE usdkrw note에 '외국인 자금 이탈' 포함 필요, 실제: $note")
+    }
+
+    // ── 실측 교정(D2, 2026-07) 방향 고정 — 회귀 방지 ────────────────────────
+
+    @Test fun `usdkrw는 전 그룹에서 -1로 교정됨`() {
+        MacroImpactService.SENSITIVITY.values.flatten()
+            .filter { it.indicatorKey == "usdkrw" }
+            .forEach { s ->
+                assertEquals(-1, s.direction, "usdkrw 방향은 실측 교정(-1) 유지 필요: ${s.note}")
+            }
+    }
+
+    @Test fun `copper는 전 그룹에서 +1로 교정됨`() {
+        MacroImpactService.SENSITIVITY.values.flatten()
+            .filter { it.indicatorKey == "copper" }
+            .forEach { s ->
+                assertEquals(+1, s.direction, "copper 방향은 실측 교정(+1) 유지 필요: ${s.note}")
+            }
     }
 
     @Test fun `매핑 없는 지표는 신호 목록에 포함되지 않는다`() {
