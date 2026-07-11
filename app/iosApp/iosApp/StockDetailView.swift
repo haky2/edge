@@ -916,6 +916,35 @@ struct StockDetailView: View {
             }
 
             if let a = analysis {
+                // 판단 변화 배지 — 직전 생성분 스탠스와 비교. 전환이 정보라 강조, 유지는 조용한 회색.
+                if let stance = a.stance, let prev = a.prevStance {
+                    HStack(spacing: 6) {
+                        if stance == prev {
+                            Text("\(stance) 유지")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(Color(.systemGray5))
+                                .foregroundColor(.secondary)
+                                .clipShape(Capsule())
+                        } else {
+                            HStack(spacing: 4) {
+                                Text(prev).foregroundColor(.secondary)
+                                Image(systemName: "arrow.right").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary)
+                                Text(stance).foregroundColor(stanceColor(stance))
+                            }
+                            .font(.caption.weight(.bold))
+                            .padding(.horizontal, 9).padding(.vertical, 4)
+                            .background(stanceColor(stance).opacity(0.12))
+                            .clipShape(Capsule())
+                        }
+                        if let d = a.prevStanceDate {
+                            Text("\(shortMonthDay(d)) 분석 대비").font(.caption2).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.bottom, 2)
+                }
+
                 // 핵심 요약 — 풀 코멘트 위에 강조 박스(보라). summary 없으면(옛 캐시) 건너뜀.
                 if let summary = a.summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
@@ -2429,6 +2458,22 @@ struct StockDetailView: View {
         let fmt = DateFormatter()
         fmt.dateFormat = "MM/dd HH:mm"
         return fmt.string(from: date)
+    }
+
+    // 판단 변화 배지 색: 한국 컨벤션(긍정=빨강·부정=파랑·중립=회색).
+    private func stanceColor(_ s: String) -> Color {
+        switch s {
+        case "긍정": return .red
+        case "부정": return .blue
+        default: return .secondary
+        }
+    }
+
+    // "2026-07-10" → "7/10" (배지 캡션용)
+    private func shortMonthDay(_ d: String) -> String {
+        let parts = d.split(separator: "-")
+        guard parts.count == 3, let m = Int(parts[1]), let day = Int(parts[2]) else { return d }
+        return "\(m)/\(day)"
     }
 
     // 취소선 제거 + **굵게** 직접 파싱. SwiftUI 마크다운 파서는 "**+2.4%**에"처럼

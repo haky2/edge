@@ -87,6 +87,39 @@ class StanceTest {
         dir.deleteRecursively()
     }
 
+    @Test
+    fun `latestBefore - 같은 모드 직전 유효 스탠스(미상 제외, 당일 제외)`(): Unit = runBlocking {
+        val dir = tempDir()
+        val log = StanceLog(dir.absolutePath)
+        log.append(StanceEntry("005930", "2026-07-07", "defensive", "부정", 80_000.0, "09:00", null, "요약A"))
+        log.append(StanceEntry("005930", "2026-07-08", "defensive", "미상", 81_000.0, "09:00"))       // 미상 → 스킵
+        log.append(StanceEntry("005930", "2026-07-09", "aggressive", "긍정", 82_000.0, "09:00"))      // 다른 모드 → 스킵
+        log.append(StanceEntry("000660", "2026-07-10", "defensive", "긍정", 300_000.0, "09:00"))      // 다른 종목 → 스킵
+        log.append(StanceEntry("005930", "2026-07-11", "defensive", "긍정", 84_000.0, "09:00"))       // 당일 → 제외
+
+        val prev = log.latestBefore("005930", "defensive", "2026-07-11")
+        assertEquals("2026-07-07", prev?.date)
+        assertEquals("부정", prev?.stance)
+        assertEquals("요약A", prev?.summary)
+        assertNull(log.latestBefore("005930", "defensive", "2026-07-07")) // 그 이전 기록 없음
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun `summary 없는 기존 jsonl 줄도 읽힌다(하위호환)`(): Unit = runBlocking {
+        val dir = tempDir()
+        // summary 필드가 없던 시절의 원본 줄을 직접 기록
+        File(dir, "stance_log.jsonl").writeText(
+            """{"code":"005930","date":"2026-07-01","mode":"defensive","stance":"긍정","priceAtGen":83000.0,"generatedAt":"10:00"}""" + "\n"
+        )
+        val log = StanceLog(dir.absolutePath)
+        val all = log.readAll()
+        assertEquals(1, all.size)
+        assertNull(all[0].summary)
+        assertEquals("긍정", log.latestBefore("005930", "defensive", "2026-07-02")?.stance)
+        dir.deleteRecursively()
+    }
+
     // ── extractRegime ──────────────────────────────────────────────────
 
     @Test

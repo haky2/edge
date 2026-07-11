@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-07-11 — 판단 변화 추적 A1+A2 (Fable)
+
+**한 일** — 종목 분석의 "직전 판단 대비 유지/전환"을 추적·노출하는 신기능. 백엔드+iOS+Android 한 커밋.
+- **A1 (백엔드)**: StanceEntry에 `summary` 병기(하위호환 nullable) + `StanceLog.latestBefore(code, mode, beforeDate)` — 같은 모드의 직전 생성분(미상 제외, 당일 제외). analyze()가 직전 스탠스·요약을 facts 말미 "직전 분석 기록" 블록으로 주입 + C13 규칙(전환 시 어떤 데이터 변화가 판단을 바꿨는지 명시, 유지 시 짧게, 직전 수치 인용 금지, 직전에 맞춘 왜곡 금지). Analysis에 `stance`/`prevStance`/`prevStanceDate` 추가.
+- **가드 정합성**: `suspiciousSummaryPrices`는 주입 전 facts(cf.facts) 기준 유지 — 직전 요약의 낡은 가격이 화이트리스트가 되어 새 요약으로 새는 구멍 차단.
+- **A2 (클라)**: sharedLogic Analysis 필드 + AI 코멘트 카드 배지(iOS·Android) — 유지=조용한 회색 칩("긍정 유지"), 전환=강조 칩("중립 → 긍정", 한국 컨벤션 긍정=빨강·부정=파랑) + "M/D 분석 대비" 캡션. Android stanceColor는 P3 패턴대로 @Composable 승격.
+- **검증**: StanceTest 2케이스 추가(latestBefore 필터링·구 jsonl 하위호환) + 전체 테스트 통과. 실호출 — 329180: prevStance=중립(7/10) 반환 + 종합 단락에 "직전 7월 10일 분석(중립) 이후 큰 그림 안 바뀌어 이번에도 중립" 정확 이행. 005930 공격모드: 긍정 유지. 양 플랫폼 빌드 + 시뮬 배지 시각 확인(사용자).
+
+**다음**: 배포 + B(주간 회고 리포트).
+
+---
+
 ## 2026-07-11 — V1 해외-only 시뮬 순회 (Sonnet)
 
 **한 일** — `US:AAPL` 단독 관심종목으로 전 탭 순회.

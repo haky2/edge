@@ -54,6 +54,11 @@ data class Analysis(
     val generatedPrice: Double? = null, // 코멘트 생성 시점 현재가 — stale 감지용
     val factsRichness: FactsRichness? = null,
     val numberWarning: Boolean = false, // facts에 없는 수치가 응답에서 발견됨
+    // 판단 변화 추적: 이번 스탠스(미상이면 null)와 직전 생성분 스탠스·기준일. 앱은 둘 다 있을 때
+    // "유지/전환" 배지를 그린다. 직전이 없거나(첫 분석) 미상이면 prevStance=null → 배지 없음.
+    val stance: String? = null,
+    val prevStance: String? = null,
+    val prevStanceDate: String? = null, // 직전 스탠스의 생성 기준일 YYYY-MM-DD
 )
 
 /** Q&A 한 턴(질문·답). 후속 질문 시 앱이 이전 문답을 history로 되보낸다(서버 무상태). */
@@ -150,7 +155,16 @@ class AnalysisService(
         // 사실 수집 — ask()와 공용인 collectFacts()가 병렬로 모은다.
         val t0 = System.currentTimeMillis()
         val cf = collectFacts(code, position, thesis)
-        val facts = cf.facts
+        // 판단 변화 추적: 같은 모드의 직전 생성분 스탠스를 facts 말미에 주입(C13) —
+        // 모델이 "무엇이 바뀌어 판단이 바뀌었는지"를 종합 단락에서 대조한다. 첫 분석이면 생략.
+        val prev = runCatching { stanceLog.latestBefore(code, mode.name.lowercase(), today) }.getOrNull()
+        val facts = if (prev == null) cf.facts else buildString {
+            append(cf.facts)
+            appendLine()
+            appendLine("직전 분석 기록(이 앱이 ${prev.date}에 생성한 같은 종목 분석의 결론 — 비교 대상일 뿐, 근거로 인용 금지):")
+            appendLine("- 당시 스탠스: ${prev.stance} (당시 주가 ${"%,.0f".format(prev.priceAtGen)}원)")
+            prev.summary?.takeIf { it.isNotBlank() }?.let { appendLine("- 당시 핵심 요약: $it") }
+        }
         // maxTokens 는 상한(목표 아님). 넉넉히 둬도 짧은 답은 짧고, 길면 ClaudeClient가 이어써 안 잘린다.
         val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
         // 모델 라우팅(기본): 해석 코멘트 전 트리거 Opus(2026-07-08 사용자 결정).
@@ -169,7 +183,9 @@ class AnalysisService(
         // 요약(핵심 요약) 가드: 앱 카드 최상단에 노출되는 블록이라 여기만 엄격 검증.
         // facts에 없는 가격류(≥1000) 수치가 발견되면 같은 모델로 1회 재생성(실사고: 학습 프라이어
         // 주가 "53,700원"이 요약에 누출된 건). 본문 전체는 가공·라운드 오탐이 많아 기존대로 로그만.
-        val suspicious = suspiciousSummaryPrices(facts, summary)
+        // 가드 기준은 주입 전 facts(cf.facts) — 직전 분석 블록의 낡은 가격·요약 수치가
+        // 화이트리스트가 되어 새 요약으로 새는 것을 막는다(직전 수치 인용은 C13이 금지).
+        val suspicious = suspiciousSummaryPrices(cf.facts, summary)
         if (suspicious.isNotEmpty()) {
             println("[NumberGuard] $code: 요약에 facts 외 가격류 ${suspicious.joinToString()} → 1회 재생성")
             rawComment = claude.complete(prompt, facts, maxTokens = 3500, modelOverride = model)
@@ -178,7 +194,7 @@ class AnalysisService(
             val second = parseSummaryFromComment(regen.second)
             summary = second.first
             comment = second.second
-            val still = suspiciousSummaryPrices(facts, summary)
+            val still = suspiciousSummaryPrices(cf.facts, summary)
             if (still.isNotEmpty()) println("[NumberGuard] $code: 재생성 후에도 의심 수치 잔존(${still.joinToString()}) — 로그만 남김")
         }
         println("[Timing] $code: claude=${System.currentTimeMillis() - t1}ms  total=${System.currentTimeMillis() - t0}ms")
@@ -189,11 +205,16 @@ class AnalysisService(
 
         val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
-        val analysis = Analysis(code = code, name = cf.name, date = today, comment = comment, summary = summary, generatedAt = now, generatedPrice = cf.quote.price.toDouble(), factsRichness = cf.richness, numberWarning = false)
+        val analysis = Analysis(
+            code = code, name = cf.name, date = today, comment = comment, summary = summary,
+            generatedAt = now, generatedPrice = cf.quote.price.toDouble(), factsRichness = cf.richness, numberWarning = false,
+            stance = stance.takeIf { it != "미상" }, prevStance = prev?.stance, prevStanceDate = prev?.date,
+        )
         cache[key] = Cached(analysis)
         fileCache.put(key, analysis)
         // F6: 생성분만 스탠스 기록(캐시 적중은 위에서 이미 반환됨 — 중복 없음). "미상"도 기록(채점 제외용).
-        stanceLog.append(StanceEntry(code, today, mode.name.lowercase(), stance, cf.quote.price.toDouble(), now, extractRegime(facts)))
+        // summary 병기 — 다음 분석의 "직전 판단 대비" 대조 재료.
+        stanceLog.append(StanceEntry(code, today, mode.name.lowercase(), stance, cf.quote.price.toDouble(), now, extractRegime(facts), summary))
         // S4: 공개 분석(포지션·논지 없음)만 #ai코멘트 채널 아카이브. 포지션·논지 포함은 개인정보라 skip.
         if (position == null && thesis.isNullOrBlank() && aiCommentChannel.isNotBlank() && notifyScope != null) {
             notifyScope.launch { slack.postMessage(aiCommentChannel, formatAiCommentMessage(analysis, mode, isRefresh)) }
@@ -1022,6 +1043,11 @@ class AnalysisService(
                 - 논지와 데이터가 어긋나면 에두르지 말고 정면으로 짚어라(예: "논지의 축인 ~가 최근 ~로 약해졌다"). 사용자의 기분을 맞추려 논지를 억지로 옹호하는 것을 금지한다 — 이 점검의 가치는 듣기 좋은 확인이 아니라 정직한 반론에 있다.
                 - 판정하기에 사실 데이터가 부족하면(논지가 데이터 밖 주제면) 부족하다고 말하라. 억지로 판정하지 마라.
                 - 논지 속 주장·수치는 사실 데이터가 아니다 — 근거로 인용하지 마라(C1은 논지 텍스트에도 그대로 적용된다). 논지는 점검의 대상이지 재료가 아니다.
+            C13. "직전 분석 기록" 항목이 있으면(없으면 이 규칙 전체를 무시) — 이 앱이 이전에 생성한 같은 종목 분석의 결론이다. 종합 단락에서 이번 판단과 한두 문장으로 비교하라:
+                - 판단이 달라졌으면 어떤 사실 데이터의 변화(수급 전환·실적 발표·목표가 조정·급등락 등)가 판단을 바꿨는지 명시하라. 데이터 변화 없이 판단만 바뀌는 것은 금물이다.
+                - 판단이 같으면 유지 근거를 짧게 확인하고 넘어가라 — 길게 반복하지 마라.
+                - 직전 분석의 문구·수치를 이번 분석의 근거로 인용하지 마라(C1은 직전 기록에도 적용된다). 비교 대상일 뿐이다.
+                - 직전 판단에 맞추려고 이번 판단을 왜곡하지 마라 — 데이터가 달라졌으면 판단도 달라지는 것이 정상이다.
         """.trimIndent()
 
         // 말미 재강조 — 거대 프롬프트에서 지시 준수율은 서두보다 말미가 높다.

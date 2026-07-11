@@ -1052,6 +1052,24 @@ private fun headingOnly(s: String): String? {
     return inner
 }
 
+// 판단 변화 배지 색: 한국 컨벤션(긍정=빨강·부정=파랑·중립=회색).
+@Composable
+@androidx.compose.runtime.ReadOnlyComposable
+private fun stanceColor(s: String): Color = when (s) {
+    "긍정" -> ChangeUp
+    "부정" -> ChangeDown
+    else -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+// "2026-07-10" → "7/10" (배지 캡션용)
+private fun shortMonthDay(d: String): String {
+    val parts = d.split("-")
+    if (parts.size != 3) return d
+    val m = parts[1].toIntOrNull() ?: return d
+    val day = parts[2].toIntOrNull() ?: return d
+    return "$m/$day"
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun AICommentCard(
@@ -1073,6 +1091,40 @@ internal fun AICommentCard(
         }
 
         if (analysis != null) {
+            // 판단 변화 배지 — 직전 생성분 스탠스와 비교. 전환이 정보라 강조, 유지는 조용한 회색.
+            val stance = analysis.stance
+            val prevStance = analysis.prevStance
+            if (stance != null && prevStance != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (stance == prevStance) {
+                        Text(
+                            "$stance 유지",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                        )
+                    } else {
+                        val toColor = stanceColor(stance)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .background(toColor.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 9.dp, vertical = 4.dp),
+                        ) {
+                            Text(prevStance, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("→", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stance, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = toColor)
+                        }
+                    }
+                    analysis.prevStanceDate?.let { d ->
+                        Text("${shortMonthDay(d)} 분석 대비", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
             // 핵심 요약 — 풀 코멘트 위 강조 박스(보라). summary 없으면(옛 캐시) 건너뜀.
             analysis.summary?.takeIf { it.isNotBlank() }?.let { summary ->
                 Column(
