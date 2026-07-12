@@ -6,6 +6,15 @@
 
 ---
 
+## 2026-07-13 — 내 패턴 탭 크래시 수정 (Fable)
+
+**한 일** — 커밋 3a8af21. 실기기 제보: 계좌 여러 개 + 같은 종목 → 내 패턴 탭 튕김.
+- 원인: G1 이후 holding.all()은 계좌별 행(같은 code 다수)인데 StatsView가 `Dictionary(uniqueKeysWithValues:)` — 중복 키 즉시 크래시. G 배치 때 Portfolio(mergedByCode)만 챙기고 Stats를 빠뜨린 갭.
+- 수정: iOS uniquingKeysWith(목표/손절 설정 행 우선 — 규율 판정 용도) / Android associateBy last-wins도 같은 정책으로 통일.
+- 검증: 시뮬 3계좌×동일 종목 시드로 크래시 조건 재현 → 정상 렌더링. **실기기 재설치·확인 완료**(재료 카드·논지 이력 v7 등 대기 클라분 포함). **규칙: holding.all()은 code 유일 가정 금지.**
+
+---
+
 ## 2026-07-12 — 국면 판정 일관성 + 시장 맥락 주입 C17 (Fable)
 
 **한 일** — 커밋 b845013, 배포 00086-f5p. 국면/방향 판정 6개 시스템 인벤토리·갭 분석(정본: docs/regime-consistency-2026-07.md).
