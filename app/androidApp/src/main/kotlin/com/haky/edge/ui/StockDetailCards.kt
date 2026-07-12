@@ -267,7 +267,8 @@ private fun CatalystRow(c: CatalystItem, impact: CatalystImpact?, onClick: () ->
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            BadgePill("${c.sentiment} ${c.strength}", sentimentColor(c.sentiment))
+            // "규모" 병기 — 강도는 재료의 사업적 크기이지 주가 반응 예측이 아님(catalyst-validation ②-1).
+            BadgePill("${c.sentiment} · 규모 ${c.strength}", sentimentColor(c.sentiment))
             Text(c.category, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             Text(c.source, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("·", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -278,8 +279,9 @@ private fun CatalystRow(c: CatalystItem, impact: CatalystImpact?, onClick: () ->
             Text(c.reason, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (c.preReflected) {
+            // 경고(⚠·주황) → 사실 서술(ⓘ·회색): 실측이 "선반영=기대 낮춤" 해석을 지지하지 않음(②-1).
             val note = c.preReflectedNote?.let { " · $it" } ?: ""
-            Text("⚠ 선반영 가능성$note", style = MaterialTheme.typography.labelSmall, color = OrangeAccent)
+            Text("ⓘ 재료 전후 주가가 이미 크게 움직임$note", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         // F2 임팩트 통계 — 수주·공급계약 공시에만 표시
         if (c.category == "수주·공급계약" && c.source == "공시" && impact != null && impact.n > 0) {

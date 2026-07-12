@@ -293,19 +293,24 @@ class CatalystService(
         }
     }
 
-    /** summary에 선반영 한 줄을 룰로 덧붙인다(가격 기준이라 캐시된 summary와 분리해 매번 신선). */
+    /**
+     * summary에 선반영 한 줄을 룰로 덧붙인다(가격 기준이라 캐시된 summary와 분리해 매번 신선).
+     * 문구는 해석 지시("선반영된 것으로 보인다"=기대 낮춤) 대신 사실 서술로 — ②-1 실측에서
+     * reflected 호재의 20일 초과수익이 오히려 +5.7%(fresh -6.1%)로 함의와 반대 방향이 관측됐다.
+     * n이 작아 반대로 뒤집지도 않는다: 사실만 말하고 방향 판단은 독자에게(docs/catalyst-validation-2026-07.md).
+     */
     private fun appendPreReflectedCaveat(summary: String, items: List<CatalystItem>, netBias: String): String {
         if (summary.isBlank()) return summary
         val caveat = when (netBias) {
             "호재우위" -> {
                 val pos = items.filter { it.sentiment == "호재" }
                 if (pos.isNotEmpty() && pos.count { it.preReflected } * 2 >= pos.size)
-                    "다만 최근 주가 흐름상 상당수 호재가 선반영된 것으로 보입니다." else null
+                    "다만 상당수 호재는 재료 공개 전후 주가가 이미 크게 움직인 상태입니다." else null
             }
             "악재우위" -> {
                 val neg = items.filter { it.sentiment == "악재" }
                 if (neg.isNotEmpty() && neg.count { it.preReflected } * 2 >= neg.size)
-                    "다만 최근 하락으로 악재가 상당 부분 반영된 것으로 보입니다." else null
+                    "다만 상당수 악재는 주가가 이미 크게 하락한 상태에서 나온 것입니다." else null
             }
             else -> null
         }

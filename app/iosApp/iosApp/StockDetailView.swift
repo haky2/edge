@@ -2158,8 +2158,10 @@ struct StockDetailView: View {
     private func catalystRow(_ c: CatalystItem) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                // 호재(빨강)/악재(파랑)/중립(회색) + 강도
-                Text("\(c.sentiment) \(c.strength)")
+                // 호재(빨강)/악재(파랑)/중립(회색) + 강도. "규모"를 병기해 강도가 재료의 사업적
+                // 크기(연매출 대비)이지 주가 반응 예측이 아님을 표기 — ②-1 실측에서 강도 상의
+                // 익일 반응이 오히려 최저(0/8)였다(docs/catalyst-validation-2026-07.md).
+                Text("\(c.sentiment) · 규모 \(c.strength)")
                     .font(.caption2.weight(.semibold))
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(sentimentColor(c.sentiment).opacity(0.15))
@@ -2182,11 +2184,13 @@ struct StockDetailView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if c.preReflected {
+                // 경고(⚠·주황) → 사실 서술(ⓘ·회색): "선반영이니 기대 낮춤"이라는 해석 지시를
+                // 실측이 지지하지 않아 사실만 표기(docs/catalyst-validation-2026-07.md ③).
                 HStack(alignment: .top, spacing: 3) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 9)).foregroundColor(.orange)
-                    Text("선반영 가능성" + (c.preReflectedNote.map { " · \($0)" } ?? ""))
-                        .font(.caption2).foregroundColor(.orange)
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 9)).foregroundColor(.secondary)
+                    Text("재료 전후 주가가 이미 크게 움직임" + (c.preReflectedNote.map { " · \($0)" } ?? ""))
+                        .font(.caption2).foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
