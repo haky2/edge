@@ -85,7 +85,9 @@ class MarketMoodService(
         val eventsText = runCatching { eventSync?.upcomingFactsText() }.getOrNull()
         // 섹터 자금 순환(C) — 뚜렷한 신호 있을 때만 factsText 반환(없으면 null → 주입 생략).
         val rotationText = runCatching { sectorRotation?.get()?.factsText }.getOrNull()
-        val facts = buildFacts(indicators, eventsText, rotationText)
+        // ① 자기 교정: 방향 예측 자기 성적표 — 표본 15 미만이면 침묵(과소표본 과잉반응 방지).
+        val accuracyText = runCatching { accuracyFactsText(moodLog.getAccuracyReport()) }.getOrNull()
+        val facts = buildFacts(indicators, eventsText, rotationText, accuracyText)
         val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
         // 상한(ceiling)일 뿐 — 3문단이면 보통 그 안에서 end_turn, 길어져도 ClaudeClient가 이어써 안 잘림.
         // 시장 분위기는 매일 보는 방향 판단 → 기본 Opus(briefing 트리거). env OPUS_TRIGGERS로 롤백 가능.
@@ -121,7 +123,7 @@ class MarketMoodService(
         moodLog.addOrUpdateEntry(todayStr, direction, indicators)
     }
 
-    private fun buildFacts(indicators: List<MacroIndicator>, eventsText: String?, rotationText: String? = null): String {
+    private fun buildFacts(indicators: List<MacroIndicator>, eventsText: String?, rotationText: String? = null, accuracyText: String? = null): String {
         val sb = StringBuilder()
         sb.appendLine("현재 시장 지표 (전일 대비):")
         indicators.forEach { ind ->
@@ -136,10 +138,26 @@ class MarketMoodService(
             sb.appendLine()
             sb.append(eventsText)
         }
+        if (accuracyText != null) {
+            sb.appendLine()
+            sb.append(accuracyText)
+        }
         return sb.toString()
     }
 
     companion object {
+        /**
+         * ① 자기 교정 — 방향 예측 자기 성적표 facts 블록. 표본 15 미만이면 null(침묵).
+         * 살아있는 성적표는 facts로(매일 갱신·안 낡음), 실측 상수 교훈은 프롬프트 규칙으로 —
+         * 라는 분리가 이 트랙의 설계 원칙(edge-calibration-track).
+         */
+        internal fun accuracyFactsText(report: MoodAccuracyReport): String? {
+            if (report.total < 15) return null
+            val pct = kotlin.math.round(report.correct * 100.0 / report.total).toInt()
+            return "방향 예측 자기 성적표(이 앱의 지표 가중합 예측을 코스피 실제 방향과 대조 채점한 기록):\n" +
+                "  누적 ${report.total}회 채점 중 ${report.correct}회 적중($pct%)"
+        }
+
         // 방어적(기본): 사실 + 방향만. 매매 스탠스 의견 없음.
         private val DEFENSIVE_PROMPT = """
             너는 한국 주식 투자 보조 앱의 장 전 시장 분위기 해석 어시스턴트다.
@@ -163,6 +181,11 @@ class MarketMoodService(
             8. "섹터 자금 순환" 섹션이 있으면(유입/이탈 조짐 표시), 문단 ②나 ③에서 한 번만 짚어라 — 어느 업종에서 어디로
                자금이 도는지 방향만. 데이터에 있는 유입/이탈 라벨만 쓰고, "왜 도는지" 인과나 없는 종목명은 지어내지 마라.
                이 섹션이 없으면(신호 없음) 순환은 아예 언급하지 마라.
+            9. "방향 예측 자기 성적표" 항목이 있으면(없으면 이 규칙 전체를 무시) — 같은 지표들로 만든 방향 예측이
+               과거에 실제로 맞았는지의 기록이다. 적중률이 낮으면(50% 미만) 이 지표들의 하루 선행성이 제한적이라는
+               뜻이므로 방향 서술의 확신 강도를 낮추고, 문단 ③에 "지표 방향과 실제 흐름이 어긋나는 날도 잦았다"는
+               취지의 유보를 한 문장 넣어라. 단, 성적이 낮다고 지표와 반대로 해석하지 마라 — 성적표는 확신의
+               강도를 조절하는 재료일 뿐, 방향 판단의 근거가 아니다. 성적표를 문단 하나로 길게 다루지도 마라.
 
             마지막 경고: 너의 학습 지식 속 지수·환율·금리 수치는 전부 낡아서 틀렸다. 절대 사용하지 마라. 수치는 위 지표 데이터에서 그대로 복사해서만 쓴다.
         """.trimIndent()
@@ -198,6 +221,11 @@ class MarketMoodService(
             8. "섹터 자금 순환" 섹션이 있으면(유입/이탈 조짐), 문단 ②나 ③ 스탠스에 묶어라 — 자금이 들어오는 업종은
                낙폭과대 저가매수보다 우선순위가 높다는 식으로. 데이터의 유입/이탈 라벨만 쓰고 인과·종목명은 지어내지 마라.
                이 섹션이 없으면 순환은 언급하지 마라.
+            9. "방향 예측 자기 성적표" 항목이 있으면(없으면 이 규칙 전체를 무시) — 같은 지표들로 만든 방향 예측이
+               과거에 실제로 맞았는지의 기록이다. 적중률이 낮으면(50% 미만) 이 지표들의 하루 선행성이 제한적이라는
+               뜻이다: 스탠스는 여전히 단호하게 내리되, 문단 ③의 명령에 "예상과 어긋나면 ~하라"는 대응 조건을
+               한 문장 포함해 스탠스가 틀렸을 때의 출구를 함께 제시하라. 단, 성적이 낮다고 지표와 반대로
+               해석하지 마라 — 성적표는 확신의 강도와 리스크 관리 재료일 뿐, 방향 판단의 근거가 아니다.
 
             마지막 경고: 너의 학습 지식 속 지수·환율·금리 수치는 전부 낡아서 틀렸다. 절대 사용하지 마라. 수치는 위 지표 데이터에서 그대로 복사해서만 쓴다.
         """.trimIndent()
