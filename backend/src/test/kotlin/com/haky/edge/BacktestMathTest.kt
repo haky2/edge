@@ -53,6 +53,31 @@ class BacktestMathTest {
         assertTrue(r in -1.0..1.0, "범위 초과: r=$r")
     }
 
+    // ── spearman (통계 감사 B6: 순매수량 heavy-tail → 아웃라이어 강건 순위 상관) ──
+
+    @Test fun `spearman - 단조 비선형도 r=1`() {
+        // 지수 관계: Pearson은 1 미만, Spearman은 정확히 1(순위 보존)
+        val xs = listOf(1.0, 2.0, 3.0, 4.0)
+        val ys = listOf(1.0, 10.0, 100.0, 1000.0)
+        assertEquals(1.0, BacktestService.spearman(xs, ys), 1e-9)
+    }
+
+    @Test fun `spearman - 아웃라이어에 강건`() {
+        // 9쌍은 무상관 잡음, 1쌍만 극단 대량 매수+급등 —
+        // Pearson은 아웃라이어가 지배해 강한 상관으로 착시, Spearman은 완만.
+        val xs = listOf(1.0, -2.0, 3.0, -1.0, 2.0, -3.0, 1.5, -1.5, 0.5, 1_000_000.0)
+        val ys = listOf(0.2, 0.1, -0.3, 0.4, -0.1, 0.3, -0.2, 0.15, -0.4, 8.0)
+        val p = BacktestService.pearson(xs, ys)
+        val s = BacktestService.spearman(xs, ys)
+        assertTrue(p > 0.9, "Pearson은 아웃라이어 지배로 과대: $p")
+        assertTrue(s < 0.5, "Spearman은 강건해야 함: $s")
+    }
+
+    @Test fun `ranks - 동값은 평균 순위`() {
+        // [10, 20, 20, 30] → 순위 [1, 2.5, 2.5, 4]
+        assertEquals(listOf(1.0, 2.5, 2.5, 4.0), BacktestService.ranks(listOf(10.0, 20.0, 20.0, 30.0)))
+    }
+
     // ── corrLabel ─────────────────────────────────────────────────────────
 
     @Test fun `r=0_0 → 거의 무관`() {

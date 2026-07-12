@@ -708,7 +708,7 @@ class AnalysisService(
                     " (평소 대비 $edgeSign${"%.2f".format(s.edge)}%p)"
             )
         }
-        sb.appendLine("  ※ 과거 표본 통계일 뿐 미래 보장 아님. 승률과 평균이 어긋나면 소수 급등/급락일이 평균을 끌어당긴 것.")
+        sb.appendLine("  ※ 과거 표본 통계일 뿐 미래 보장 아님. 승률과 평균이 어긋나면 소수 급등/급락일이 평균을 끌어당긴 것. n이 십수 건 수준이면 승률의 우연 오차가 ±20%p 안팎이다.")
         return sb.toString()
     }
 
@@ -718,7 +718,7 @@ class AnalysisService(
         val confident = fs.items.filter { it.confident }
         if (confident.isEmpty()) return null
         val sb = StringBuilder()
-        sb.appendLine("수급-가격 민감도(이 종목 수급 규모와 당일 등락률 Pearson 상관, 과거 표본):")
+        sb.appendLine("수급-가격 민감도(이 종목 수급 규모와 당일 등락률의 순위 상관, 과거 표본):")
         confident.forEach { c ->
             val rSign = if (c.r >= 0) "+" else ""
             sb.appendLine("  ${c.investor}(n=${c.n}): r=$rSign${c.r}, ${c.label}")

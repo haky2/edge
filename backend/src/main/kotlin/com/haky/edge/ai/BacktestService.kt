@@ -250,7 +250,10 @@ class BacktestService(
         if (n < 2) return null
         val xs = pairs.map { it.first }
         val ys = pairs.map { it.second }
-        val r = pearson(xs, ys).round2()
+        // Spearman(순위 상관) — 순매수량은 극단값(한 번의 대량 매매)이 흔한 heavy-tail 분포라
+        // Pearson은 아웃라이어 하나가 r을 지배한다(통계 감사 B6). 순위 상관은 "살수록 오른다"는
+        // 단조 관계를 같은 의미로 재면서 극단값에 강건하다.
+        val r = spearman(xs, ys).round2()
         return FlowCorrelation(
             investor = name,
             r = r,
@@ -260,12 +263,12 @@ class BacktestService(
         )
     }
 
-    private fun pearson(xs: List<Double>, ys: List<Double>): Double = Companion.pearson(xs, ys)
-
     private fun corrLabel(r: Double): String = Companion.corrLabel(r)
 
     companion object {
-        // 이 미만이면 통계적으로 신뢰 곤란 → confident=false.
+        // 표시 최소선. 이 미만이면 confident=false(facts·카드 비노출).
+        // ⚠️ 2단 구조: 여기 8은 "노출 최소선"이고, 신뢰 서술의 임계는 프롬프트 C9의 n<15
+        // ("참고 수준" 강제)가 담당한다 — n=8~14 신호는 노출되되 모델이 과신 표현을 못 쓴다.
         private const val MIN_SAMPLE = 8
 
         internal fun pearson(xs: List<Double>, ys: List<Double>): Double {
@@ -278,6 +281,25 @@ class BacktestService(
             val dy = sqrt(ys.sumOf { (it - my).pow(2) })
             val denom = dx * dy
             return if (denom < 1e-10) 0.0 else (num / denom).coerceIn(-1.0, 1.0)
+        }
+
+        /** Spearman 순위 상관 = 순위 변환 후 Pearson. 동순위(tie)는 평균 순위. */
+        internal fun spearman(xs: List<Double>, ys: List<Double>): Double =
+            pearson(ranks(xs), ranks(ys))
+
+        /** 값 → 평균 순위(1부터). 동값은 순위 평균(fractional ranking). */
+        internal fun ranks(values: List<Double>): List<Double> {
+            val indexed = values.withIndex().sortedBy { it.value }
+            val rank = DoubleArray(values.size)
+            var i = 0
+            while (i < indexed.size) {
+                var j = i
+                while (j + 1 < indexed.size && indexed[j + 1].value == indexed[i].value) j++
+                val avgRank = (i + j + 2) / 2.0 // 1-based 순위 (i+1..j+1)의 평균
+                for (k in i..j) rank[indexed[k].index] = avgRank
+                i = j + 1
+            }
+            return rank.toList()
         }
 
         internal fun corrLabel(r: Double): String {

@@ -1902,7 +1902,7 @@ struct StockDetailView: View {
         }
     }
 
-    // 수급-가격 민감도 카드 — 외인/기관 순매수량 vs 당일 등락률 Pearson 상관
+    // 수급-가격 민감도 카드 — 외인/기관 순매수량 vs 당일 등락률 순위 상관(Spearman — 아웃라이어 강건)
     private func flowSensitivityCard(_ fs: FlowSensitivity) -> some View {
         let shown = fs.items.filter { $0.n > 0 }
         guard !shown.isEmpty else { return AnyView(EmptyView()) }

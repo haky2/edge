@@ -118,7 +118,7 @@ class CatalystValidationService(
             bySentiment = bySentiment,
             byStrength = byStrength,
             byPreReflected = byPreReflected,
-            caveat = "초과수익률(종목-코스피) 기준. n<10 버킷은 방향 참고만. 20일 horizon은 최근 판정일수록 미확정(제외됨).",
+            caveat = "초과수익률(종목-코스피) 기준. n<10 버킷은 방향 참고만. 20일 horizon은 최근 판정일수록 미확정(제외됨). 채점은 판정 단위(같은 날 복수 판정·인접 이벤트 창 겹침으로 표본이 완전히 독립은 아님).",
         )
     }
 

@@ -116,7 +116,7 @@ class CatalystImpactService(
         internal fun buildCaveat(n: Int) = buildString {
             if (n < 10) append("표본 ${n}건 — 통계가 불안정합니다. ")
             else if (n < 30) append("표본 ${n}건 — 참고 수준입니다. ")
-            append("과거 통계일 뿐 향후 반응을 보장하지 않습니다.")
+            append("과거 통계일 뿐 향후 반응을 보장하지 않습니다. 인접 이벤트의 5·20일 측정 창은 서로 겹칠 수 있어 표본이 완전히 독립은 아닙니다.")
         }
     }
 
@@ -164,15 +164,17 @@ class CatalystImpactService(
         val barsAsc = history.getHistory(code).asReversed()
         if (barsAsc.size < 2) return empty(code, name, category)
 
-        val allDates = events.map { it.date }
+        // 같은 날 복수 이벤트(동일 공시 정정·같은 재료 다중 기사)는 forward return이 동일한데
+        // 각각 세면 그 날 하나가 통계를 중복 지배한다(통계 감사 B: 이중 카운트) → 날짜 단위로 접는다.
+        val allDates = events.map { it.date }.distinct()
         val allHorizons = computeHorizons(allDates, barsAsc)
 
         val split = ImpactSplit(
-            fresh = events.filter { !it.preReflected }.takeIf { it.isNotEmpty() }?.let { grp ->
-                ImpactStats(grp.size, computeHorizons(grp.map { it.date }, barsAsc))
+            fresh = events.filter { !it.preReflected }.map { it.date }.distinct().takeIf { it.isNotEmpty() }?.let { dates ->
+                ImpactStats(dates.size, computeHorizons(dates, barsAsc))
             },
-            reflected = events.filter { it.preReflected }.takeIf { it.isNotEmpty() }?.let { grp ->
-                ImpactStats(grp.size, computeHorizons(grp.map { it.date }, barsAsc))
+            reflected = events.filter { it.preReflected }.map { it.date }.distinct().takeIf { it.isNotEmpty() }?.let { dates ->
+                ImpactStats(dates.size, computeHorizons(dates, barsAsc))
             },
         )
 
