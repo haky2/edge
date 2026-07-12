@@ -197,8 +197,11 @@ fun StatsScreen(
             }
         }
         nameMap = resolved
-        // G1: stop/target 은 holding 이 정본. code 중복(다계좌) 시 첫 번째 계좌 사용(G3에서 개선)
-        positionMap = holdingRepo.all().associateBy { it.code }
+        // G1: stop/target 은 holding 이 정본. code 중복(다계좌)은 associateBy가 last-wins라
+        // 임의 계좌가 잡힌다 — 규율 판정에 쓰는 목표/손절이 설정된 행을 우선해 병합(iOS와 동일 정책).
+        positionMap = holdingRepo.all()
+            .groupBy { it.code }
+            .mapValues { (_, rows) -> rows.firstOrNull { it.targetPrice != null || it.stopPrice != null } ?: rows.first() }
 
         // 종목 코멘트 적중률(서버 집계, 행동 로그와 무관)
         try { stanceStats = api.getStanceStats() } catch (_: Exception) {}

@@ -675,8 +675,13 @@ struct StatsView: View {
             if let n = e.name, resolved[e.code] == nil { resolved[e.code] = n }
         }
         nameMap = resolved
+        // G1 이후 holding은 계좌별 행이라 같은 code가 여러 개 — uniqueKeysWithValues는 중복 키에서
+        // 즉시 크래시한다(실기기 재현: 다계좌 + 같은 종목 → 내 패턴 탭 튕김). 규율 판정에는
+        // target/stop만 쓰므로 목표/손절이 설정된 계좌 행을 우선해 병합한다.
         let holdings = holdingRepo.all()
-        positionMap = Dictionary(uniqueKeysWithValues: holdings.map { ($0.code, $0) })
+        positionMap = Dictionary(holdings.map { ($0.code, $0) }, uniquingKeysWith: { a, b in
+            (a.targetPrice != nil || a.stopPrice != nil) ? a : b
+        })
         Task { await loadMissed() }
         Task {
             let ss = try? await api.getStanceStats()
