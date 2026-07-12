@@ -154,8 +154,10 @@ class MarketMoodService(
         internal fun accuracyFactsText(report: MoodAccuracyReport): String? {
             if (report.total < 15) return null
             val pct = kotlin.math.round(report.correct * 100.0 / report.total).toInt()
+            // 3분류(상승/하락/중립) 채점임을 병기 — 무작위 기준이 50%가 아니라 ~33%라서,
+            // 40%대 성적을 "동전 던지기 이하"로 오독해 과잉 자기비하하는 것을 막는다(감사 4탄 F5).
             return "방향 예측 자기 성적표(이 앱의 지표 가중합 예측을 코스피 실제 방향과 대조 채점한 기록):\n" +
-                "  누적 ${report.total}회 채점 중 ${report.correct}회 적중($pct%)"
+                "  누적 ${report.total}회 채점 중 ${report.correct}회 적중($pct%) — 상승/하락/중립 3분류 채점(무작위 기준 약 33%)"
         }
 
         // 방어적(기본): 사실 + 방향만. 매매 스탠스 의견 없음.
