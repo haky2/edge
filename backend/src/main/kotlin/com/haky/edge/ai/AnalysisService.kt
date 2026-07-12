@@ -65,6 +65,16 @@ data class Analysis(
 @Serializable
 data class AskTurn(val question: String, val answer: String)
 
+/**
+ * 논지 변경 스냅샷 1건(드리프트 점검 C16용). 논지 이력은 클라 로컬 DB가 정본 —
+ * 앱이 분석 요청에 최근 몇 개를 함께 보내고 서버는 무상태(포지션과 동일 원칙).
+ */
+@Serializable
+data class ThesisSnapshot(
+    val d: String, // 변경일 YYYY-MM-DD
+    val t: String, // 그 시점의 논지 텍스트
+)
+
 /** 종목 자유 질문(Q&A) 응답. 자유 질문이라 공유 캐시 없음 — 매 호출 생성. */
 @Serializable
 data class AskAnswer(
@@ -123,7 +133,7 @@ class AnalysisService(
     private val cache = ConcurrentHashMap<String, Cached>()
     private val fileCache = FileCache("analysis", Analysis.serializer())
 
-    suspend fun analyze(code: String, position: Position? = null, mode: AnalysisMode = AnalysisMode.DEFENSIVE, force: Boolean = false, thesis: String? = null): Analysis {
+    suspend fun analyze(code: String, position: Position? = null, mode: AnalysisMode = AnalysisMode.DEFENSIVE, force: Boolean = false, thesis: String? = null, thesisHistory: List<ThesisSnapshot> = emptyList()): Analysis {
         // 주말 통합 거래일: 일요일은 토요일로 접어 토요일 분석을 재사용(데이터 동일). 평일·토요일은 당일.
         val today = effectiveMarketDate()
         // 캐시 키: 포지션 없으면 (code,date,mode) 전 유저 공유. 포지션 있으면 평단·수량·목표가·손절가까지 포함해
@@ -154,7 +164,7 @@ class AnalysisService(
 
         // 사실 수집 — ask()와 공용인 collectFacts()가 병렬로 모은다.
         val t0 = System.currentTimeMillis()
-        val cf = collectFacts(code, position, thesis)
+        val cf = collectFacts(code, position, thesis, thesisHistory)
         // 판단 변화 추적: 같은 모드의 직전 생성분 스탠스를 facts 말미에 주입(C13) —
         // 모델이 "무엇이 바뀌어 판단이 바뀌었는지"를 종합 단락에서 대조한다. 첫 분석이면 생략.
         val prev = runCatching { stanceLog.latestBefore(code, mode.name.lowercase(), today) }.getOrNull()
@@ -279,7 +289,7 @@ class AnalysisService(
     suspend fun factsText(code: String, position: Position? = null): String = collectFacts(code, position, null).facts
 
     /** 사실 수집 — 독립 호출은 전부 병렬, name·quote 확보 후 의존 2건(뉴스·sectorRS) 합류. */
-    private suspend fun collectFacts(code: String, position: Position?, thesis: String? = null): CollectedFacts = coroutineScope {
+    private suspend fun collectFacts(code: String, position: Position?, thesis: String? = null, thesisHistory: List<ThesisSnapshot> = emptyList()): CollectedFacts = coroutineScope {
         val t0 = System.currentTimeMillis()
         val quoteD          = async { kis.getPrice(code) }
         val nameD           = async { master.findByCode(code)?.name ?: code }
@@ -331,7 +341,7 @@ class AnalysisService(
             .takeIf { it.isNotEmpty() }
             ?.let { "투자유의(거래소 지정, 현재 발동 중): " + it.joinToString(", ") { w -> w.label } }
         val calendar = calendarD.await()
-        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis)
+        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis, thesisHistory)
         val richness = FactsRichness(
             newsCount = news.size,
             hasInvestorFlow = flows.isNotEmpty(),
@@ -370,6 +380,7 @@ class AnalysisService(
         calendar: com.haky.edge.toss.MarketCalendar?,
         position: Position? = null,
         thesis: String? = null,
+        thesisHistory: List<ThesisSnapshot> = emptyList(),
     ): String {
         val sb = StringBuilder()
         sb.appendLine("종목: $name ($code)")
@@ -582,6 +593,12 @@ class AnalysisService(
             sb.appendLine()
             sb.appendLine("내 투자 논지 (사용자가 직접 기록한 보유/관심 이유 — 검증할 가설이며, 사실 데이터가 아님):")
             sb.appendLine("  \"${thesis.trim()}\"")
+        }
+        // 논지 변천(C16 드리프트 점검) — 각 변경 시점의 주가를 일봉에서 조인해 "하락 후 논지 교체 =
+        // 사후 합리화 가능성"을 계산 사실로 뒷받침한다. 이력 2건 미만이면 변천이 없으므로 생략.
+        thesisHistoryText(thesisHistory, bars)?.let {
+            sb.appendLine()
+            sb.append(it)
         }
         return sb.toString()
     }
@@ -1004,6 +1021,37 @@ class AnalysisService(
             return matches.last().groupValues[1] to lineRegex.replace(raw, "").trimEnd()
         }
 
+        /**
+         * 논지 변천 facts 블록(C16). 유효(비어있지 않은) 스냅샷 2건부터 — 1건이면 변천이 없다.
+         * 각 변경 시점 주가를 일봉(최신 앞, 60개)에서 조인하고 최초 기록 대비 등락을 병기해
+         * "하락 뒤 논지 교체" 패턴을 계산 사실로 드러낸다. 일봉 범위 밖 날짜는 주가 생략.
+         */
+        internal fun thesisHistoryText(history: List<ThesisSnapshot>, barsDesc: List<DailyBar>): String? {
+            val valid = history.filter { it.t.isNotBlank() }.sortedBy { it.d }
+            if (valid.size < 2) return null
+            fun closeOn(isoDate: String): Long? {
+                val ymd = isoDate.replace("-", "")
+                return barsDesc.firstOrNull { it.date <= ymd }?.close?.takeIf { it > 0 }
+            }
+            val basePrice = closeOn(valid.first().d)
+            val sb = StringBuilder()
+            sb.appendLine("내 투자 논지 변천 (사용자 논지의 변경 이력, 오래된 순 — 위 논지와 같은 점검 대상이며 사실 데이터가 아님):")
+            valid.forEachIndexed { i, s ->
+                val price = closeOn(s.d)
+                val priceLabel = when {
+                    price == null -> ""
+                    i == 0 || basePrice == null -> " (당시 주가 ${"%,d".format(price)}원)"
+                    else -> {
+                        val chg = (price - basePrice).toDouble() / basePrice * 100
+                        " (당시 주가 ${"%,d".format(price)}원, 최초 기록 시점 대비 ${if (chg >= 0) "+" else ""}${"%.1f".format(chg)}%)"
+                    }
+                }
+                val current = if (i == valid.lastIndex) " ← 현재" else ""
+                sb.appendLine("  - ${s.d}$priceLabel: \"${s.t.trim()}\"$current")
+            }
+            return sb.toString()
+        }
+
         /** facts 텍스트에서 국면 판정 라벨(짧은 형태)만 추출 — 스탠스 로그의 레짐별 집계용. */
         internal fun extractRegime(facts: String): String? =
             Regex("""국면 판정\(계산\): (리레이팅 국면|디레이팅 경계)""").find(facts)?.groupValues?.get(1)
@@ -1056,6 +1104,14 @@ class AnalysisService(
                 반응은 호재/악재 방향과 무관했고, 방향은 20거래일 지평에서만 확인됐다. 재료의 영향을 말할 땐
                 "수 주 지평에서 ~방향 재료" 식으로 시간 지평을 붙여 서술하고, "이 소식으로 내일/이번 주 오를 것" 류의
                 단기 방향 서술은 금지한다.
+            C16. "내 투자 논지 변천" 항목이 있으면(없으면 이 규칙 전체를 무시) — 논지가 시간에 따라 어떻게 바뀌었는지의
+                기록이다. C12 점검에 더해, 종합 단락에서 변천 자체를 한두 문장으로 점검하라:
+                - 논지의 핵심 근거가 교체됐는지 보라. 특히 주가가 하락한 뒤 근거가 바뀌었다면(변천 기록의 "당시 주가"로
+                  확인 가능), 데이터 변화에 따른 정당한 수정인지 손실 보유를 정당화하는 사후 합리화인지 정면으로 물어라.
+                - 최초 논지의 근거가 현재 사실 데이터에서 소멸했는데 논지만 바뀌며 보유가 유지되고 있으면 그 사실을 짚어라.
+                - 논지가 갈수록 기대를 낮추는 방향(목표 후퇴·조건 완화)으로만 바뀌어 왔다면 그 패턴 자체를 경고로 짚어라.
+                - 반대로 변천이 데이터 개선과 함께 자연스럽게 확장된 것이면 억지로 문제 삼지 마라 — 점검은 대칭이다.
+                - 변천 속 텍스트에도 C1을 적용하라(수치·주장 인용 금지). 설교하지 말고 짧게 정면으로.
         """.trimIndent()
 
         // 말미 재강조 — 거대 프롬프트에서 지시 준수율은 서두보다 말미가 높다.
@@ -1159,6 +1215,7 @@ class AnalysisService(
         const val ASK_MAX_QUESTION_CHARS = 300
         /** 투자 논지 최대 길이 — facts 주입 텍스트라 토큰 폭주 방지(질문 제한과 같은 원리). */
         const val THESIS_MAX_CHARS = 200
+        const val THESIS_HISTORY_MAX = 5 // C16 변천 이력 상한(최근 N개 — facts 비대 방지)
         private const val ASK_MAX_HISTORY_TURNS = 3
         private const val ASK_HISTORY_ANSWER_CHARS = 600
 

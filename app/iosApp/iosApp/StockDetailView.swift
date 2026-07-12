@@ -2590,6 +2590,8 @@ struct StockDetailView: View {
             analysis = nil
             commentExpanded = false
         }
+        // C16 논지 변천 — 로컬 이력(정본)에서 최근 5개. 2건 미만이면 EdgeApi가 전송 생략.
+        let history = Db.watchlist.thesisHistory(code: item.code, limit: 5)
         if let avgNum = item.avgPrice, let qtyNum = item.qty {
             analysis = try? await api.getAnalysisPersonalized(
                 code: item.code,
@@ -2599,14 +2601,16 @@ struct StockDetailView: View {
                 stopPrice: item.stopPrice?.doubleValue ?? 0.0,
                 mode: analysisMode.rawValue,
                 refresh: force,
-                thesis: item.thesis
+                thesis: item.thesis,
+                thesisHistory: history
             )
         } else {
             analysis = try? await api.getAnalysis(
                 code: item.code,
                 mode: analysisMode.rawValue,
                 refresh: force,
-                thesis: item.thesis
+                thesis: item.thesis,
+                thesisHistory: history
             )
         }
         analyzing = false

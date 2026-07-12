@@ -1,0 +1,8 @@
+-- v6 → v7: 논지 변경 이력 테이블(C16 드리프트 점검). 기존 데이터 영향 없음(신규 테이블).
+
+CREATE TABLE thesis_history (
+    id         INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    code       TEXT NOT NULL,
+    thesis     TEXT NOT NULL,
+    changed_on TEXT NOT NULL
+);

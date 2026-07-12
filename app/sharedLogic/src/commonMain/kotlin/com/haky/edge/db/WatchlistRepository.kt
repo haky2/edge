@@ -46,15 +46,39 @@ class WatchlistRepository(driverFactory: DriverFactory) {
     /**
      * 투자 논지 저장. 빈 문자열은 null(논지 없음). 관심목록에 행이 없으면(관심 해제 후
      * 보유만 남은 종목) 행을 만들어 저장한다 — 없는 행에 UPDATE만 하면 조용히 유실된다.
+     *
+     * C16 드리프트: 논지가 실제로 바뀌면 thesis_history에 스냅샷 append.
+     * 첫 변경 시 히스토리가 비어 있으면 기존 논지를 먼저 백필해 "이전→현재" 쌍을 보존한다
+     * (기존 사용자의 첫 논지는 기록 시점을 몰라 오늘 날짜로 접힘 — 순서는 id로 보존).
+     * 삭제(null)는 스냅샷이 아니다(텍스트 비교 불가 상태는 기록 가치 없음).
      */
     fun updateThesis(code: String, name: String, thesis: String?) {
         val t = thesis?.trim()?.ifBlank { null }
-        if (queries.existsByCode(code).executeAsOne() == 0L) {
+        val old = if (queries.existsByCode(code).executeAsOne() == 0L) {
             if (t == null) return
             queries.insert(code, name, queries.count().executeAsOne(), nowMillis())
+            null
+        } else {
+            queries.thesisByCode(code).executeAsOneOrNull()?.thesis
         }
         queries.updateThesis(t, code)
+        if (t != null && t != old) {
+            val history = db.thesisHistoryQueries
+            if (old != null && history.countByCode(code).executeAsOne() == 0L) {
+                history.insertSnapshot(code, old, todayIso())
+            }
+            history.insertSnapshot(code, t, todayIso())
+        }
     }
+
+    /**
+     * 논지 변경 이력(오래된 순, 최근 limit개). 분석 요청 시 thesisHistory 파라미터로 보낸다 —
+     * 2건 미만이면 변천이 없어 백엔드가 무시하므로 호출부에서 그대로 전달해도 된다.
+     */
+    fun thesisHistory(code: String, limit: Long = 5): List<com.haky.edge.model.ThesisSnapshot> =
+        db.thesisHistoryQueries.recentByCode(code, limit) { thesis, changedOn ->
+            com.haky.edge.model.ThesisSnapshot(d = changedOn, t = thesis)
+        }.executeAsList().reversed()
 
     /** 관심종목 삭제. */
     fun remove(code: String) = queries.deleteByCode(code)

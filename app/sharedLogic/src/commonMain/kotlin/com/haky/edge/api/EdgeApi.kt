@@ -218,11 +218,13 @@ class EdgeApi(
      * refresh=true: 캐시를 건너뛰고 즉시 재생성(수동 재생성 버튼 전용).
      */
     @Throws(Exception::class)
-    suspend fun getAnalysis(code: String, mode: String = "defensive", refresh: Boolean = false, thesis: String? = null): Analysis =
+    suspend fun getAnalysis(code: String, mode: String = "defensive", refresh: Boolean = false, thesis: String? = null, thesisHistory: List<com.haky.edge.model.ThesisSnapshot> = emptyList()): Analysis =
         client.get("$baseUrl/analysis/$code") {
             if (mode != "defensive") parameter("mode", mode)
             if (refresh) parameter("refresh", "true")
             if (!thesis.isNullOrBlank()) parameter("thesis", thesis)
+            // 변천 2건 미만이면 서버가 어차피 무시 — 전송 생략(URL 절약)
+            if (thesisHistory.size >= 2) parameter("thesisHistory", encodeThesisHistory(thesisHistory))
         }.body()
 
     /**
@@ -398,6 +400,7 @@ class EdgeApi(
         mode: String = "defensive",
         refresh: Boolean = false,
         thesis: String? = null,
+        thesisHistory: List<com.haky.edge.model.ThesisSnapshot> = emptyList(),
     ): Analysis = client.get("$baseUrl/analysis/$code") {
         parameter("avgPrice", avgPrice)
         parameter("qty", qty)
@@ -406,7 +409,13 @@ class EdgeApi(
         if (mode != "defensive") parameter("mode", mode)
         if (refresh) parameter("refresh", "true")
         if (!thesis.isNullOrBlank()) parameter("thesis", thesis)
+        if (thesisHistory.size >= 2) parameter("thesisHistory", encodeThesisHistory(thesisHistory))
     }.body()
+
+    /** 논지 변천 JSON 직렬화 — 라우트가 ThesisSnapshot 배열로 역직렬화한다. */
+    private fun encodeThesisHistory(history: List<com.haky.edge.model.ThesisSnapshot>): String =
+        kotlinx.serialization.json.Json.encodeToString(
+            kotlinx.serialization.builtins.ListSerializer(com.haky.edge.model.ThesisSnapshot.serializer()), history)
 
     /** 종목 공매도 거래량·잔고 요약. KRX 데이터, 당일 캐시. 데이터 없으면 null. */
     @Throws(Exception::class)

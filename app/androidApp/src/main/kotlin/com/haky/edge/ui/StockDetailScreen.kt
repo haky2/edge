@@ -160,15 +160,18 @@ fun StockDetailScreen(
             val avg = watchItem.avgPrice
             val qty = watchItem.qty
             val mode = AppPrefs.getMode(context)
+            // C16 논지 변천 — 로컬 이력(정본)에서 최근 5개. 2건 미만이면 EdgeApi가 전송 생략.
+            val history = watchlistRepo.thesisHistory(watchItem.code, 5)
             try {
                 analysis = if (avg != null && qty != null) {
                     api.getAnalysisPersonalized(
                         watchItem.code, avg, qty,
                         watchItem.targetPrice ?: 0.0, watchItem.stopPrice ?: 0.0,
                         mode = mode, refresh = force, thesis = watchItem.thesis,
+                        thesisHistory = history,
                     )
                 } else {
-                    api.getAnalysis(watchItem.code, mode = mode, refresh = force, thesis = watchItem.thesis)
+                    api.getAnalysis(watchItem.code, mode = mode, refresh = force, thesis = watchItem.thesis, thesisHistory = history)
                 }
             } catch (_: Exception) {}
             analyzing = false

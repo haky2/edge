@@ -37,6 +37,30 @@ fun Route.analysisRoutes(analysis: AnalysisService) {
             call.respond(HttpStatusCode.BadRequest, ErrorResponse("투자 논지는 ${AnalysisService.THESIS_MAX_CHARS}자 이내로 입력해 주세요"))
             return@get
         }
-        call.respond(analysis.analyze(code, position, mode, force = force, thesis = thesis))
+        // 논지 변천 이력(선택, C16 드리프트 점검) — JSON 배열 [{"d":"YYYY-MM-DD","t":"..."}].
+        // 이력의 정본은 클라 로컬 DB(서버 무상태 원칙). 형식 오류는 400으로 명시(조용한 스킵 금지).
+        val historyRaw = call.request.queryParameters["thesisHistory"]?.takeIf { it.isNotBlank() }
+        val thesisHistory = if (historyRaw == null) emptyList() else {
+            val parsed = runCatching {
+                kotlinx.serialization.json.Json.decodeFromString(
+                    kotlinx.serialization.builtins.ListSerializer(com.haky.edge.ai.ThesisSnapshot.serializer()), historyRaw)
+            }.getOrNull()
+            when {
+                parsed == null -> {
+                    call.respond(HttpStatusCode.BadRequest, ErrorResponse("thesisHistory 형식이 올바르지 않습니다(JSON 배열)"))
+                    return@get
+                }
+                parsed.size > AnalysisService.THESIS_HISTORY_MAX -> {
+                    call.respond(HttpStatusCode.BadRequest, ErrorResponse("논지 이력은 최근 ${AnalysisService.THESIS_HISTORY_MAX}개까지만 보낼 수 있습니다"))
+                    return@get
+                }
+                parsed.any { it.t.length > AnalysisService.THESIS_MAX_CHARS } -> {
+                    call.respond(HttpStatusCode.BadRequest, ErrorResponse("논지 이력 항목은 ${AnalysisService.THESIS_MAX_CHARS}자 이내여야 합니다"))
+                    return@get
+                }
+                else -> parsed
+            }
+        }
+        call.respond(analysis.analyze(code, position, mode, force = force, thesis = thesis, thesisHistory = thesisHistory))
     }
 }

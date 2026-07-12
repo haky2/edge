@@ -12,3 +12,9 @@ actual class DriverFactory {
 
 actual fun nowMillis(): Long =
     (NSDate().timeIntervalSince1970 * 1000).toLong()
+
+actual fun todayIso(): String {
+    val fmt = platform.Foundation.NSDateFormatter()
+    fmt.dateFormat = "yyyy-MM-dd"
+    return fmt.stringFromDate(NSDate())
+}

@@ -10,3 +10,5 @@ actual class DriverFactory(private val context: Context) {
 }
 
 actual fun nowMillis(): Long = System.currentTimeMillis()
+
+actual fun todayIso(): String = java.time.LocalDate.now().toString()

@@ -16,6 +16,16 @@ data class FactsRichness(
 )
 
 /**
+ * 논지 변경 스냅샷 1건(C16 드리프트 점검). 정본은 로컬 thesis_history 테이블 —
+ * 분석 요청 시 최근 몇 개를 JSON으로 백엔드에 보낸다(서버 무상태).
+ */
+@Serializable
+data class ThesisSnapshot(
+    val d: String, // 변경일 YYYY-MM-DD
+    val t: String, // 그 시점의 논지 텍스트
+)
+
+/**
  * 종목 종합 코멘트(백엔드 `GET /analysis/{code}` 응답).
  * 사실(시세·52주·PER·수급·뉴스)을 백엔드가 모아 Claude가 해석한 결과. 참고용 — 매매 판단·책임은 사용자.
  */

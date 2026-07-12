@@ -14,3 +14,6 @@ expect class DriverFactory {
 
 /** epoch millis. added_at/created_at 기록용 — 플랫폼 시계로 채운다. */
 expect fun nowMillis(): Long
+
+/** 로컬 날짜 YYYY-MM-DD. thesis_history.changed_on 기록용(서버 전송 형식 그대로). */
+expect fun todayIso(): String

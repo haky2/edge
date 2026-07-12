@@ -39,5 +39,8 @@ UPDATE watchlist SET name = ? WHERE code = ?;
 updateThesis:
 UPDATE watchlist SET thesis = ? WHERE code = ?;
 
+thesisByCode:
+SELECT thesis FROM watchlist WHERE code = ?;
+
 deleteByCode:
 DELETE FROM watchlist WHERE code = ?;

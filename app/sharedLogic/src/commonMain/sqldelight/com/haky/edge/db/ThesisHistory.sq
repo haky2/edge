@@ -1,0 +1,18 @@
+-- 논지 변경 이력(C16 드리프트 점검). 논지가 실제로 바뀔 때만 스냅샷을 append한다.
+-- 정본은 이 테이블 — 서버는 무상태(분석 요청에 최근 몇 개를 함께 보낸다).
+-- 빈 논지(삭제)는 스냅샷이 아니다(백엔드 계약과 동일 — 텍스트 비교가 불가한 상태는 기록 가치 없음).
+CREATE TABLE thesis_history (
+    id         INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    code       TEXT NOT NULL,
+    thesis     TEXT NOT NULL,
+    changed_on TEXT NOT NULL     -- YYYY-MM-DD(로컬 날짜) — 서버 전송 형식 그대로 저장
+);
+
+insertSnapshot:
+INSERT INTO thesis_history(code, thesis, changed_on) VALUES (?, ?, ?);
+
+recentByCode:
+SELECT thesis, changed_on FROM thesis_history WHERE code = ? ORDER BY id DESC LIMIT ?;
+
+countByCode:
+SELECT count(*) FROM thesis_history WHERE code = ?;
