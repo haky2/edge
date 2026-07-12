@@ -70,6 +70,7 @@ import com.haky.edge.routes.valuationBandRoutes
 import com.haky.edge.routes.warningsRoutes
 import com.haky.edge.routes.webSearchTestRoutes
 import com.haky.edge.routes.sensitivityValidationRoutes
+import com.haky.edge.routes.anchorValidationRoutes
 import com.haky.edge.routes.catalystValidationRoutes
 import com.haky.edge.routes.morningBriefRoutes
 import com.haky.edge.routes.weeklyReviewRoutes
@@ -271,6 +272,8 @@ fun Application.module() {
         dailyHistory, ecosApiKey = System.getenv("ECOS_API_KEY").orEmpty())
     // ②-1 catalyst 판정 실증 — LLM 판정(호재/악재·강도·선반영) × 사후 초과수익률(vs 코스피) 채점.
     val catalystValidation = com.haky.edge.ai.CatalystValidationService(catalystEventLog, dailyHistory, kis, master)
+    // ②-3 기술적 앵커 실증 — 20일 저점/고점·MA20/60 레벨의 지지/저항 신호를 대조군 대비 채점.
+    val anchorValidation = com.haky.edge.ai.AnchorValidationService(dailyHistory, master, signalCodes)
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     // B 주간 회고 — 토요일 아침, 한 주 서버 기록(방향예측·스탠스·목표가·주간 등락) 회고 → #아침브리핑.
     val weeklyReview = com.haky.edge.slack.WeeklyReviewService(
@@ -344,6 +347,7 @@ fun Application.module() {
             webSearchTestRoutes(claude)
             sensitivityValidationRoutes(sensitivityValidation)
             catalystValidationRoutes(catalystValidation)
+            anchorValidationRoutes(anchorValidation)
             prewarmRoutes(kis, dart)
             slackTestRoutes(slack, opsChannel)
             morningBriefRoutes(morningBrief)
