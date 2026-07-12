@@ -132,6 +132,8 @@ class AnalysisService(
     private data class Cached(val analysis: Analysis)
     private val cache = ConcurrentHashMap<String, Cached>()
     private val fileCache = FileCache("analysis", Analysis.serializer())
+    // 시장 맥락(코스피 확정 종가) — 하루 1회 조회 공유(프리웜 11종목에도 코스피 1콜). C17 재료.
+    private val kospiCtxCache = com.haky.edge.util.DayScopedCache<String>()
 
     suspend fun analyze(code: String, position: Position? = null, mode: AnalysisMode = AnalysisMode.DEFENSIVE, force: Boolean = false, thesis: String? = null, thesisHistory: List<ThesisSnapshot> = emptyList()): Analysis {
         // 주말 통합 거래일: 일요일은 토요일로 접어 토요일 분석을 재사용(데이터 동일). 평일·토요일은 당일.
@@ -308,6 +310,8 @@ class AnalysisService(
         val sharesD         = async { runCatching { kis.getListedShares(code) }.getOrNull() }
         val warningsD       = async { runCatching { toss.getActiveWarnings(code) }.getOrElse { emptyList() } }
         val calendarD       = async { runCatching { toss.getMarketCalendar() }.getOrNull() }
+        // 시장 맥락(C17) — 코스피 확정 종가 기준 전일 등락+5거래일 누적. 실패 시 null(라인 생략).
+        val marketCtxD      = async { runCatching { marketContextText() }.getOrNull() }
 
         // sectorChangeRate=quote.sectorName 필요, 뉴스=name 필요 → 두 await 후 병렬 합류
         val quote = quoteD.await()
@@ -341,7 +345,8 @@ class AnalysisService(
             .takeIf { it.isNotEmpty() }
             ?.let { "투자유의(거래소 지정, 현재 발동 중): " + it.joinToString(", ") { w -> w.label } }
         val calendar = calendarD.await()
-        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis, thesisHistory)
+        val marketCtx = marketCtxD.await()
+        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis, thesisHistory, marketCtx)
         val richness = FactsRichness(
             newsCount = news.size,
             hasInvestorFlow = flows.isNotEmpty(),
@@ -381,6 +386,7 @@ class AnalysisService(
         position: Position? = null,
         thesis: String? = null,
         thesisHistory: List<ThesisSnapshot> = emptyList(),
+        marketContext: String? = null,
     ): String {
         val sb = StringBuilder()
         sb.appendLine("종목: $name ($code)")
@@ -417,6 +423,10 @@ class AnalysisService(
         regime?.let {
             sb.appendLine("국면 판정(계산): ${it.label} — 근거: ${it.signals.joinToString("; ")}")
         }
+        // 시장 맥락(C17) — 종목 등락이 시장 동반인지 고유 움직임인지 가릴 사실 근거.
+        // 2026-07 주간 코스피 -7.6% 급락 때 종목 분석들이 시장 동반 조정을 종목 고유 서사로
+        // 기술한 실사례가 계기(docs/regime-consistency-2026-07.md 갭 1).
+        marketContext?.let { sb.appendLine(it) }
         if (sectorChangeRate != null) {
             val rs = q.changeRate - sectorChangeRate
             val label = when {
@@ -660,6 +670,32 @@ class AnalysisService(
         if (moves.isNotEmpty()) sb.appendLine("  " + moves.joinToString(", "))
         return sb.toString()
     }
+
+    /**
+     * 시장 맥락(C17) — 코스피(0001) 확정 종가 기준 전일 등락 + 최근 5거래일 누적.
+     * 장중값 대신 확정치만 쓰는 이유: 장중값은 조회 시점 의존이라 당일 캐시된 분석과 어긋난다.
+     * DayScopedCache로 하루 1회만 조회. 실패·데이터 부족 시 null(라인 생략).
+     */
+    private suspend fun marketContextText(): String? {
+        val today = effectiveMarketDate()
+        kospiCtxCache.get(today, "kospi")?.let { return it.ifBlank { null } }
+        val fmt = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd")
+        val now = LocalDate.now(ZoneId.of("Asia/Seoul"))
+        val points = runCatching {
+            kis.getSectorIndexChartRange("0001", now.minusDays(20).format(fmt), now.format(fmt))
+        }.getOrElse { emptyList() }.sortedBy { it.date }
+        // 오늘 봉은 장중 미확정일 수 있어 제외 조건이 복잡하다 — 마지막 6개 확정치로 단순화하되
+        // 라벨에 "확정 종가 기준"을 명시해 시점 오해를 막는다.
+        if (points.size < 6) { kospiCtxCache.put(today, "kospi", ""); return null }
+        val last6 = points.takeLast(6)
+        val dayChg = (last6[5].close / last6[4].close - 1) * 100
+        val cum5 = (last6[5].close / last6[0].close - 1) * 100
+        val text = "시장 맥락(코스피, 확정 종가 기준): 직전 거래일 ${fmtSigned(dayChg)}%, 최근 5거래일 누적 ${fmtSigned(cum5)}%"
+        kospiCtxCache.put(today, "kospi", text)
+        return text
+    }
+
+    private fun fmtSigned(v: Double): String = (if (v >= 0) "+%.2f" else "%.2f").format(v)
 
     /**
      * 기술적 앵커(일봉 계산, 최신일이 앞) — 매매 레벨 제시의 사실 근거.
@@ -1112,6 +1148,11 @@ class AnalysisService(
                 - 논지가 갈수록 기대를 낮추는 방향(목표 후퇴·조건 완화)으로만 바뀌어 왔다면 그 패턴 자체를 경고로 짚어라.
                 - 반대로 변천이 데이터 개선과 함께 자연스럽게 확장된 것이면 억지로 문제 삼지 마라 — 점검은 대칭이다.
                 - 변천 속 텍스트에도 C1을 적용하라(수치·주장 인용 금지). 설교하지 말고 짧게 정면으로.
+            C17. "시장 맥락" 항목이 있으면(없으면 이 규칙 전체를 무시) — 이 종목의 최근 등락이 시장 전체와 같은 방향으로
+                움직인 것인지, 종목 고유의 움직임인지 구분해서 서술하라. 시장이 함께 크게 빠진 기간의 하락을 종목 고유
+                악재처럼 쓰지 말고, 시장 랠리에 편승한 상승을 종목 고유 재료의 힘처럼 쓰지 마라 — 어느 쪽인지는 시장
+                맥락·섹터 상대강도의 수치로 가려라. 국면 판정이나 재료 해석이 시장 맥락과 상충해 보이면(예: 리레이팅
+                판정인데 시장 급락 동반 하락) 무시하지 말고 어느 설명이 데이터에 더 맞는지 명시적으로 저울질하라.
         """.trimIndent()
 
         // 말미 재강조 — 거대 프롬프트에서 지시 준수율은 서두보다 말미가 높다.
