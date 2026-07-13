@@ -14,7 +14,7 @@ class HoldingRepository(driverFactory: DriverFactory) {
      */
     fun defaultAccountId(): Long =
         db.accountQueries.defaultId().executeAsOneOrNull() ?: run {
-            db.accountQueries.insert("기본", 0L, 1L)
+            db.accountQueries.insert("기본", 0L, 1L, AccountRepository.HORIZON_FREE)
             db.accountQueries.defaultId().executeAsOne()
         }
 

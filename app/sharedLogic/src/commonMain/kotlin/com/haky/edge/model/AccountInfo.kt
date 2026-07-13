@@ -5,4 +5,5 @@ data class AccountInfo(
     val name: String,
     val sortOrder: Long,
     val isDefault: Long,
+    val horizon: String,  // 'long'=장기, 'free'=자유
 )

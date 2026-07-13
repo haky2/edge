@@ -1,0 +1,7 @@
+-- v7 → v8: account에 horizon(계좌 성격) 컬럼 추가. 'long'=장기, 'free'=자유.
+-- 기존 행은 free로 시작하되, 프리셋 이름과 정확히 일치하는 계좌만 장기로 백필
+-- (프리셋으로 만든 계좌의 기본값 소급 — 임의 커스텀 이름 추론은 하지 않는다).
+
+ALTER TABLE account ADD COLUMN horizon TEXT NOT NULL DEFAULT 'free';
+
+UPDATE account SET horizon = 'long' WHERE name IN ('ISA', 'IRP개인연금', '퇴직연금');

@@ -85,8 +85,14 @@ fun AccountManagementSheet(
                     ) {
                         ACCOUNT_PRESETS.forEach { preset ->
                             SuggestionChip(
-                                onClick = { addAccount(preset, accountRepo, holdingRepo, ::reload) { state -> migrationDialog = state; showAddSection = false } },
-                                label = { Text(preset, style = MaterialTheme.typography.bodySmall) },
+                                onClick = {
+                                    // 프리셋만 장기 기본값 매핑(sharedLogic 공유 규칙) — 커스텀 이름은 추론 안 함
+                                    addAccount(preset, AccountRepository.presetHorizon(preset), accountRepo, holdingRepo, ::reload) { state -> migrationDialog = state; showAddSection = false }
+                                },
+                                label = {
+                                    val isLong = AccountRepository.presetHorizon(preset) == AccountRepository.HORIZON_LONG
+                                    Text(if (isLong) "$preset·장기" else preset, style = MaterialTheme.typography.bodySmall)
+                                },
                             )
                         }
                     }
@@ -102,7 +108,7 @@ fun AccountManagementSheet(
                         TextButton(
                             onClick = {
                                 if (customName.isNotBlank()) {
-                                    addAccount(customName.trim(), accountRepo, holdingRepo, ::reload) { state -> migrationDialog = state; showAddSection = false }
+                                    addAccount(customName.trim(), AccountRepository.HORIZON_FREE, accountRepo, holdingRepo, ::reload) { state -> migrationDialog = state; showAddSection = false }
                                     customName = ""
                                 }
                             },
@@ -114,7 +120,8 @@ fun AccountManagementSheet(
             }
 
             Text(
-                "기본 계좌는 삭제할 수 없으며, 삭제 시 보유 종목은 기본 계좌로 이전됩니다.",
+                "기본 계좌는 삭제할 수 없으며, 삭제 시 보유 종목은 기본 계좌로 이전됩니다.\n" +
+                    "장기 계좌는 AI 코멘트가 단기 매매 대신 장기 관점 중심으로 해석합니다. 배지를 탭해 변경할 수 있습니다.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -126,8 +133,22 @@ fun AccountManagementSheet(
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(account.name, modifier = Modifier.weight(1f))
+                        // 장기/자유 스위치 — 슬라이스 C에서 AI 코멘트가 이 속성을 읽는다
+                        val isLong = account.horizon == AccountRepository.HORIZON_LONG
+                        FilterChip(
+                            selected = isLong,
+                            onClick = {
+                                accountRepo.updateHorizon(
+                                    account.id,
+                                    if (isLong) AccountRepository.HORIZON_FREE else AccountRepository.HORIZON_LONG,
+                                )
+                                reload()
+                            },
+                            label = { Text(if (isLong) "장기" else "자유", style = MaterialTheme.typography.labelSmall) },
+                        )
                         if (account.isDefault == 1L) {
                             FilterChip(
                                 selected = false, onClick = {},
@@ -169,13 +190,14 @@ private data class MigrationDialogState(val accountId: Long, val accountName: St
 
 private fun addAccount(
     name: String,
+    horizon: String,
     accountRepo: AccountRepository,
     holdingRepo: HoldingRepository,
     reload: () -> Unit,
     showMigration: (MigrationDialogState) -> Unit,
 ) {
     val wasFirstCustom = accountRepo.countCustom() == 0L
-    val newAccount = accountRepo.insertAndGet(name)
+    val newAccount = accountRepo.insertAndGet(name, horizon)
     reload()
     if (wasFirstCustom) {
         val count = accountRepo.countInDefault()
