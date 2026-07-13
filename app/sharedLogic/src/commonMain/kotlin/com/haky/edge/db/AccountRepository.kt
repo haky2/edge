@@ -47,6 +47,17 @@ class AccountRepository(driverFactory: DriverFactory) {
     fun updateHorizon(id: Long, horizon: String) = q.updateHorizon(horizon, id)
 
     /**
+     * 계좌 집합의 유효 성격 — 전부 장기면 long, 하나라도 자유면 free(혼합 판정, 2026-07-13 결정).
+     * 상세 전체(병합) 컨텍스트·포폴 전체 탭에서 "이 보유들이 다 장기 계좌인가"를 가릴 때 쓴다.
+     * 빈 집합(보유 없음)은 free — horizon 미전송(기존 코멘트 동작).
+     */
+    fun effectiveHorizon(accountIds: List<Long>): String {
+        if (accountIds.isEmpty()) return HORIZON_FREE
+        val byId = all().associate { it.id to it.horizon }
+        return if (accountIds.all { byId[it] == HORIZON_LONG }) HORIZON_LONG else HORIZON_FREE
+    }
+
+    /**
      * 계좌를 삭제한다. 삭제 전 해당 계좌의 보유를 기본 계좌로 이전한다(같은 종목은 병합).
      * 기본 계좌(is_default=1)는 삭제하지 않는다.
      */

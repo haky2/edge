@@ -401,6 +401,7 @@ class EdgeApi(
         refresh: Boolean = false,
         thesis: String? = null,
         thesisHistory: List<com.haky.edge.model.ThesisSnapshot> = emptyList(),
+        horizon: String? = null,
     ): Analysis = client.get("$baseUrl/analysis/$code") {
         parameter("avgPrice", avgPrice)
         parameter("qty", qty)
@@ -410,6 +411,8 @@ class EdgeApi(
         if (refresh) parameter("refresh", "true")
         if (!thesis.isNullOrBlank()) parameter("thesis", thesis)
         if (thesisHistory.size >= 2) parameter("thesisHistory", encodeThesisHistory(thesisHistory))
+        // 계좌 성격 — "long"(장기 계좌 컨텍스트)만 전송(자유는 기존 동작·공유 캐시 유지)
+        if (horizon == "long") parameter("horizon", horizon)
     }.body()
 
     /** 논지 변천 JSON 직렬화 — 라우트가 ThesisSnapshot 배열로 역직렬화한다. */
@@ -578,6 +581,7 @@ class EdgeApi(
         mode: String = "defensive",
         refresh: Boolean = false,
         accountScope: Boolean = false,
+        horizon: String? = null,
     ): PortfolioReview {
         val entries = positions.map { (code, pos) ->
             ReviewPositionEntry(code, pos.first, pos.second, theses[code]?.trim()?.ifBlank { null })
@@ -587,6 +591,8 @@ class EdgeApi(
             setBody(PortfolioReviewRequest(
                 entries, mode.takeIf { it != "defensive" }, refresh,
                 scope = if (accountScope) "account" else null,
+                // 장기 계좌 컨텍스트만 전송(자유는 기존 동작·캐시 키 불변)
+                horizon = horizon.takeIf { it == "long" },
             ))
         }.body()
     }

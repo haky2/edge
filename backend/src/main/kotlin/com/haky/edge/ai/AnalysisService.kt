@@ -135,14 +135,18 @@ class AnalysisService(
     // 시장 맥락(코스피 확정 종가) — 하루 1회 조회 공유(프리웜 11종목에도 코스피 1콜). C17 재료.
     private val kospiCtxCache = com.haky.edge.util.DayScopedCache<String>()
 
-    suspend fun analyze(code: String, position: Position? = null, mode: AnalysisMode = AnalysisMode.DEFENSIVE, force: Boolean = false, thesis: String? = null, thesisHistory: List<ThesisSnapshot> = emptyList()): Analysis {
+    suspend fun analyze(code: String, position: Position? = null, mode: AnalysisMode = AnalysisMode.DEFENSIVE, force: Boolean = false, thesis: String? = null, thesisHistory: List<ThesisSnapshot> = emptyList(), horizon: String? = null): Analysis {
         // 주말 통합 거래일: 일요일은 토요일로 접어 토요일 분석을 재사용(데이터 동일). 평일·토요일은 당일.
         val today = effectiveMarketDate()
+        // 계좌 성격: "long"(장기 계좌 컨텍스트)만 의미 있음 — 자유(free)는 기존 동작이라 null 정규화
+        // (캐시 키·facts·프롬프트 전부 불변, 구버전 앱 호환).
+        val horizonLong = horizon == HORIZON_LONG
         // 캐시 키: 포지션 없으면 (code,date,mode) 전 유저 공유. 포지션 있으면 평단·수량·목표가·손절가까지 포함해
         // 사용자별 분리 — 공격 모드의 평단 기반 매매 판단이 다른 사용자에게 새지 않게.
         // 목표가·손절가도 키에 포함: facts에 반영되는데 캐시 적중으로 옛 코멘트가 나오는 불일치 방지.
         // 논지도 동일 원리 — facts에 들어가므로 키에 해시로 포함(없으면 기존 공유 키 불변).
-        val key = buildKey(code, today, mode, position, thesis)
+        // 계좌 성격(장기)도 동일 원리 — 장기 관점 코멘트와 기존 코멘트가 캐시에서 섞이면 안 된다.
+        val key = buildKey(code, today, mode, position, thesis, horizonLong)
         var isRefresh = false
         if (force) {
             // 수동 새로고침 연타 가드: 마지막 생성 후 FORCE_COOLDOWN_MINUTES 안이면 캐시 반환.
@@ -166,7 +170,7 @@ class AnalysisService(
 
         // 사실 수집 — ask()와 공용인 collectFacts()가 병렬로 모은다.
         val t0 = System.currentTimeMillis()
-        val cf = collectFacts(code, position, thesis, thesisHistory)
+        val cf = collectFacts(code, position, thesis, thesisHistory, horizonLong)
         // 판단 변화 추적: 같은 모드의 직전 생성분 스탠스를 facts 말미에 주입(C13) —
         // 모델이 "무엇이 바뀌어 판단이 바뀌었는지"를 종합 단락에서 대조한다. 첫 분석이면 생략.
         val prev = runCatching { stanceLog.latestBefore(code, mode.name.lowercase(), today) }.getOrNull()
@@ -227,8 +231,8 @@ class AnalysisService(
         // F6: 생성분만 스탠스 기록(캐시 적중은 위에서 이미 반환됨 — 중복 없음). "미상"도 기록(채점 제외용).
         // summary 병기 — 다음 분석의 "직전 판단 대비" 대조 재료.
         stanceLog.append(StanceEntry(code, today, mode.name.lowercase(), stance, cf.quote.price.toDouble(), now, extractRegime(facts), summary))
-        // S4: 공개 분석(포지션·논지 없음)만 #ai코멘트 채널 아카이브. 포지션·논지 포함은 개인정보라 skip.
-        if (position == null && thesis.isNullOrBlank() && aiCommentChannel.isNotBlank() && notifyScope != null) {
+        // S4: 공개 분석(포지션·논지·계좌 성격 없음)만 #ai코멘트 채널 아카이브. 개인 컨텍스트 포함은 skip.
+        if (position == null && thesis.isNullOrBlank() && !horizonLong && aiCommentChannel.isNotBlank() && notifyScope != null) {
             notifyScope.launch { slack.postMessage(aiCommentChannel, formatAiCommentMessage(analysis, mode, isRefresh)) }
         }
         return analysis
@@ -291,7 +295,7 @@ class AnalysisService(
     suspend fun factsText(code: String, position: Position? = null): String = collectFacts(code, position, null).facts
 
     /** 사실 수집 — 독립 호출은 전부 병렬, name·quote 확보 후 의존 2건(뉴스·sectorRS) 합류. */
-    private suspend fun collectFacts(code: String, position: Position?, thesis: String? = null, thesisHistory: List<ThesisSnapshot> = emptyList()): CollectedFacts = coroutineScope {
+    private suspend fun collectFacts(code: String, position: Position?, thesis: String? = null, thesisHistory: List<ThesisSnapshot> = emptyList(), horizonLong: Boolean = false): CollectedFacts = coroutineScope {
         val t0 = System.currentTimeMillis()
         val quoteD          = async { kis.getPrice(code) }
         val nameD           = async { master.findByCode(code)?.name ?: code }
@@ -346,7 +350,7 @@ class AnalysisService(
             ?.let { "투자유의(거래소 지정, 현재 발동 중): " + it.joinToString(", ") { w -> w.label } }
         val calendar = calendarD.await()
         val marketCtx = marketCtxD.await()
-        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis, thesisHistory, marketCtx)
+        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis, thesisHistory, marketCtx, horizonLong)
         val richness = FactsRichness(
             newsCount = news.size,
             hasInvestorFlow = flows.isNotEmpty(),
@@ -387,6 +391,7 @@ class AnalysisService(
         thesis: String? = null,
         thesisHistory: List<ThesisSnapshot> = emptyList(),
         marketContext: String? = null,
+        horizonLong: Boolean = false,
     ): String {
         val sb = StringBuilder()
         sb.appendLine("종목: $name ($code)")
@@ -567,6 +572,13 @@ class AnalysisService(
         }
         // 임박 거시 이벤트(향후 2주) — 이 종목·업종 변동성에 영향 줄 예정 일정.
         if (eventsText != null) sb.appendLine().append(eventsText)
+
+        // 계좌 성격(장기 계좌 컨텍스트) — C18이 이 라벨("계좌 성격: 장기")에 걸려 단기 매매 지시를
+        // 장기 관점으로 전환한다. 자유 계좌·구버전 앱은 이 줄이 없어 기존 코멘트 그대로.
+        if (horizonLong) {
+            sb.appendLine()
+            sb.appendLine("계좌 성격: 장기 — 이 보유는 ISA·IRP·퇴직연금 등 장기 투자 계좌의 포지션이다(사용자가 장기 관점으로 관리).")
+        }
 
         if (position != null) {
             val currentPrice = q.price.toDouble()
@@ -1013,11 +1025,13 @@ class AnalysisService(
         }
 
         /** 캐시 키 빌더. 포지션 없으면 전 유저 공유, 있으면 사용자별 분리. */
-        internal fun buildKey(code: String, today: String, mode: AnalysisMode, position: Position?, thesis: String? = null): String {
+        internal fun buildKey(code: String, today: String, mode: AnalysisMode, position: Position?, thesis: String? = null, horizonLong: Boolean = false): String {
             val base = if (position == null) "$code:$today:${mode.name}"
             else "$code:$today:${mode.name}:${position.avgPrice.toLong()}:${position.qty}:${position.targetPrice.toLong()}:${position.stopPrice.toLong()}"
             // 논지는 자유 텍스트라 SHA-256 앞 16자로 접는다(32비트 hashCode 충돌 방지 — S11).
-            return if (thesis.isNullOrBlank()) base else "$base:t${shortHash(thesis.trim())}"
+            val withThesis = if (thesis.isNullOrBlank()) base else "$base:t${shortHash(thesis.trim())}"
+            // 장기 계좌 컨텍스트는 코멘트 성격이 달라 캐시 분리(자유는 접미사 없음 = 기존 키 불변).
+            return if (horizonLong) "$withThesis:hL" else withThesis
         }
 
         /** SHA-256 hex 앞 16자 — 자유 텍스트 캐시 키 용도. 32비트 hashCode 충돌 방지(S11). */
@@ -1153,6 +1167,17 @@ class AnalysisService(
                 악재처럼 쓰지 말고, 시장 랠리에 편승한 상승을 종목 고유 재료의 힘처럼 쓰지 마라 — 어느 쪽인지는 시장
                 맥락·섹터 상대강도의 수치로 가려라. 국면 판정이나 재료 해석이 시장 맥락과 상충해 보이면(예: 리레이팅
                 판정인데 시장 급락 동반 하락) 무시하지 말고 어느 설명이 데이터에 더 맞는지 명시적으로 저울질하라.
+            C18. "계좌 성격: 장기" 항목이 있으면(없으면 이 규칙 전체를 무시) — 이 보유는 연금·세제혜택 등 장기 투자
+                계좌의 포지션이다. 해석의 시간 지평을 수년 단위로 맞춰라:
+                - "오늘/이번 주 사라·팔라·차익 실현하라" 같은 단기 타이밍 제안과 단기 매매 레벨 제시를 하지 마라.
+                  공격 모드여도 단호함은 유지하되 액션의 지평을 바꿔라 — 진입·손절 레벨 대신 "비중이 과도한가,
+                  추가 적립을 지속할 만한가, 보유를 유지할 근거가 살아 있는가" 같은 리밸런싱·적립 관점으로 제시하라.
+                - 종합 판단의 무게중심은 실적 추세·논지 유효성·밸류 수준이 수년 지평에서 여전히 성립하는지에 둬라.
+                  오늘의 등락·단기 수급·단기 재료는 장기 판단을 흔드는 변화인지 여부로만 다뤄라 — 시장 동반 여부는
+                  "시장 맥락" 항목의 수치로 가려서 "오늘은 어떤 느낌의 하루인지"를 장기 위치 안에서 설명하는 톤으로.
+                  규칙 번호(C17 등)는 내부 지시일 뿐이니 코멘트 본문에 절대 쓰지 마라.
+                - 단, 구조적 악화(실적 추세 꺾임·논지 근거 소멸·거래소 리스크 지정)는 장기 계좌라는 이유로 눙치지
+                  마라 — 장기 보유일수록 구조 악화는 더 정면으로 짚어라.
         """.trimIndent()
 
         // 말미 재강조 — 거대 프롬프트에서 지시 준수율은 서두보다 말미가 높다.
@@ -1254,6 +1279,8 @@ class AnalysisService(
         // 원칙은 동일(사실 한정·통계 한정·시장상태 표현)하되, "질문에 정면으로·짧게"가 형식의 전부.
 
         const val ASK_MAX_QUESTION_CHARS = 300
+        /** 계좌 성격 파라미터 값 — 앱 account.horizon과 동일 문자열. "long"만 의미 있음(free=미전송=기존 동작). */
+        const val HORIZON_LONG = "long"
         /** 투자 논지 최대 길이 — facts 주입 텍스트라 토큰 폭주 방지(질문 제한과 같은 원리). */
         const val THESIS_MAX_CHARS = 200
         const val THESIS_HISTORY_MAX = 5 // C16 변천 이력 상한(최근 N개 — facts 비대 방지)

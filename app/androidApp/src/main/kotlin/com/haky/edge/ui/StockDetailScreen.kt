@@ -161,6 +161,15 @@ fun StockDetailScreen(
     }
 
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    // 현재 컨텍스트의 계좌 성격 — 특정 계좌면 그 계좌, 전체면 보유 계좌 전부 장기일 때만 "long"
+    // (혼합 판정: 하나라도 자유면 자유). DB에서 직접 읽어 상태 로드 순서와 무관하게 정확.
+    fun contextHorizon(): String? {
+        val ids = accountContext?.let { listOf(it) }
+            ?: holdingRepo.byCode(watchItem.code).map { it.accountId }
+        return accountRepo.effectiveHorizon(ids).takeIf { it == AccountRepository.HORIZON_LONG }
+    }
+
     fun loadAnalysis(force: Boolean) {
         scope.launch {
             analyzing = true
@@ -176,7 +185,7 @@ fun StockDetailScreen(
                         watchItem.code, avg, qty,
                         watchItem.targetPrice ?: 0.0, watchItem.stopPrice ?: 0.0,
                         mode = mode, refresh = force, thesis = watchItem.thesis,
-                        thesisHistory = history,
+                        thesisHistory = history, horizon = contextHorizon(),
                     )
                 } else {
                     api.getAnalysis(watchItem.code, mode = mode, refresh = force, thesis = watchItem.thesis, thesisHistory = history)

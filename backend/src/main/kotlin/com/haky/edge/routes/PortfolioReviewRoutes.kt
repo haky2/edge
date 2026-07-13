@@ -34,6 +34,8 @@ data class PortfolioReviewRequest(
     // 부분 범위 요청은 스냅샷을 갱신하지 않는다(부분 집합이 덮어쓰면 드리프트·쏠림 신호가 오염됨).
     // 구버전 앱은 필드 미전송 → null = 전체(기존 동작 불변).
     val scope: String? = null,
+    // "long" = 장기 계좌 컨텍스트(P9 장기 리밸런싱 관점 + 캐시 분리). 그 외 값·미전송 = 기존 동작.
+    val horizon: String? = null,
 )
 
 fun Route.portfolioReviewRoutes(service: PortfolioReviewService, rebalance: RebalanceService? = null) {
@@ -86,7 +88,8 @@ fun Route.portfolioReviewRoutes(service: PortfolioReviewService, rebalance: Reba
             code to t
         }.toMap()
         val mode = AnalysisMode.from(req.mode)
-        call.respond(service.review(positions, mode, req.refresh, theses))
+        val horizon = req.horizon?.takeIf { it == AnalysisService.HORIZON_LONG }
+        call.respond(service.review(positions, mode, req.refresh, theses, horizon))
         // 계좌 범위(scope=account) 요청은 스냅샷 미갱신 — R1 스냅샷은 전체 포트폴리오만.
         if (req.scope != "account") {
             rebalance?.let { r ->

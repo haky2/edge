@@ -75,10 +75,13 @@ class PortfolioReviewService(
         mode: AnalysisMode = AnalysisMode.DEFENSIVE,
         force: Boolean = false,
         theses: Map<String, String> = emptyMap(),
+        horizon: String? = null,
     ): PortfolioReview {
         require(positions.isNotEmpty()) { "보유 포지션이 비어 있습니다" }
         val today = effectiveMarketDate()
-        val key = buildKey(today, positions, mode, theses)
+        // 계좌 성격: "long"(장기 계좌 범위 진단)만 의미 있음 — 그 외는 null 정규화(기존 키·프롬프트 불변).
+        val horizonLong = horizon == AnalysisService.HORIZON_LONG
+        val key = buildKey(today, positions, mode, theses, horizonLong)
 
         val cached = cache[key] ?: fileCache.get(key)?.also { cache[key] = it }
         if (cached != null) {
@@ -127,7 +130,7 @@ class PortfolioReviewService(
         val topStock = stocks.firstOrNull()
         val topSector = sectors.firstOrNull()
 
-        val facts = buildFacts(stocks, totalValue, totalCost, totalPnl, totalPnlPct, sectors, exposures, valuation, theses)
+        val facts = buildFacts(stocks, totalValue, totalCost, totalPnl, totalPnlPct, sectors, exposures, valuation, theses, horizonLong)
         val prompt = if (mode == AnalysisMode.AGGRESSIVE) AGGRESSIVE_PROMPT else DEFENSIVE_PROMPT
         val model = modelRouter.modelFor(ModelRouter.PORTFOLIO)
         val raw = claude.complete(prompt, facts, maxTokens = 2500, modelOverride = model)
@@ -169,7 +172,13 @@ class PortfolioReviewService(
         exposures: List<MacroExposure>,
         valuation: List<ValuationBucket>,
         theses: Map<String, String> = emptyMap(),
+        horizonLong: Boolean = false,
     ): String = buildString {
+        // P9가 이 라벨("계좌 성격: 장기")에 걸려 조정 스탠스를 장기 리밸런싱 관점으로 전환한다.
+        if (horizonLong) {
+            appendLine("계좌 성격: 장기 — 이 포트폴리오는 ISA·IRP·퇴직연금 등 장기 투자 계좌의 보유분이다(사용자가 장기 관점으로 관리).")
+            appendLine()
+        }
         appendLine("포트폴리오 스냅샷(실제 보유 ${stocks.size}종목, 전부 계산된 사실):")
         appendLine(
             "  총 평가 ${"%,d".format(totalValue)}원 / 총 매입 ${"%,d".format(totalCost)}원 / " +
@@ -243,8 +252,8 @@ class PortfolioReviewService(
         internal fun pct(part: Long, total: Long): Double =
             if (total > 0) part.toDouble() / total * 100 else 0.0
 
-        /** 캐시 키: 날짜 + 정렬된 포지션 집합 + 모드 (+논지 해시). 포지션·논지가 다르면 새 키. */
-        internal fun buildKey(today: String, positions: Map<String, HoldingPosition>, mode: AnalysisMode, theses: Map<String, String> = emptyMap()): String {
+        /** 캐시 키: 날짜 + 정렬된 포지션 집합 + 모드 (+논지 해시 +장기 계좌). 입력이 다르면 새 키. */
+        internal fun buildKey(today: String, positions: Map<String, HoldingPosition>, mode: AnalysisMode, theses: Map<String, String> = emptyMap(), horizonLong: Boolean = false): String {
             val base = "$today|" + positions.entries
                 .sortedBy { it.key }
                 .joinToString(",") { "${it.key}:${it.value.avgPrice.toLong()}:${it.value.qty}" } +
@@ -252,7 +261,9 @@ class PortfolioReviewService(
             // 논지는 자유 텍스트라 SHA-256 앞 16자로 접는다(32비트 hashCode 충돌 방지 — S11).
             val t = theses.entries.filter { it.value.isNotBlank() }.sortedBy { it.key }
                 .joinToString(",") { "${it.key}=${it.value.trim()}" }
-            return if (t.isEmpty()) base else "$base|t${AnalysisService.shortHash(t)}"
+            val withThesis = if (t.isEmpty()) base else "$base|t${AnalysisService.shortHash(t)}"
+            // 장기 계좌 범위 진단은 코멘트 성격이 달라 캐시 분리(자유는 접미사 없음 = 기존 키 불변).
+            return if (horizonLong) "$withThesis|hL" else withThesis
         }
 
         /** 섹터별 평가 비중(내림차순). 세부 섹터 label(주력 첫 섹터) 기준. */
@@ -346,6 +357,9 @@ class PortfolioReviewService(
                 - 논지와 그 종목의 실제 섹터·매크로 노출이 어긋나 보이면 짚어라(예: 논지는 A인데 손익은 B 변수에 좌우되는 구조).
                 - 비중이 큰데 논지가 기록되지 않은 종목이 있으면 사실로만 언급하라(기록하라는 설교 금지).
                 - 논지 속 주장·수치는 사실 데이터가 아니다 — 진단의 근거로 인용하지 마라(P1은 논지 텍스트에도 그대로 적용된다).
+            P9. "계좌 성격: 장기" 항목이 있으면(없으면 이 규칙 전체를 무시) — 이 포트폴리오는 연금·세제혜택 등 장기 투자 계좌의 보유분이다:
+                - 마무리·조정 스탠스는 단기 타이밍(오늘/이번 주 줄여라·차익 실현하라) 대신 장기 리밸런싱 관점으로 제시하라 — 비중 구조가 수년 지평에서 적절한가, 추가 적립을 어디로 이어갈 만한가, 쏠림이 장기 목표와 맞는가. 공격 모드의 직설 지시도 이 지평 위에서 하라.
+                - 단, 구조적 문제(한 변수 쏠림·논지 중복 베팅)는 장기 계좌라는 이유로 눙치지 마라 — 장기일수록 구조가 성과를 지배한다.
         """.trimIndent()
 
         private val PORTFOLIO_DEFENSIVE = """

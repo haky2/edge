@@ -61,6 +61,9 @@ fun Route.analysisRoutes(analysis: AnalysisService) {
                 else -> parsed
             }
         }
-        call.respond(analysis.analyze(code, position, mode, force = force, thesis = thesis, thesisHistory = thesisHistory))
+        // 계좌 성격(선택) — "long"이면 장기 계좌 컨텍스트(C18 장기 관점 코멘트 + 캐시 분리).
+        // "long" 외 값(free 포함)은 null 정규화 = 기존 동작(구버전 앱 호환).
+        val horizon = call.request.queryParameters["horizon"]?.takeIf { it == AnalysisService.HORIZON_LONG }
+        call.respond(analysis.analyze(code, position, mode, force = force, thesis = thesis, thesisHistory = thesisHistory, horizon = horizon))
     }
 }

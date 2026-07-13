@@ -168,7 +168,11 @@ fun PortfolioScreen(
         val scopeRows = if (scopeId == null) rows else rows.filter { it.accountId == scopeId }
         reviewLoading = scopeRows.isNotEmpty()
         if (force) portfolioReview = null
-        loadPortfolioReview(scopeRows, api, AppPrefs.getMode(context), force, accountScope = scopeId != null) {
+        // 계좌 성격 — 계좌 탭은 그 계좌, 전체 탭은 보유 계좌 전부 장기일 때만 "long"(혼합=자유).
+        val horizonIds = scopeId?.let { listOf(it) } ?: rows.map { it.accountId }.distinct()
+        val horizon = accountRepo.effectiveHorizon(horizonIds)
+            .takeIf { it == AccountRepository.HORIZON_LONG }
+        loadPortfolioReview(scopeRows, api, AppPrefs.getMode(context), force, accountScope = scopeId != null, horizon = horizon) {
             // 응답 대기 중 계좌 탭이 바뀌었으면 폐기(늦게 온 이전 계좌 진단이 덮어쓰는 것 방지)
             if (scopeId == selectedAccountId) {
                 portfolioReview = it
@@ -1041,6 +1045,7 @@ private suspend fun loadPortfolioReview(
     mode: String,
     refresh: Boolean,
     accountScope: Boolean = false,
+    horizon: String? = null,
     onResult: (PortfolioReview?) -> Unit,
 ) {
     if (rows.isEmpty()) { onResult(null); return }
@@ -1052,7 +1057,7 @@ private suspend fun loadPortfolioReview(
         row.item.thesis?.takeIf { it.isNotBlank() }?.let { row.item.code to it }
     }.toMap()
     val result = runCatching {
-        api.getPortfolioReview(positions, theses, mode, refresh, accountScope = accountScope)
+        api.getPortfolioReview(positions, theses, mode, refresh, accountScope = accountScope, horizon = horizon)
     }.getOrNull()
     onResult(result)
 }

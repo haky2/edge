@@ -84,6 +84,34 @@ class CacheKeyTest {
         assert(hashPart.all { it in '0'..'9' || it in 'a'..'f' }) { "hex 문자열이어야 합니다: $hashPart" }
     }
 
+    // ── 계좌 성격(horizon) 키 분리 ────────────────────────────────────────
+
+    @Test fun `Analysis 장기 계좌는 키 분리, 자유(기본값)는 기존 키 불변`() {
+        val pos = Position(avgPrice = 86000.0, qty = 10L)
+        val base = AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, pos)
+        val free = AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, pos, null, horizonLong = false)
+        val long = AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, pos, null, horizonLong = true)
+        assertEquals(base, free)          // 자유 = 접미사 없음(구버전 캐시 호환)
+        assertNotEquals(base, long)       // 장기 = 별도 캐시
+        assertEquals("$base:hL", long)
+    }
+
+    @Test fun `Analysis 논지+장기 조합 키에 둘 다 반영(순서 고정)`() {
+        val key = AnalysisService.buildKey("009150", "2026-06-11", AnalysisMode.DEFENSIVE, null, "수주 모멘텀", horizonLong = true)
+        assert(key.endsWith(":hL")) { "장기 접미사는 논지 해시 뒤: $key" }
+        assert(key.contains(":t")) { "논지 해시 포함: $key" }
+    }
+
+    @Test fun `PortfolioReview 장기 계좌는 키 분리, 자유는 기존 키 불변`() {
+        val positions = mapOf("009150" to com.haky.edge.macro.HoldingPosition(86000.0, 10L))
+        val base = com.haky.edge.ai.PortfolioReviewService.buildKey("2026-06-11", positions, AnalysisMode.DEFENSIVE)
+        val free = com.haky.edge.ai.PortfolioReviewService.buildKey("2026-06-11", positions, AnalysisMode.DEFENSIVE, horizonLong = false)
+        val long = com.haky.edge.ai.PortfolioReviewService.buildKey("2026-06-11", positions, AnalysisMode.DEFENSIVE, horizonLong = true)
+        assertEquals(base, free)
+        assertNotEquals(base, long)
+        assertEquals("$base|hL", long)
+    }
+
     // ── MacroImpactService.buildKey ───────────────────────────────────────
 
     @Test fun `MacroImpact 키 형식 date_H_sorted_W_sorted_mode`() {

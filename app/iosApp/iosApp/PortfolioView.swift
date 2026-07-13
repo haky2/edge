@@ -743,12 +743,18 @@ struct PortfolioView: View {
                 theses[row.item.code] = t
             }
         }
+        // 계좌 성격 — 계좌 탭은 그 계좌, 전체 탭은 보유 계좌 전부 장기일 때만 "long"(혼합=자유).
+        // 병합 전 rows에서 계좌 id를 모은다(displayRows는 병합돼 계좌 정보가 뭉개짐).
+        let horizonIds: [KotlinLong] = scopeId.map { [KotlinLong(longLong: $0)] }
+            ?? Array(Set(rows.map { $0.accountId })).map { KotlinLong(longLong: $0) }
+        let horizon = Db.account.effectiveHorizon(accountIds: horizonIds) == "long" ? "long" : nil
         async let reviewTask = api.getPortfolioReview(
             positions: positions,
             theses: theses,
             mode: analysisMode.rawValue,
             refresh: force,
-            accountScope: scopeId != nil  // 계좌 범위면 서버가 리밸런싱 스냅샷을 갱신하지 않음
+            accountScope: scopeId != nil,  // 계좌 범위면 서버가 리밸런싱 스냅샷을 갱신하지 않음
+            horizon: horizon
         )
         let review = try? await reviewTask
         // 리밸런싱 체크는 전체 포트폴리오 기준(R1 스냅샷)이라 전체 탭에서만 조회·표시.
