@@ -28,14 +28,20 @@ class HoldingRepository(driverFactory: DriverFactory) {
     fun getDefaultHolding(code: String): Holding? = getHolding(code, defaultAccountId())
 
     /**
+     * 종목의 전 계좌 holding 행. 상세 화면 계좌 컨텍스트(배지 메뉴·계좌별 소계) 표시용.
+     */
+    fun byCode(code: String): List<Holding> =
+        queries.selectByCode(code) { id, c, name, accountId, avgPrice, qty, targetPrice, stopPrice ->
+            Holding(id, c, name, accountId, avgPrice, qty, targetPrice, stopPrice)
+        }.executeAsList()
+
+    /**
      * 관심종목 경로의 WatchItem(watchlist 기반 — G1 이후 포지션 필드는 항상 null)에 holding
      * 포지션을 얹는다. 다계좌 보유면 수량 합산·수량 가중평균 평단으로 합치고,
      * 목표/손절가는 기본 계좌 값 우선(없으면 첫 non-null). 보유가 없으면 원본 그대로.
      */
     fun hydrate(item: WatchItem): WatchItem {
-        val rows = queries.selectByCode(item.code) { id, c, name, accountId, avgPrice, qty, targetPrice, stopPrice ->
-            Holding(id, c, name, accountId, avgPrice, qty, targetPrice, stopPrice)
-        }.executeAsList()
+        val rows = byCode(item.code)
         if (rows.isEmpty()) return item
 
         val priced = rows.filter { (it.avgPrice ?: 0.0) > 0 && (it.qty ?: 0L) > 0 }

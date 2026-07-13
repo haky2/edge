@@ -148,6 +148,7 @@ fun PortfolioScreen(
     accountRepo: AccountRepository,
     watchlistRepo: WatchlistRepository,
     api: EdgeApi,
+    onStockClick: ((WatchItem, Quote?, Long?) -> Unit)? = null,
 ) {
     var rows by remember { mutableStateOf<List<HoldingRow>>(emptyList()) }
     var accounts by remember { mutableStateOf<List<AccountInfo>>(emptyList()) }
@@ -160,6 +161,21 @@ fun PortfolioScreen(
     var showAccountMgmt by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // 진단 범위 = 계좌 탭 선택. 전체 탭은 병합 전체, 계좌 탭은 그 계좌만(빈 계좌면 카드 숨김).
+    suspend fun loadReview(force: Boolean) {
+        val scopeId = selectedAccountId
+        val scopeRows = if (scopeId == null) rows else rows.filter { it.accountId == scopeId }
+        reviewLoading = scopeRows.isNotEmpty()
+        if (force) portfolioReview = null
+        loadPortfolioReview(scopeRows, api, AppPrefs.getMode(context), force, accountScope = scopeId != null) {
+            // 응답 대기 중 계좌 탭이 바뀌었으면 폐기(늦게 온 이전 계좌 진단이 덮어쓰는 것 방지)
+            if (scopeId == selectedAccountId) {
+                portfolioReview = it
+                reviewLoading = false
+            }
+        }
+    }
 
     suspend fun load() {
         loading = true
@@ -199,17 +215,26 @@ fun PortfolioScreen(
         runCatching { api.getSectorClassify(codes) }.getOrNull()?.let { entries ->
             sectorMap = entries.associate { it.code to it.sectorLabel }
         }
-        loadPortfolioReview(rows, api, AppPrefs.getMode(context), false) { portfolioReview = it; reviewLoading = false }
-        rebalanceCheck = runCatching { api.getRebalanceCheck() }.getOrNull()
-    }
-
-    suspend fun loadReview(force: Boolean) {
-        reviewLoading = true
-        if (force) portfolioReview = null
-        loadPortfolioReview(rows, api, AppPrefs.getMode(context), force) { portfolioReview = it; reviewLoading = false }
+        loadReview(false)
+        // 리밸런싱 체크는 전체 포트폴리오 기준(R1 스냅샷)이라 전체 탭에서만 조회.
+        rebalanceCheck = if (selectedAccountId == null) {
+            runCatching { api.getRebalanceCheck() }.getOrNull()
+        } else null
     }
 
     LaunchedEffect(Unit) { load() }
+
+    // 계좌 탭 전환 → 그 계좌 범위로 진단 재조회(같은 날 같은 범위면 서버 캐시 적중).
+    // 첫 컴포지션(rows 비어 있음)은 load()가 담당하므로 건너뜀.
+    LaunchedEffect(selectedAccountId) {
+        if (rows.isNotEmpty()) {
+            portfolioReview = null
+            loadReview(false)
+            rebalanceCheck = if (selectedAccountId == null) {
+                runCatching { api.getRebalanceCheck() }.getOrNull()
+            } else null
+        }
+    }
 
     if (showAccountMgmt) {
         AccountManagementSheet(
@@ -265,6 +290,7 @@ fun PortfolioScreen(
                         accounts = accounts,
                         selectedAccountId = selectedAccountId,
                         onAccountSelect = { selectedAccountId = it },
+                        onStockClick = onStockClick,
                         sectorRows = run {
                             val map = mutableMapOf<String, Double>()
                             for (row in displayRows) map[sectorMap[row.item.code] ?: "기타"] =
@@ -328,6 +354,7 @@ private fun HoldingsList(
     accounts: List<AccountInfo>,
     selectedAccountId: Long?,
     onAccountSelect: (Long?) -> Unit,
+    onStockClick: ((WatchItem, Quote?, Long?) -> Unit)? = null,
     sectorRows: List<Pair<String, Double>>,
     review: PortfolioReview?,
     rebalanceCheck: RebalanceCheck?,
@@ -373,6 +400,7 @@ private fun HoldingsList(
                     review = review,
                     rebalanceCheck = rebalanceCheck,
                     loading = reviewLoading,
+                    accountLabel = selectedAccountId?.let { sel -> accounts.find { it.id == sel }?.name },
                     onRefresh = onReviewRefresh,
                     onResetBaseline = onResetBaseline,
                 )
@@ -403,7 +431,10 @@ private fun HoldingsList(
                         )
                     } else {
                         rows.forEachIndexed { i, row ->
-                            HoldingRowItem(row)
+                            HoldingRowItem(
+                                row = row,
+                                onClick = onStockClick?.let { cb -> { cb(row.item, row.quote, selectedAccountId) } },
+                            )
                             if (i < rows.size - 1) HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                         }
                     }
@@ -686,7 +717,7 @@ private fun SectorWeightView(sectorRows: List<Pair<String, Double>>) {
 // ── 보유 종목 행 ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun HoldingRowItem(row: HoldingRow) {
+private fun HoldingRowItem(row: HoldingRow, onClick: (() -> Unit)? = null) {
     val pnlColor = when {
         row.pnl > 0 -> ChangeUp
         row.pnl < 0 -> ChangeDown
@@ -695,7 +726,10 @@ private fun HoldingRowItem(row: HoldingRow) {
     val fmt = NumberFormat.getNumberInstance(Locale.KOREA)
 
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(onClick?.let { cb -> Modifier.clickable { cb() } } ?: Modifier)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -739,6 +773,7 @@ private fun PortfolioReviewCard(
     review: PortfolioReview?,
     rebalanceCheck: RebalanceCheck?,
     loading: Boolean,
+    accountLabel: String?,   // 계좌 탭 선택 중이면 진단 범위가 그 계좌임을 표시(전체 탭 = null)
     onRefresh: () -> Unit,
     onResetBaseline: suspend () -> Unit,
 ) {
@@ -765,6 +800,16 @@ private fun PortfolioReviewCard(
                 ) {
                     Text("✦", color = PurpleAccent, style = MaterialTheme.typography.bodySmall)
                     Text("포트폴리오 종합 진단", style = MaterialTheme.typography.titleSmall)
+                    accountLabel?.let { label ->
+                        Text(
+                            "$label 기준",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = PurpleAccent,
+                            modifier = Modifier
+                                .background(PurpleAccent.copy(alpha = 0.12f), RoundedCornerShape(50))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
                     if (loading) CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = PurpleAccent)
                 }
                 Icon(
@@ -989,20 +1034,25 @@ private fun PortfolioReviewCard(
 }
 
 // 포지션 → portfolio-review 호출. 콜백으로 결과 전달.
+// accountScope=true(계좌 탭 범위)면 서버가 리밸런싱 스냅샷(R1)을 갱신하지 않는다 — 부분 집합 오염 방지.
 private suspend fun loadPortfolioReview(
     rows: List<HoldingRow>,
     api: EdgeApi,
     mode: String,
     refresh: Boolean,
+    accountScope: Boolean = false,
     onResult: (PortfolioReview?) -> Unit,
 ) {
     if (rows.isEmpty()) { onResult(null); return }
     // 다계좌 동일 종목은 병합해 전달 — code 키 맵이라 병합 없이는 마지막 계좌 값만 남는다
+    // (계좌 범위 rows는 UNIQUE(code, account_id)라 병합이 no-op)
     val merged = mergedByCode(rows)
     val positions = merged.associate { row -> row.item.code to Pair(row.avg, row.qty.toLong()) }
     val theses = merged.mapNotNull { row ->
         row.item.thesis?.takeIf { it.isNotBlank() }?.let { row.item.code to it }
     }.toMap()
-    val result = runCatching { api.getPortfolioReview(positions, theses, mode, refresh) }.getOrNull()
+    val result = runCatching {
+        api.getPortfolioReview(positions, theses, mode, refresh, accountScope = accountScope)
+    }.getOrNull()
     onResult(result)
 }

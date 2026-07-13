@@ -29,6 +29,9 @@ data class PortfolioReviewRequest(
     val positions: List<ReviewPositionEntry>,
     val mode: String? = null,
     val refresh: Boolean = false,
+    // "account" = 계좌 탭 범위(부분 포트폴리오) — 서버가 리밸런싱 스냅샷(R1)을 갱신하지 않는다.
+    // null(기본) = 전체. 기본값이라 encodeDefaults=false에서 미전송 → 구버전 서버와도 호환.
+    val scope: String? = null,
 )
 
 /** POST /portfolio-review 응답. 수치 필드는 전부 계산(사실), comment/summary만 Claude 해석. */

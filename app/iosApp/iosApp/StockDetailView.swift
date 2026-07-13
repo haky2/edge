@@ -69,6 +69,13 @@ struct StockDetailView: View {
 
     private let initialAccountId: Int64?
 
+    // 계좌 컨텍스트 — nil=전체(전 계좌 병합), 값=해당 계좌 포지션 기준. 진입 경로가 초기값을 정하고
+    // (관심종목 탭=전체, 내 자산 계좌 탭=그 계좌), 2개 이상 계좌 보유 시 포지션 카드 배지로 전환.
+    // 컨텍스트는 item의 포지션 필드를 갈아끼우므로 카드·차트 기준선·AI 코멘트가 함께 따라간다.
+    @State private var accountContext: Int64?
+    @State private var accountHoldings: [Holding_] = []   // 이 종목의 계좌별 holding 행
+    @State private var accountNames: [Int64: String] = [:]
+
     init(item: WatchItem, quote: Quote?, api: EdgeApi, logRepo: ActionLogRepository = Db.actionLog, initialAccountId: Int64? = nil) {
         // 관심종목 탭 경로의 item은 watchlist 기반이라 포지션 필드가 비어 있다(G1 이후 holding이 정본)
         // → holding을 얹어서 내 포지션 카드·차트 기준선·게이지가 어느 경로로 들어와도 보이게.
@@ -76,6 +83,7 @@ struct StockDetailView: View {
         self.api = api
         self.logRepo = logRepo
         self.initialAccountId = initialAccountId
+        _accountContext = State(initialValue: initialAccountId)
         _quote = State(initialValue: quote) // 리스트가 받아둔 시세로 초기화(바로 보이게)
     }
 
@@ -168,14 +176,19 @@ struct StockDetailView: View {
             analysis = nil   // 이전 모드 코멘트 즉시 제거 → 로딩 상태 바로 표시
             Task { await loadAnalysis() }
         }
-        .onAppear { loadLogs() }
+        .onAppear {
+            loadAccountContext()
+            loadLogs()
+        }
         .sheet(isPresented: $showAskSheet) {
             StockAskSheetView(item: item, api: api, mode: analysisMode)
         }
         .sheet(isPresented: $showEdit) {
-            PositionEditView(item: item, initialAccountId: initialAccountId) { updated in
+            PositionEditView(item: item, initialAccountId: accountContext ?? initialAccountId) { updated in
                 let prevThesis = item.thesis ?? ""
                 item = updated
+                // 편집으로 계좌 구성이 바뀌었을 수 있음(행 추가/삭제) → 컨텍스트 재적용
+                loadAccountContext()
                 // S13: 논지가 바뀌었으면 코멘트 갱신 힌트 표시
                 if (updated.thesis ?? "") != prevThesis { analysisThesisChanged = true }
             }
@@ -569,6 +582,34 @@ struct StockDetailView: View {
         VStack(spacing: 0) {
             HStack {
                 Text("내 포지션").font(.subheadline.weight(.semibold))
+                // 계좌 컨텍스트 배지 — 2개 이상 계좌 보유 시에만(1개면 전체=그 계좌라 무의미).
+                if accountHoldings.count >= 2 {
+                    Menu {
+                        Button { switchContext(nil) } label: {
+                            if accountContext == nil { Label("전체(합산)", systemImage: "checkmark") }
+                            else { Text("전체(합산)") }
+                        }
+                        ForEach(accountHoldings, id: \.accountId) { h in
+                            Button { switchContext(h.accountId) } label: {
+                                if accountContext == h.accountId {
+                                    Label(accountNames[h.accountId] ?? "계좌", systemImage: "checkmark")
+                                } else {
+                                    Text(accountNames[h.accountId] ?? "계좌")
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(contextLabel)
+                            Image(systemName: "chevron.up.chevron.down").font(.system(size: 8))
+                        }
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(accountContext == nil ? Color(.systemGray5) : Color.indigo.opacity(0.12))
+                        .foregroundColor(accountContext == nil ? .secondary : .indigo)
+                        .clipShape(Capsule())
+                    }
+                }
                 Spacer()
                 Button { showEdit = true } label: {
                     Text(item.avgPrice == nil ? "입력" : "수정").font(.caption)
@@ -588,6 +629,21 @@ struct StockDetailView: View {
                 row("평가금액", "\(Int(price * qty).formatted()) 원")
                 coloredRow("평가손익", "\(up ? "+" : "")\(Int(pnl).formatted()) 원", up)
                 coloredRow("수익률", "\(up ? "+" : "")\(String(format: "%.2f", rate))%", up)
+                // 전체(합산) 컨텍스트일 때 계좌별 소계 — "계좌별로 얼마지?"는 배지 탭 없이 여기서 해결.
+                if accountContext == nil && accountHoldings.count >= 2 {
+                    let priced = accountHoldings.filter { ($0.avgPrice?.doubleValue ?? 0) > 0 && ($0.qty?.int64Value ?? 0) > 0 }
+                    if priced.count >= 2 {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(priced, id: \.accountId) { h in
+                                Text("\(accountNames[h.accountId] ?? "계좌")  \(h.qty!.int64Value.formatted())주 @\(Int(h.avgPrice!.doubleValue).formatted())원")
+                                    .font(.caption2).foregroundColor(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 6)
+                    }
+                }
             } else {
                 Text("평단가·수량을 입력하면 내 수익률을 보여줘요")
                     .font(.footnote).foregroundColor(.secondary)
@@ -889,6 +945,15 @@ struct StockDetailView: View {
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color.orange.opacity(0.15))
                         .foregroundColor(.orange)
+                        .clipShape(Capsule())
+                }
+                // 특정 계좌 컨텍스트면 코멘트가 그 계좌 포지션 기준임을 표시.
+                if let ctx = accountContext, accountHoldings.count >= 2 {
+                    Text("\(accountNames[ctx] ?? "계좌") 기준")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.indigo.opacity(0.12))
+                        .foregroundColor(.indigo)
                         .clipShape(Capsule())
                 }
                 Spacer()
@@ -2259,6 +2324,52 @@ struct StockDetailView: View {
         logEntries = logRepo.getByCode(code: item.code, limit: 5)
     }
 
+    // MARK: - 계좌 컨텍스트
+
+    /// 계좌별 holding 행·계좌명 로드 후 현재 컨텍스트를 item에 적용.
+    private func loadAccountContext() {
+        accountHoldings = Db.holding.byCode(code: item.code)
+        accountNames = Dictionary(uniqueKeysWithValues:
+            (Db.account.all() as! [AccountInfo]).map { ($0.id, $0.name) })
+        // 2개 미만 계좌면 전체=단일 계좌라 컨텍스트 구분이 무의미 → 전체로 정규화(배지도 숨김)
+        if accountHoldings.count < 2 { accountContext = nil }
+        applyContext()
+    }
+
+    /// 컨텍스트에 맞춰 item의 포지션 필드를 갈아끼운다(카드·차트 기준선·AI 코멘트 공통 반영).
+    private func applyContext() {
+        if let ctx = accountContext,
+           let h = accountHoldings.first(where: { $0.accountId == ctx }) {
+            item = WatchItem(code: item.code, name: item.name,
+                             avgPrice: h.avgPrice, qty: h.qty,
+                             targetPrice: h.targetPrice, stopPrice: h.stopPrice,
+                             thesis: item.thesis)
+        } else {
+            item = Db.holding.hydrate(item: WatchItem(
+                code: item.code, name: item.name,
+                avgPrice: nil, qty: nil, targetPrice: nil, stopPrice: nil,
+                thesis: item.thesis))
+        }
+    }
+
+    /// 배지 메뉴에서 계좌 선택. 포지션이 바뀌므로 AI 코멘트도 해당 컨텍스트로 다시 조회
+    /// (컨텍스트별 캐시 키가 달라 서버에서 자연 분리, 같은 날 재전환은 캐시 적중).
+    private func switchContext(_ accountId: Int64?) {
+        guard accountContext != accountId else { return }
+        accountContext = accountId
+        applyContext()
+        analysis = nil
+        Task { await loadAnalysis() }
+    }
+
+    /// 컨텍스트 배지 라벨 — 전체면 "전체 · N계좌", 계좌면 계좌명.
+    private var contextLabel: String {
+        if let ctx = accountContext {
+            return accountNames[ctx] ?? "계좌"
+        }
+        return "전체 · \(accountHoldings.count)계좌"
+    }
+
     // 실적 일정 — 접기 섹션
     @ViewBuilder
     private func earningsDueDateSection() -> some View {
@@ -2483,31 +2594,7 @@ struct StockDetailView: View {
     // 취소선 제거 + **굵게** 직접 파싱. SwiftUI 마크다운 파서는 "**+2.4%**에"처럼
     // 굵은 구간 뒤에 한글이 바로 붙으면 CommonMark 경계 규칙 탓에 별표를 그대로 남기는
     // 버그가 있어, 한글 문장에선 쓸 수 없다. 그래서 굵게는 우리가 직접 적용한다.
-    private func markdown(_ s: String) -> AttributedString {
-        var text = s.replacingOccurrences(of: #"~~(.+?)~~"#, with: "$1", options: .regularExpression)
-        text = text.replacingOccurrences(of: "~~", with: "")
-
-        guard let regex = try? NSRegularExpression(pattern: #"\*\*(.+?)\*\*"#) else {
-            return AttributedString(text.replacingOccurrences(of: "**", with: ""))
-        }
-        let ns = text as NSString
-        var out = AttributedString()
-        var cursor = 0
-        for m in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
-            if m.range.location > cursor {
-                let plain = ns.substring(with: NSRange(location: cursor, length: m.range.location - cursor))
-                out += AttributedString(plain.replacingOccurrences(of: "**", with: ""))
-            }
-            var bold = AttributedString(ns.substring(with: m.range(at: 1)))
-            bold.inlinePresentationIntent = .stronglyEmphasized
-            out += bold
-            cursor = m.range.location + m.range.length
-        }
-        if cursor < ns.length {
-            out += AttributedString(ns.substring(from: cursor).replacingOccurrences(of: "**", with: ""))
-        }
-        return out
-    }
+    private func markdown(_ s: String) -> AttributedString { boldMarkdown(s) }
 
     // AI 코멘트를 (소제목, 본문 단락들) 섹션으로 파싱. **소제목**만 있는 블록을 헤더로 인식,
     // 이어지는 블록들을 그 섹션의 본문으로 묶는다. 헤더 없는 옛 포맷도 한 섹션으로 안전 처리.
@@ -2746,9 +2833,11 @@ struct StockDetailView: View {
                             ForEach(Array(dr.sources.enumerated()), id: \.offset) { _, src in
                                 if let url = URL(string: src.url) {
                                     Link(destination: url) {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "link").font(.caption2)
+                                        HStack(alignment: .top, spacing: 4) {
+                                            Image(systemName: "link").font(.caption2).padding(.top, 2)
                                             Text(src.title).font(.caption).lineLimit(2)
+                                                .multilineTextAlignment(.leading)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
                                         }
                                         .foregroundColor(.teal)
                                     }
@@ -2766,6 +2855,33 @@ struct StockDetailView: View {
         }
         .cardStyle()
     }
+}
+
+// **굵게** 마크다운 → AttributedString(볼드). StockDetailView·StockAskSheetView 공유.
+func boldMarkdown(_ s: String) -> AttributedString {
+    var text = s.replacingOccurrences(of: #"~~(.+?)~~"#, with: "$1", options: .regularExpression)
+    text = text.replacingOccurrences(of: "~~", with: "")
+
+    guard let regex = try? NSRegularExpression(pattern: #"\*\*(.+?)\*\*"#) else {
+        return AttributedString(text.replacingOccurrences(of: "**", with: ""))
+    }
+    let ns = text as NSString
+    var out = AttributedString()
+    var cursor = 0
+    for m in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+        if m.range.location > cursor {
+            let plain = ns.substring(with: NSRange(location: cursor, length: m.range.location - cursor))
+            out += AttributedString(plain.replacingOccurrences(of: "**", with: ""))
+        }
+        var bold = AttributedString(ns.substring(with: m.range(at: 1)))
+        bold.inlinePresentationIntent = .stronglyEmphasized
+        out += bold
+        cursor = m.range.location + m.range.length
+    }
+    if cursor < ns.length {
+        out += AttributedString(ns.substring(from: cursor).replacingOccurrences(of: "**", with: ""))
+    }
+    return out
 }
 
 // 카드 공통 스타일(상세·포지션 카드 공유).
@@ -2832,7 +2948,7 @@ struct StockAskSheetView: View {
                                             .font(.caption)
                                             .foregroundColor(.purple)
                                             .padding(.top, 2)
-                                        Text(turn.answer)
+                                        Text(boldMarkdown(turn.answer))
                                             .font(.callout)
                                             .lineSpacing(5)
                                             .fixedSize(horizontal: false, vertical: true)

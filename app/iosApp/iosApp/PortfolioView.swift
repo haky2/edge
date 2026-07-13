@@ -97,6 +97,11 @@ struct PortfolioView: View {
             portfolioReview = nil
             Task { await loadPortfolioReview(force: false) }
         }
+        .onChange(of: selectedAccountId) {
+            // 계좌 탭 전환 → 그 계좌 범위로 진단 재조회(같은 날 같은 범위면 서버 캐시 적중).
+            portfolioReview = nil
+            Task { await loadPortfolioReview(force: false) }
+        }
     }
 
     // G3: 커스텀 계좌(비기본 계좌)가 있을 때만 세그먼트 노출
@@ -348,6 +353,15 @@ struct PortfolioView: View {
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color.orange.opacity(0.15))
                         .foregroundColor(.orange)
+                        .clipShape(Capsule())
+                }
+                // 계좌 탭 선택 중이면 진단 범위가 그 계좌임을 표시(전체 탭은 라벨 없음 = 현행 유지).
+                if let selId = selectedAccountId {
+                    Text("\(accounts.first(where: { $0.id == selId })?.name ?? "계좌") 기준")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.indigo.opacity(0.12))
+                        .foregroundColor(.indigo)
                         .clipShape(Capsule())
                 }
                 Spacer()
@@ -706,13 +720,21 @@ struct PortfolioView: View {
     }
 
     private func loadPortfolioReview(force: Bool) async {
-        guard !rows.isEmpty else { return }
+        // 진단 범위 = 계좌 탭 선택(displayRows). 전체 탭은 병합 전체, 계좌 탭은 그 계좌만.
+        let scopeId = selectedAccountId
+        let scopeRows = displayRows
+        guard !scopeRows.isEmpty else {
+            // 빈 계좌(예: 방금 만든 ISA)는 진단 스킵 — 이전 계좌 진단이 남지 않게 비운다.
+            portfolioReview = nil
+            reviewLoading = false
+            return
+        }
         reviewLoading = true
         if force { portfolioReview = nil; reviewCommentExpanded = false }
-        // 다계좌 동일 종목은 병합해 전달 — code 키 딕셔너리라 병합 없이는 마지막 계좌 값만 남는다
+        // 전체 탭의 displayRows는 mergedByCode 결과 — code 키 딕셔너리라 병합 없이는 마지막 계좌 값만 남는다
         var positions: [String: KotlinPair<KotlinDouble, KotlinLong>] = [:]
         var theses: [String: String] = [:]
-        for row in Self.mergedByCode(rows) {
+        for row in scopeRows {
             positions[row.item.code] = KotlinPair(
                 first: KotlinDouble(value: row.avg),
                 second: KotlinLong(value: Int64(row.qty))
@@ -725,11 +747,16 @@ struct PortfolioView: View {
             positions: positions,
             theses: theses,
             mode: analysisMode.rawValue,
-            refresh: force
+            refresh: force,
+            accountScope: scopeId != nil  // 계좌 범위면 서버가 리밸런싱 스냅샷을 갱신하지 않음
         )
-        async let checkTask = api.getRebalanceCheck()
-        portfolioReview = try? await reviewTask
-        rebalanceCheck = try? await checkTask
+        let review = try? await reviewTask
+        // 리밸런싱 체크는 전체 포트폴리오 기준(R1 스냅샷)이라 전체 탭에서만 조회·표시.
+        let check: RebalanceCheck? = scopeId == nil ? (try? await api.getRebalanceCheck()) : nil
+        // 응답 대기 중 계좌 탭이 바뀌었으면 폐기(늦게 온 이전 계좌 진단이 덮어쓰는 것 방지).
+        guard scopeId == selectedAccountId else { return }
+        portfolioReview = review
+        rebalanceCheck = check
         reviewLoading = false
     }
 

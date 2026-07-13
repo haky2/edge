@@ -30,6 +30,10 @@ data class PortfolioReviewRequest(
     val positions: List<ReviewPositionEntry>,
     val mode: String? = null,      // defensive(기본) | aggressive
     val refresh: Boolean = false,
+    // "account" = 계좌 탭 범위(부분 포트폴리오). 리밸런싱 스냅샷(R1)은 전체 포트폴리오가 정본이라
+    // 부분 범위 요청은 스냅샷을 갱신하지 않는다(부분 집합이 덮어쓰면 드리프트·쏠림 신호가 오염됨).
+    // 구버전 앱은 필드 미전송 → null = 전체(기존 동작 불변).
+    val scope: String? = null,
 )
 
 fun Route.portfolioReviewRoutes(service: PortfolioReviewService, rebalance: RebalanceService? = null) {
@@ -83,9 +87,12 @@ fun Route.portfolioReviewRoutes(service: PortfolioReviewService, rebalance: Reba
         }.toMap()
         val mode = AnalysisMode.from(req.mode)
         call.respond(service.review(positions, mode, req.refresh, theses))
-        rebalance?.let { r ->
-            runCatching { r.recordSnapshot(positions) }
-                .onFailure { println("[Rebalance] 스냅샷 기록 실패: ${it.message}") }
+        // 계좌 범위(scope=account) 요청은 스냅샷 미갱신 — R1 스냅샷은 전체 포트폴리오만.
+        if (req.scope != "account") {
+            rebalance?.let { r ->
+                runCatching { r.recordSnapshot(positions) }
+                    .onFailure { println("[Rebalance] 스냅샷 기록 실패: ${it.message}") }
+            }
         }
     }
 }

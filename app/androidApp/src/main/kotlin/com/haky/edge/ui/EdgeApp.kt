@@ -38,7 +38,7 @@ import com.haky.edge.model.WatchItem
 
 sealed class AppDestination {
     object Watchlist : AppDestination()
-    data class StockDetail(val item: WatchItem, val quote: Quote?) : AppDestination()
+    data class StockDetail(val item: WatchItem, val quote: Quote?, val initialAccountId: Long? = null) : AppDestination()
     data class OverseasDetail(val item: WatchItem, val overseasQuote: OverseasQuote?) : AppDestination()
     object Search : AppDestination()
     object Portfolio : AppDestination()
@@ -142,6 +142,7 @@ fun EdgeApp(
                     is AppDestination.StockDetail -> StockDetailScreen(
                         item = dest.item,
                         initialQuote = dest.quote,
+                        initialAccountId = dest.initialAccountId,
                         watchlistRepo = watchlistRepo,
                         holdingRepo = holdingRepo,
                         accountRepo = accountRepo,
@@ -162,6 +163,9 @@ fun EdgeApp(
                         accountRepo = accountRepo,
                         watchlistRepo = watchlistRepo,
                         api = api,
+                        onStockClick = { item, quote, accountId ->
+                            destination = AppDestination.StockDetail(item, quote, initialAccountId = accountId)
+                        },
                     )
                     is AppDestination.Briefing -> BriefingScreen(
                         api = api,

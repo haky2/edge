@@ -569,6 +569,7 @@ class EdgeApi(
      * positions: code → (avgPrice, qty). theses: code → 투자 논지(최대 200자).
      * 개인별 캐시(날짜+포지션집합+논지해시+모드). thesis 없으면 구버전 캐시 호환.
      * JSON body POST — 한글 논지 여러 건을 URL에 담으면 한도 초과 위험.
+     * accountScope=true면 계좌 탭 범위(부분 포트폴리오) — 서버가 리밸런싱 스냅샷을 갱신하지 않는다.
      */
     @Throws(Exception::class)
     suspend fun getPortfolioReview(
@@ -576,13 +577,17 @@ class EdgeApi(
         theses: Map<String, String> = emptyMap(),
         mode: String = "defensive",
         refresh: Boolean = false,
+        accountScope: Boolean = false,
     ): PortfolioReview {
         val entries = positions.map { (code, pos) ->
             ReviewPositionEntry(code, pos.first, pos.second, theses[code]?.trim()?.ifBlank { null })
         }
         return client.post("$baseUrl/portfolio-review") {
             contentType(ContentType.Application.Json)
-            setBody(PortfolioReviewRequest(entries, mode.takeIf { it != "defensive" }, refresh))
+            setBody(PortfolioReviewRequest(
+                entries, mode.takeIf { it != "defensive" }, refresh,
+                scope = if (accountScope) "account" else null,
+            ))
         }.body()
     }
 

@@ -1078,6 +1078,7 @@ internal fun AICommentCard(
     analysis: Analysis?,
     analyzing: Boolean,
     aggressive: Boolean,
+    accountLabel: String? = null,  // 특정 계좌 컨텍스트면 코멘트가 그 계좌 포지션 기준임을 표시
     onRegenerate: () -> Unit,
 ) {
     Column(
@@ -1088,6 +1089,7 @@ internal fun AICommentCard(
             Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp), tint = PurpleAccent)
             Text("AI 종합 코멘트", style = MaterialTheme.typography.titleSmall)
             if (aggressive) BadgePill("⚔️ 공격적 모드", OrangeAccent)
+            accountLabel?.let { BadgePill("$it 기준", PurpleAccent) }
             Spacer(modifier = Modifier.weight(1f))
             if (analyzing) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
         }

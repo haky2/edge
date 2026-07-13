@@ -32,6 +32,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -93,6 +95,7 @@ import java.util.Locale
 fun StockDetailScreen(
     item: WatchItem,
     initialQuote: Quote?,
+    initialAccountId: Long? = null,
     watchlistRepo: WatchlistRepository,
     holdingRepo: HoldingRepository,
     accountRepo: AccountRepository,
@@ -104,6 +107,11 @@ fun StockDetailScreen(
     // 관심종목 탭 경로의 item은 watchlist 기반이라 포지션 필드가 비어 있다(G1 이후 holding이 정본)
     // → holding을 얹어서 내 포지션 카드·차트 기준선·게이지가 어느 경로로 들어와도 보이게.
     var watchItem by remember { mutableStateOf(holdingRepo.hydrate(item)) }
+    // 계좌 컨텍스트 — null=전체(전 계좌 병합), 값=해당 계좌 포지션 기준. 2개 이상 계좌 보유 시
+    // 포지션 카드 배지로 전환. watchItem의 포지션 필드를 갈아끼우므로 카드·차트·AI 코멘트가 함께 따라간다.
+    var accountContext by remember { mutableStateOf<Long?>(initialAccountId) }
+    var accountHoldings by remember { mutableStateOf<List<com.haky.edge.model.Holding>>(emptyList()) }
+    var accountNames by remember { mutableStateOf<Map<Long, String>>(emptyMap()) }
     var quote by remember { mutableStateOf(initialQuote) }
     var warnings by remember { mutableStateOf<List<com.haky.edge.model.StockWarning>>(emptyList()) }
     var priceLimits by remember { mutableStateOf<com.haky.edge.model.PriceLimits?>(null) }
@@ -180,6 +188,35 @@ fun StockDetailScreen(
 
     fun reloadLogs() { logEntries = actionLogRepo.getByCode(watchItem.code, 10) }
 
+    // 컨텍스트에 맞춰 watchItem의 포지션 필드를 갈아끼운다(카드·차트 기준선·AI 코멘트 공통 반영).
+    fun applyAccountContext() {
+        val h = accountContext?.let { ctx -> accountHoldings.find { it.accountId == ctx } }
+        watchItem = if (h != null) {
+            watchItem.copy(avgPrice = h.avgPrice, qty = h.qty, targetPrice = h.targetPrice, stopPrice = h.stopPrice)
+        } else {
+            holdingRepo.hydrate(WatchItem(code = watchItem.code, name = watchItem.name, thesis = watchItem.thesis))
+        }
+    }
+
+    // 계좌별 holding 행·계좌명 로드 후 현재 컨텍스트 적용. 포지션 편집 후에도 호출(행 추가/삭제 반영).
+    fun loadAccountContext() {
+        accountHoldings = holdingRepo.byCode(watchItem.code)
+        accountNames = accountRepo.all().associate { it.id to it.name }
+        // 2개 미만 계좌면 전체=단일 계좌라 컨텍스트 구분이 무의미 → 전체로 정규화(배지도 숨김)
+        if (accountHoldings.size < 2) accountContext = null
+        applyAccountContext()
+    }
+
+    // 배지 메뉴에서 계좌 선택. 포지션이 바뀌므로 AI 코멘트도 해당 컨텍스트로 다시 조회
+    // (컨텍스트별 캐시 키가 달라 서버에서 자연 분리, 같은 날 재전환은 캐시 적중).
+    fun switchAccountContext(id: Long?) {
+        if (accountContext == id) return
+        accountContext = id
+        applyAccountContext()
+        analysis = null
+        loadAnalysis(false)
+    }
+
     fun loadCatalysts(force: Boolean) {
         scope.launch {
             catalystsLoading = true
@@ -193,6 +230,7 @@ fun StockDetailScreen(
     }
 
     LaunchedEffect(Unit) { refresh() }
+    LaunchedEffect(watchItem.code) { loadAccountContext() }
     LaunchedEffect(watchItem.code) { reloadLogs() }
     LaunchedEffect(watchItem.code) { loadAnalysis(false) }
     LaunchedEffect(watchItem.code) { loadCatalysts(false) }
@@ -325,6 +363,10 @@ fun StockDetailScreen(
             PositionCard(
                 item = watchItem,
                 quote = quote,
+                accountHoldings = accountHoldings,
+                accountContext = accountContext,
+                accountNames = accountNames,
+                onAccountSelect = { switchAccountContext(it) },
                 onEditClick = { showPositionSheet = true },
             )
             // S13: 논지 변경 힌트 — 저장 직후 이전 논지 기준 코멘트가 그대로 있을 때 안내.
@@ -346,6 +388,8 @@ fun StockDetailScreen(
                 analysis = analysis,
                 analyzing = analyzing,
                 aggressive = AppPrefs.getMode(context) == "aggressive",
+                // 특정 계좌 컨텍스트면 코멘트가 그 계좌 포지션 기준임을 표시
+                accountLabel = if (accountHoldings.size >= 2) accountContext?.let { accountNames[it] } else null,
                 onRegenerate = { loadAnalysis(true) },
             )
             val q = quote
@@ -488,9 +532,12 @@ fun StockDetailScreen(
                 val prevThesis = watchItem.thesis
                 watchItem = updated
                 showPositionSheet = false
+                // 편집으로 계좌 구성이 바뀌었을 수 있음(행 추가/삭제) → 컨텍스트 재적용
+                loadAccountContext()
                 // S13: 논지가 바뀌었으면 코멘트 갱신 힌트 표시
                 if ((updated.thesis ?: "") != (prevThesis ?: "")) analysisThesisChanged = true
             },
+            initialAccountId = accountContext,
         )
     }
 
@@ -824,15 +871,61 @@ private fun volPriceSignal(priceUp: Boolean, ratio: Double, intradayPos: Double?
 // ─── 포지션 카드 ─────────────────────────────────────────
 
 @Composable
-private fun PositionCard(item: WatchItem, quote: Quote?, onEditClick: () -> Unit) {
+private fun PositionCard(
+    item: WatchItem,
+    quote: Quote?,
+    accountHoldings: List<com.haky.edge.model.Holding> = emptyList(),
+    accountContext: Long? = null,
+    accountNames: Map<Long, String> = emptyMap(),
+    onAccountSelect: (Long?) -> Unit = {},
+    onEditClick: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
             .padding(16.dp),
     ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("내 포지션", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text("내 포지션", style = MaterialTheme.typography.titleSmall)
+            // 계좌 컨텍스트 배지 — 2개 이상 계좌 보유 시에만(1개면 전체=그 계좌라 무의미).
+            if (accountHoldings.size >= 2) {
+                var menuOpen by remember { mutableStateOf(false) }
+                Box {
+                    Text(
+                        (accountContext?.let { accountNames[it] ?: "계좌" }
+                            ?: "전체 · ${accountHoldings.size}계좌") + " ▾",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = if (accountContext == null) MaterialTheme.colorScheme.onSurfaceVariant else PurpleAccent,
+                        modifier = Modifier
+                            .background(
+                                if (accountContext == null) MaterialTheme.colorScheme.surfaceVariant
+                                else PurpleAccent.copy(alpha = 0.12f),
+                                RoundedCornerShape(50),
+                            )
+                            .clickable { menuOpen = true }
+                            .padding(horizontal = 7.dp, vertical = 3.dp),
+                    )
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text(if (accountContext == null) "✓ 전체(합산)" else "전체(합산)") },
+                            onClick = { menuOpen = false; onAccountSelect(null) },
+                        )
+                        accountHoldings.forEach { h ->
+                            val name = accountNames[h.accountId] ?: "계좌"
+                            DropdownMenuItem(
+                                text = { Text(if (accountContext == h.accountId) "✓ $name" else name) },
+                                onClick = { menuOpen = false; onAccountSelect(h.accountId) },
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.weight(1f))
             Text(
                 if (item.avgPrice == null) "입력" else "수정",
                 style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
@@ -856,6 +949,21 @@ private fun PositionCard(item: WatchItem, quote: Quote?, onEditClick: () -> Unit
             PositionRow("평가금액", (price * qtyD).toLong().fmt() + "원")
             PositionRow("평가손익", "${if (up) "+" else ""}${pnl.toLong().fmt()}원", if (up) ChangeUp else ChangeDown)
             PositionRow("수익률", "${if (up) "+" else ""}%.2f%%".format(rate), if (up) ChangeUp else ChangeDown)
+            // 전체(합산) 컨텍스트일 때 계좌별 소계 — "계좌별로 얼마지?"는 배지 탭 없이 여기서 해결.
+            if (accountContext == null && accountHoldings.size >= 2) {
+                val priced = accountHoldings.filter { (it.avgPrice ?: 0.0) > 0 && (it.qty ?: 0L) > 0 }
+                if (priced.size >= 2) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    priced.forEach { h ->
+                        Text(
+                            "${accountNames[h.accountId] ?: "계좌"}  ${h.qty!!.fmt()}주 @${h.avgPrice!!.toLong().fmt()}원",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 2.dp),
+                        )
+                    }
+                }
+            }
         } else if (avgD == null) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
@@ -1641,7 +1749,7 @@ private fun StockAskSheet(
                             Text("✦", color = PurpleAccent, style = MaterialTheme.typography.labelSmall,
                                 modifier = Modifier.padding(top = 2.dp))
                             Text(
-                                turn.answer,
+                                parseMarkdownBold(turn.answer),
                                 style = MaterialTheme.typography.bodyMedium,
                                 lineHeight = 22.sp,
                                 modifier = Modifier.weight(1f),
