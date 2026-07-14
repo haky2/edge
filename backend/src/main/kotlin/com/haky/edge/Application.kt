@@ -71,6 +71,7 @@ import com.haky.edge.routes.warningsRoutes
 import com.haky.edge.routes.webSearchTestRoutes
 import com.haky.edge.routes.sensitivityValidationRoutes
 import com.haky.edge.routes.anchorValidationRoutes
+import com.haky.edge.routes.factsAuditRoutes
 import com.haky.edge.routes.catalystValidationRoutes
 import com.haky.edge.routes.morningBriefRoutes
 import com.haky.edge.routes.weeklyReviewRoutes
@@ -348,6 +349,7 @@ fun Application.module() {
             sensitivityValidationRoutes(sensitivityValidation)
             catalystValidationRoutes(catalystValidation)
             anchorValidationRoutes(anchorValidation)
+            factsAuditRoutes(analysis, signalCodes)
             prewarmRoutes(kis, dart)
             slackTestRoutes(slack, opsChannel)
             morningBriefRoutes(morningBrief)

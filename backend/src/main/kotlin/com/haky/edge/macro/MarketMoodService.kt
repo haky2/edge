@@ -160,6 +160,12 @@ class MarketMoodService(
                 "  누적 ${report.total}회 채점 중 ${report.correct}회 적중($pct%) — 상승/하락/중립 3분류 채점(무작위 기준 약 33%)"
         }
 
+        /** /facts-audit 계측용 — 프롬프트(system) 상수 크기. */
+        internal fun promptCharSizes(): Map<String, Int> = mapOf(
+            "market_mood_defensive" to DEFENSIVE_PROMPT.length,
+            "market_mood_aggressive" to AGGRESSIVE_PROMPT.length,
+        )
+
         // 방어적(기본): 사실 + 방향만. 매매 스탠스 의견 없음.
         private val DEFENSIVE_PROMPT = """
             너는 한국 주식 투자 보조 앱의 장 전 시장 분위기 해석 어시스턴트다.

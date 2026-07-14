@@ -240,6 +240,12 @@ class ComparisonService(
     }.getOrNull()
 
     companion object {
+        /** /facts-audit 계측용 — 프롬프트(system) 상수 크기. */
+        internal fun promptCharSizes(): Map<String, Int> = mapOf(
+            "comparison_defensive" to DEFENSIVE_PROMPT.length,
+            "comparison_aggressive" to AGGRESSIVE_PROMPT.length,
+        )
+
         private val DEFENSIVE_PROMPT = """
             너는 한국 주식 투자 보조 앱의 분석 어시스턴트다.
             독자는 주식에 관심이 있지만 전문 트레이더가 아닌 일반인이다.

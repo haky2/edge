@@ -16,6 +16,9 @@ import java.time.ZonedDateTime
 // AnalysisService에서 분리(2026-07-14, facts 다이어트 1a) — 인스턴스 상태를 쓰지 않아
 // 골든 테스트(출력 바이트 고정)와 /facts-audit 계측이 가능해진다.
 
+/** facts 한 블록. text는 최종 문자열에 그대로 이어붙는 조각(개행 포함) — concat이 곧 buildFacts 출력. */
+internal data class FactsSection(val label: String, val text: String)
+
 internal fun buildFacts(
     code: String,
     name: String,
@@ -44,26 +47,71 @@ internal fun buildFacts(
     marketContext: String? = null,
     horizonLong: Boolean = false,
     now: ZonedDateTime = ZonedDateTime.now(ZoneId.of("Asia/Seoul")),
-): String {
-    val sb = StringBuilder()
-    sb.appendLine("종목: $name ($code)")
-    val kst = now
-    val totalMin = kst.hour * 60 + kst.minute
-    val isWeekend = kst.dayOfWeek == DayOfWeek.SATURDAY || kst.dayOfWeek == DayOfWeek.SUNDAY
-    // 캘린더가 있으면 공식 휴장 여부(주말+공휴일 모두 커버), 없으면 주말 휴리스틱 폴백.
-    // 공휴일(평일)을 "장 중"으로 오표시하던 문제를 토스 개장 캘린더로 바로잡는다.
-    val isHoliday = calendar?.isHoliday ?: isWeekend
-    val nextDay = calendar?.nextBusinessDay?.takeIf { it.isNotBlank() }
-    val marketStatus = when {
-        isHoliday       -> "휴장 — 전일 종가 기준" + (nextDay?.let { " (다음 거래일 $it)" } ?: "")
-        totalMin < 540  -> "장 전 (09:00 개장 전) — 전일 종가 기준"
-        totalMin < 930  -> "장 중 (09:00~15:30)"
-        else            -> "장 마감 후 (15:30 이후) — 당일 종가 확정"
+): String = buildFactsSections(
+    code, name, q, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents,
+    sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity,
+    quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis,
+    thesisHistory, marketContext, horizonLong, now,
+).joinToString("") { it.text }
+
+/**
+ * buildFacts의 블록 분해 버전 — /facts-audit가 블록별 크기를 계측한다.
+ * 계약: 각 섹션 text를 순서대로 이어붙인 결과가 buildFacts 출력과 바이트 동일(FactsGoldenTest가 강제).
+ */
+internal fun buildFactsSections(
+    code: String,
+    name: String,
+    q: Quote,
+    bars: List<DailyBar>,
+    financials: FinancialSummary?,
+    flows: List<InvestorFlow>,
+    news: List<NewsCluster>,
+    consensusTarget: Long?,
+    targetTrend: TargetPriceTrend?,
+    targetEvents: com.haky.edge.news.TargetPriceEvents?,
+    sectorChangeRate: Double?,
+    shortSelling: ShortSellingSummary?,
+    valuationBand: ValuationBand?,
+    peerValuation: PeerValuation?,
+    backtest: Backtest?,
+    flowSensitivity: FlowSensitivity?,
+    quarterlyIncome: QuarterlyIncome?,
+    listedShares: Long?,
+    eventsText: String?,
+    warningsText: String?,
+    calendar: com.haky.edge.toss.MarketCalendar?,
+    position: Position? = null,
+    thesis: String? = null,
+    thesisHistory: List<ThesisSnapshot> = emptyList(),
+    marketContext: String? = null,
+    horizonLong: Boolean = false,
+    now: ZonedDateTime = ZonedDateTime.now(ZoneId.of("Asia/Seoul")),
+): List<FactsSection> {
+    val sections = mutableListOf<FactsSection>()
+    fun add(label: String, text: String?) {
+        if (!text.isNullOrEmpty()) sections.add(FactsSection(label, text))
     }
-    sb.appendLine("현재 시장 상태: $marketStatus")
-    sb.appendLine("현재가: ${q.price}원 (전일대비 ${q.change}, ${q.changeRate}%)")
+
+    add("header", buildString {
+        appendLine("종목: $name ($code)")
+        val kst = now
+        val totalMin = kst.hour * 60 + kst.minute
+        val isWeekend = kst.dayOfWeek == DayOfWeek.SATURDAY || kst.dayOfWeek == DayOfWeek.SUNDAY
+        // 캘린더가 있으면 공식 휴장 여부(주말+공휴일 모두 커버), 없으면 주말 휴리스틱 폴백.
+        // 공휴일(평일)을 "장 중"으로 오표시하던 문제를 토스 개장 캘린더로 바로잡는다.
+        val isHoliday = calendar?.isHoliday ?: isWeekend
+        val nextDay = calendar?.nextBusinessDay?.takeIf { it.isNotBlank() }
+        val marketStatus = when {
+            isHoliday       -> "휴장 — 전일 종가 기준" + (nextDay?.let { " (다음 거래일 $it)" } ?: "")
+            totalMin < 540  -> "장 전 (09:00 개장 전) — 전일 종가 기준"
+            totalMin < 930  -> "장 중 (09:00~15:30)"
+            else            -> "장 마감 후 (15:30 이후) — 당일 종가 확정"
+        }
+        appendLine("현재 시장 상태: $marketStatus")
+        appendLine("현재가: ${q.price}원 (전일대비 ${q.change}, ${q.changeRate}%)")
+    })
     // 투자유의는 리스크 신호라 상단에 배치(거래소 지정 시장경보·단기과열·정리매매·VI).
-    if (warningsText != null) sb.appendLine(warningsText)
+    add("warnings", warningsText?.let { it + "\n" })
     // 국면 판정(계산) — 리레이팅/디레이팅을 룰로 감지해 해석 프레임을 지정(C11).
     // 상단 배치: 아래 밸류·실적을 읽기 전에 프레임이 잡혀야 "과거 밴드 기준 고평가" 관성 판정을 막는다.
     val regime = RegimeDetector.detect(
@@ -77,204 +125,206 @@ internal fun buildFacts(
     println("[Regime] ${q.code} price=${q.price} target=$consensusTarget trend=${targetTrend?.direction ?: "-"}" +
         " yoy=${quarterlyIncome?.yoyPct?.let { "%.0f".format(it) } ?: "-"} perPct=${valuationBand?.perPercentile ?: "-"}" +
         " → ${regime?.label ?: "일반 국면"}(${regime?.signals?.size ?: 0}신호)")
-    regime?.let {
-        sb.appendLine("국면 판정(계산): ${it.label} — 근거: ${it.signals.joinToString("; ")}")
-    }
+    add("regime", regime?.let { "국면 판정(계산): ${it.label} — 근거: ${it.signals.joinToString("; ")}\n" })
     // 시장 맥락(C17) — 종목 등락이 시장 동반인지 고유 움직임인지 가릴 사실 근거.
     // 2026-07 주간 코스피 -7.6% 급락 때 종목 분석들이 시장 동반 조정을 종목 고유 서사로
     // 기술한 실사례가 계기(docs/regime-consistency-2026-07.md 갭 1).
-    marketContext?.let { sb.appendLine(it) }
-    if (sectorChangeRate != null) {
-        val rs = q.changeRate - sectorChangeRate
+    add("market_context", marketContext?.let { it + "\n" })
+    add("sector_rs", sectorChangeRate?.let {
+        val rs = q.changeRate - it
         val label = when {
             rs > 0.5  -> "섹터 대비 강세"
             rs < -0.5 -> "섹터 대비 약세"
             else      -> "섹터 수준"
         }
-        sb.appendLine(
-            "섹터 대비 상대강도(RS): ${if (rs >= 0) "+" else ""}${"%.1f".format(rs)}%p" +
-                " (소속 섹터지수 ${if (sectorChangeRate >= 0) "+" else ""}${"%.2f".format(sectorChangeRate)}%, $label)"
-        )
-    }
-    if (shortSelling != null) {
-        sb.appendLine("공매도(KRX 데이터):")
-        sb.appendLine("  최근 공매도 거래량: ${"%.0f".format(shortSelling.recentVolume.toDouble())}주 (${shortSelling.recentVolumeDate})")
-        if (shortSelling.balance != null && shortSelling.balanceDate != null) {
-            val balLine = StringBuilder("  공매도 잔고: ${"%.0f".format(shortSelling.balance.toDouble())}주 (${shortSelling.balanceDate} 확정)")
-            if (shortSelling.balanceChangePct != null) {
-                val dir = when {
-                    shortSelling.balanceChangePct > 1.0 -> "잔고 증가(하락 베팅 강화)"
-                    shortSelling.balanceChangePct < -1.0 -> "잔고 감소(숏커버링·하락 베팅 약화)"
-                    else -> "잔고 보합"
+        "섹터 대비 상대강도(RS): ${if (rs >= 0) "+" else ""}${"%.1f".format(rs)}%p" +
+            " (소속 섹터지수 ${if (it >= 0) "+" else ""}${"%.2f".format(it)}%, $label)\n"
+    })
+    add("short_selling", shortSelling?.let { ss ->
+        buildString {
+            appendLine("공매도(KRX 데이터):")
+            appendLine("  최근 공매도 거래량: ${"%.0f".format(ss.recentVolume.toDouble())}주 (${ss.recentVolumeDate})")
+            if (ss.balance != null && ss.balanceDate != null) {
+                val balLine = StringBuilder("  공매도 잔고: ${"%.0f".format(ss.balance.toDouble())}주 (${ss.balanceDate} 확정)")
+                if (ss.balanceChangePct != null) {
+                    val dir = when {
+                        ss.balanceChangePct > 1.0 -> "잔고 증가(하락 베팅 강화)"
+                        ss.balanceChangePct < -1.0 -> "잔고 감소(숏커버링·하락 베팅 약화)"
+                        else -> "잔고 보합"
+                    }
+                    balLine.append(", 전일 대비 ${if (ss.balanceChangePct >= 0) "+" else ""}${"%.1f".format(ss.balanceChangePct)}% ($dir)")
                 }
-                balLine.append(", 전일 대비 ${if (shortSelling.balanceChangePct >= 0) "+" else ""}${"%.1f".format(shortSelling.balanceChangePct)}% ($dir)")
+                appendLine(balLine)
+            } else {
+                appendLine("  공매도 잔고: 집계 중(T+2일 지연)")
             }
-            sb.appendLine(balLine)
-        } else {
-            sb.appendLine("  공매도 잔고: 집계 중(T+2일 지연)")
         }
-    }
-    if (consensusTarget != null && consensusTarget > 0) {
-        val upside = (consensusTarget - q.price).toDouble() / q.price * 100
-        sb.appendLine(
-            "애널리스트 컨센서스 목표주가: ${"%,d".format(consensusTarget)}원" +
-                " (현재가 대비 ${if (upside >= 0) "+" else ""}${"%.1f".format(upside)}%)"
-        )
-        if (targetTrend != null) {
-            // 우리가 누적한 스냅샷 기준. 목표가가 오르는 추세면 밸류 상단권을 시장이 더 높이 본다는 신호.
-            val signed = "${if (targetTrend.changePct >= 0) "+" else ""}${"%.1f".format(targetTrend.changePct)}%"
-            sb.appendLine(
-                "  └ 컨센서스 목표가 추세: 최근 ${targetTrend.daySpan}일 ${targetTrend.direction} " +
-                    "(${targetTrend.baselineDate} ${"%,d".format(targetTrend.baseline)}원 → 현재 ${"%,d".format(targetTrend.current)}원, " +
-                    "$signed, 스냅샷 ${targetTrend.snapshotCount}개 기준)"
+    })
+    add("target_price", consensusTarget?.takeIf { it > 0 }?.let { target ->
+        buildString {
+            val upside = (target - q.price).toDouble() / q.price * 100
+            appendLine(
+                "애널리스트 컨센서스 목표주가: ${"%,d".format(target)}원" +
+                    " (현재가 대비 ${if (upside >= 0) "+" else ""}${"%.1f".format(upside)}%)"
             )
+            if (targetTrend != null) {
+                // 우리가 누적한 스냅샷 기준. 목표가가 오르는 추세면 밸류 상단권을 시장이 더 높이 본다는 신호.
+                val signed = "${if (targetTrend.changePct >= 0) "+" else ""}${"%.1f".format(targetTrend.changePct)}%"
+                appendLine(
+                    "  └ 컨센서스 목표가 추세: 최근 ${targetTrend.daySpan}일 ${targetTrend.direction} " +
+                        "(${targetTrend.baselineDate} ${"%,d".format(targetTrend.baseline)}원 → 현재 ${"%,d".format(targetTrend.current)}원, " +
+                        "$signed, 스냅샷 ${targetTrend.snapshotCount}개 기준)"
+                )
+            }
+            // 목표가 이벤트 이력 — "매주 목표가가 올라간다"·"주가가 목표가를 뚫었다" 같은 리레이팅
+            // 정황을 정량 사실로. 우리 스냅샷 누적 기준이라 초기엔 비어 있다가 시간이 지나며 차오른다.
+            AnalysisService.targetEventsLine(targetEvents)?.let { appendLine(it) }
         }
-        // 목표가 이벤트 이력 — "매주 목표가가 올라간다"·"주가가 목표가를 뚫었다" 같은 리레이팅
-        // 정황을 정량 사실로. 우리 스냅샷 누적 기준이라 초기엔 비어 있다가 시간이 지나며 차오른다.
-        AnalysisService.targetEventsLine(targetEvents)?.let { sb.appendLine(it) }
-    }
-    if (q.high52w > q.low52w && q.high52w > 0) {
+    })
+    add("week52", if (q.high52w > q.low52w && q.high52w > 0) {
         val pos = (q.price - q.low52w).toDouble() / (q.high52w - q.low52w) * 100
         val fromHigh = (q.price - q.high52w).toDouble() / q.high52w * 100
-        sb.appendLine(
-            "52주: 최고 ${q.high52w} / 최저 ${q.low52w} " +
-                "(현재 위치 ${"%.0f".format(pos)}%, 고점 대비 ${"%.1f".format(fromHigh)}%)"
-        )
-    }
+        "52주: 최고 ${q.high52w} / 최저 ${q.low52w} " +
+            "(현재 위치 ${"%.0f".format(pos)}%, 고점 대비 ${"%.1f".format(fromHigh)}%)\n"
+    } else null)
     // PER/PBR 는 두 소스가 공존한다(KIS 시세 vs 아래 밴드 자체계산 — 이익 연도·주식수 기준이 달라
     // 값이 다를 수 있음). 라벨 없이 병기하면 모델이 날마다 다른 값을 집어 코멘트 PER이 튀는 실사고가
     // 있었음(6/15 43.4배 → 6/17 52.7배, 주가는 +2.7%). 라벨로 구분하고 일관 사용은 프롬프트가 지시.
-    if (q.per > 0) sb.appendLine("PER(KIS 시세 기준) ${q.per} / PBR(KIS 시세 기준) ${q.pbr}")
+    add("per_kis", if (q.per > 0) "PER(KIS 시세 기준) ${q.per} / PBR(KIS 시세 기준) ${q.pbr}\n" else null)
     // 연환산(포워드) PER — 트레일링 PER은 작년 이익 기준이라 이익 급증 종목을 구조적으로
     // "고평가"로 보이게 한다. 최근 분기 누적을 연환산한 추정 PER을 병기해 그 편향을 사실로 보정.
-    AnalysisService.forwardPerLine(q.price, quarterlyIncome, listedShares)?.let { sb.appendLine(it) }
-    if (valuationBand != null && valuationBand.yearsUsed > 0) {
-        // 적자 연도는 PER 히스토리에서 제외되므로(턴어라운드 종목) 표본이 적을 수 있다. 적으면 신뢰도 경고.
-        val sampleNote = if (valuationBand.yearsUsed < 3)
-            " ※ 표본 ${valuationBand.yearsUsed}년으로 적어(적자 연도 제외 등) 밴드 신뢰도 낮음 — 결론은 약하게, 참고만." else ""
-        sb.appendLine("밸류에이션 히스토리 밴드(자체 계산: 현재가÷최근 연간 실적, 연도말 기준 과거 ${valuationBand.yearsUsed}년, 상장주식수 근사치):$sampleNote")
-        if (valuationBand.perCurrent > 0 && valuationBand.perMax > 0) {
-            sb.appendLine(
-                "  PER(자체 계산) 현재 ${"%.1f".format(valuationBand.perCurrent)}배 " +
-                    "→ ${valuationBand.yearsUsed}년 밴드 " +
-                    "[${"%.1f".format(valuationBand.perMin)}~${"%.1f".format(valuationBand.perMax)}배], " +
-                    "중앙 ${"%.1f".format(valuationBand.perMedian)}배 " +
-                    "(${valuationBand.perLabel})"
-            )
+    add("forward_per", AnalysisService.forwardPerLine(q.price, quarterlyIncome, listedShares)?.let { it + "\n" })
+    add("valuation_band", valuationBand?.takeIf { it.yearsUsed > 0 }?.let { vb ->
+        buildString {
+            // 적자 연도는 PER 히스토리에서 제외되므로(턴어라운드 종목) 표본이 적을 수 있다. 적으면 신뢰도 경고.
+            val sampleNote = if (vb.yearsUsed < 3)
+                " ※ 표본 ${vb.yearsUsed}년으로 적어(적자 연도 제외 등) 밴드 신뢰도 낮음 — 결론은 약하게, 참고만." else ""
+            appendLine("밸류에이션 히스토리 밴드(자체 계산: 현재가÷최근 연간 실적, 연도말 기준 과거 ${vb.yearsUsed}년, 상장주식수 근사치):$sampleNote")
+            if (vb.perCurrent > 0 && vb.perMax > 0) {
+                appendLine(
+                    "  PER(자체 계산) 현재 ${"%.1f".format(vb.perCurrent)}배 " +
+                        "→ ${vb.yearsUsed}년 밴드 " +
+                        "[${"%.1f".format(vb.perMin)}~${"%.1f".format(vb.perMax)}배], " +
+                        "중앙 ${"%.1f".format(vb.perMedian)}배 " +
+                        "(${vb.perLabel})"
+                )
+            }
+            if (vb.pbrCurrent > 0 && vb.pbrMax > 0) {
+                appendLine(
+                    "  PBR(자체 계산) 현재 ${"%.2f".format(vb.pbrCurrent)}배 " +
+                        "→ ${vb.yearsUsed}년 밴드 " +
+                        "[${"%.2f".format(vb.pbrMin)}~${"%.2f".format(vb.pbrMax)}배], " +
+                        "중앙 ${"%.2f".format(vb.pbrMedian)}배 " +
+                        "(${vb.pbrLabel})"
+                )
+            }
+            appendLine("  ※ KIS 시세 기준과 자체 계산 기준은 산식이 달라 값이 다를 수 있음. 밴드 위치를 논할 땐 자체 계산 값만, 단순 수준 언급엔 한 기준만 골라 일관되게 쓸 것.")
         }
-        if (valuationBand.pbrCurrent > 0 && valuationBand.pbrMax > 0) {
-            sb.appendLine(
-                "  PBR(자체 계산) 현재 ${"%.2f".format(valuationBand.pbrCurrent)}배 " +
-                    "→ ${valuationBand.yearsUsed}년 밴드 " +
-                    "[${"%.2f".format(valuationBand.pbrMin)}~${"%.2f".format(valuationBand.pbrMax)}배], " +
-                    "중앙 ${"%.2f".format(valuationBand.pbrMedian)}배 " +
-                    "(${valuationBand.pbrLabel})"
-            )
+    })
+    add("peer_valuation", peerValuation?.takeIf { it.per != null || it.pbr != null }?.let { pv ->
+        buildString {
+            // 동종(같은 사업) 대비 상대 위치. 역사 밴드(자기 과거)와 다른 축 — 리레이팅 국면에서 특히 유효.
+            appendLine("동종(${pv.clusterLabel}) 상대 밸류 — peer ${pv.peerCount}개 중앙값 대비:")
+            pv.per?.let { m ->
+                appendLine(
+                    "  PER 현재 ${"%.1f".format(m.current)}배 vs 동종 중앙값 ${"%.1f".format(m.peerMedian)}배 " +
+                        "(${if (m.diffPct >= 0) "+" else ""}${"%.0f".format(m.diffPct)}%, ${m.label})"
+                )
+            }
+            pv.pbr?.let { m ->
+                appendLine(
+                    "  PBR 현재 ${"%.2f".format(m.current)}배 vs 동종 중앙값 ${"%.2f".format(m.peerMedian)}배 " +
+                        "(${if (m.diffPct >= 0) "+" else ""}${"%.0f".format(m.diffPct)}%, ${m.label})"
+                )
+            }
         }
-        sb.appendLine("  ※ KIS 시세 기준과 자체 계산 기준은 산식이 달라 값이 다를 수 있음. 밴드 위치를 논할 땐 자체 계산 값만, 단순 수준 언급엔 한 기준만 골라 일관되게 쓸 것.")
-    }
-    if (peerValuation != null && (peerValuation.per != null || peerValuation.pbr != null)) {
-        // 동종(같은 사업) 대비 상대 위치. 역사 밴드(자기 과거)와 다른 축 — 리레이팅 국면에서 특히 유효.
-        sb.appendLine("동종(${peerValuation.clusterLabel}) 상대 밸류 — peer ${peerValuation.peerCount}개 중앙값 대비:")
-        peerValuation.per?.let { m ->
-            sb.appendLine(
-                "  PER 현재 ${"%.1f".format(m.current)}배 vs 동종 중앙값 ${"%.1f".format(m.peerMedian)}배 " +
-                    "(${if (m.diffPct >= 0) "+" else ""}${"%.0f".format(m.diffPct)}%, ${m.label})"
-            )
-        }
-        peerValuation.pbr?.let { m ->
-            sb.appendLine(
-                "  PBR 현재 ${"%.2f".format(m.current)}배 vs 동종 중앙값 ${"%.2f".format(m.peerMedian)}배 " +
-                    "(${if (m.diffPct >= 0) "+" else ""}${"%.0f".format(m.diffPct)}%, ${m.label})"
-            )
-        }
-    }
-    sb.appendLine("거래량: ${q.volume}")
+    })
+    add("volume", "거래량: ${q.volume}\n")
 
     // 최근 가격 흐름 서사(일봉 계산) — "상한가 두 번 치고 며칠째 급락" 같은 흐름을 사실로 제공.
     // 서사는 최근 20일로 한정(60일 전체는 서사가 늘어짐), 앵커 계산은 아래에서 60일 전체 사용.
-    priceActionSummary(bars.take(20))?.let { sb.appendLine().append(it) }
+    add("price_action", priceActionSummary(bars.take(20))?.let { "\n" + it })
 
     // 기술적 앵커 — 공격 모드가 진입·손절 레벨을 "지어내지 않고" 여기 있는 값에 묶도록 사실로 제공.
     // (실사고: facts에 레벨이 없어 "310,000~320,000원 분할 진입" 같은 창작 레벨이 나갔음)
-    technicalAnchorsText(bars)?.let { sb.appendLine().append(it) }
+    add("technical_anchors", technicalAnchorsText(bars)?.let { "\n" + it })
 
     // 회사 재무(DART 연간) — 급등락이 펀더멘털 성장에 근거하는지 판단할 근거.
-    financialSummaryText(financials)?.let { sb.appendLine().append(it) }
-    quarterlyIncomeText(quarterlyIncome)?.let { sb.appendLine().append(it) }
+    add("financials", financialSummaryText(financials)?.let { "\n" + it })
+    add("quarterly_income", quarterlyIncomeText(quarterlyIncome)?.let { "\n" + it })
 
-    if (flows.isNotEmpty()) {
-        sb.appendLine("수급(일별 순매수 수량, +매수/-매도):")
-        flows.forEach {
-            sb.appendLine("  ${it.date} 외국인 ${it.foreign} / 기관 ${it.institution} / 개인 ${it.individual}")
-        }
-    }
-    backtestText(backtest)?.let { sb.appendLine().append(it) }
-    flowSensitivityText(flowSensitivity)?.let { sb.appendLine().append(it) }
-    if (news.isNotEmpty()) {
-        sb.appendLine("최근 뉴스(유사 기사는 묶음, '외 N건'=같은 이슈가 그만큼 쏟아졌다는 관심도 신호. 날짜 주의 — 오래된 기사를 오늘 재료처럼 쓰지 말 것):")
-        news.forEach { c ->
-            val more = if (c.count > 1) " (유사 외 ${c.count - 1}건)" else ""
-            val dateLabel = newsDateLabel(c.item.publishedAt)?.let { ", $it" } ?: ""
-            sb.appendLine("  - [${c.item.source}$dateLabel] ${c.item.title}$more")
-            if (c.item.description.isNotBlank()) {
-                sb.appendLine("    요약: ${c.item.description}")
+    add("flows", if (flows.isNotEmpty()) {
+        buildString {
+            appendLine("수급(일별 순매수 수량, +매수/-매도):")
+            flows.forEach {
+                appendLine("  ${it.date} 외국인 ${it.foreign} / 기관 ${it.institution} / 개인 ${it.individual}")
             }
         }
-    }
+    } else null)
+    add("backtest", backtestText(backtest)?.let { "\n" + it })
+    add("flow_sensitivity", flowSensitivityText(flowSensitivity)?.let { "\n" + it })
+    add("news", if (news.isNotEmpty()) {
+        buildString {
+            appendLine("최근 뉴스(유사 기사는 묶음, '외 N건'=같은 이슈가 그만큼 쏟아졌다는 관심도 신호. 날짜 주의 — 오래된 기사를 오늘 재료처럼 쓰지 말 것):")
+            news.forEach { c ->
+                val more = if (c.count > 1) " (유사 외 ${c.count - 1}건)" else ""
+                val dateLabel = newsDateLabel(c.item.publishedAt)?.let { ", $it" } ?: ""
+                appendLine("  - [${c.item.source}$dateLabel] ${c.item.title}$more")
+                if (c.item.description.isNotBlank()) {
+                    appendLine("    요약: ${c.item.description}")
+                }
+            }
+        }
+    } else null)
     // 임박 거시 이벤트(향후 2주) — 이 종목·업종 변동성에 영향 줄 예정 일정.
-    if (eventsText != null) sb.appendLine().append(eventsText)
+    add("events", eventsText?.let { "\n" + it })
 
     // 계좌 성격(장기 계좌 컨텍스트) — C18이 이 라벨("계좌 성격: 장기")에 걸려 단기 매매 지시를
     // 장기 관점으로 전환한다. 자유 계좌·구버전 앱은 이 줄이 없어 기존 코멘트 그대로.
-    if (horizonLong) {
-        sb.appendLine()
-        sb.appendLine("계좌 성격: 장기 — 이 보유는 ISA·IRP·퇴직연금 등 장기 투자 계좌의 포지션이다(사용자가 장기 관점으로 관리).")
-    }
+    add("horizon", if (horizonLong)
+        "\n계좌 성격: 장기 — 이 보유는 ISA·IRP·퇴직연금 등 장기 투자 계좌의 포지션이다(사용자가 장기 관점으로 관리).\n"
+    else null)
 
-    if (position != null) {
-        val currentPrice = q.price.toDouble()
-        val pnlRate = if (position.avgPrice > 0)
-            (currentPrice - position.avgPrice) / position.avgPrice * 100 else 0.0
-        val pnlAmt = (currentPrice - position.avgPrice) * position.qty
-        sb.appendLine()
-        sb.appendLine("내 포지션 (실제 보유 데이터):")
-        sb.appendLine(
-            "  평단가: ${position.avgPrice.toLong()}원, 보유수량: ${position.qty}주"
-        )
-        sb.appendLine(
-            "  평가손익: ${if (pnlAmt >= 0) "+" else ""}${"%.0f".format(pnlAmt)}원" +
-                " (${"%.1f".format(pnlRate)}%)"
-        )
-        if (position.targetPrice > 0) {
-            val toTarget = (position.targetPrice - currentPrice) / currentPrice * 100
-            sb.appendLine(
-                "  목표가: ${position.targetPrice.toLong()}원" +
-                    " (현재가 대비 ${if (toTarget >= 0) "+" else ""}${"%.1f".format(toTarget)}%)"
+    add("position", position?.let { p ->
+        buildString {
+            val currentPrice = q.price.toDouble()
+            val pnlRate = if (p.avgPrice > 0)
+                (currentPrice - p.avgPrice) / p.avgPrice * 100 else 0.0
+            val pnlAmt = (currentPrice - p.avgPrice) * p.qty
+            appendLine()
+            appendLine("내 포지션 (실제 보유 데이터):")
+            appendLine(
+                "  평단가: ${p.avgPrice.toLong()}원, 보유수량: ${p.qty}주"
             )
-        }
-        if (position.stopPrice > 0) {
-            val toStop = (position.stopPrice - currentPrice) / currentPrice * 100
-            sb.appendLine(
-                "  손절가: ${position.stopPrice.toLong()}원" +
-                    " (현재가 대비 ${if (toStop >= 0) "+" else ""}${"%.1f".format(toStop)}%)"
+            appendLine(
+                "  평가손익: ${if (pnlAmt >= 0) "+" else ""}${"%.0f".format(pnlAmt)}원" +
+                    " (${"%.1f".format(pnlRate)}%)"
             )
+            if (p.targetPrice > 0) {
+                val toTarget = (p.targetPrice - currentPrice) / currentPrice * 100
+                appendLine(
+                    "  목표가: ${p.targetPrice.toLong()}원" +
+                        " (현재가 대비 ${if (toTarget >= 0) "+" else ""}${"%.1f".format(toTarget)}%)"
+                )
+            }
+            if (p.stopPrice > 0) {
+                val toStop = (p.stopPrice - currentPrice) / currentPrice * 100
+                appendLine(
+                    "  손절가: ${p.stopPrice.toLong()}원" +
+                        " (현재가 대비 ${if (toStop >= 0) "+" else ""}${"%.1f".format(toStop)}%)"
+                )
+            }
         }
-    }
+    })
     // 사용자가 기록한 투자 논지 — "사실 데이터"가 아니라 점검 대상 가설임을 라벨로 명시.
     // C12가 이 라벨("가설")에 걸려 확증편향·논지 인용을 막는다.
-    if (!thesis.isNullOrBlank()) {
-        sb.appendLine()
-        sb.appendLine("내 투자 논지 (사용자가 직접 기록한 보유/관심 이유 — 검증할 가설이며, 사실 데이터가 아님):")
-        sb.appendLine("  \"${thesis.trim()}\"")
-    }
+    add("thesis", thesis?.takeIf { it.isNotBlank() }?.let {
+        "\n내 투자 논지 (사용자가 직접 기록한 보유/관심 이유 — 검증할 가설이며, 사실 데이터가 아님):\n  \"${it.trim()}\"\n"
+    })
     // 논지 변천(C16 드리프트 점검) — 각 변경 시점의 주가를 일봉에서 조인해 "하락 후 논지 교체 =
     // 사후 합리화 가능성"을 계산 사실로 뒷받침한다. 이력 2건 미만이면 변천이 없으므로 생략.
-    AnalysisService.thesisHistoryText(thesisHistory, bars)?.let {
-        sb.appendLine()
-        sb.append(it)
-    }
-    return sb.toString()
+    add("thesis_history", AnalysisService.thesisHistoryText(thesisHistory, bars)?.let { "\n" + it })
+    return sections
 }
 
 /**

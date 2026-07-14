@@ -292,10 +292,24 @@ class AnalysisService(
         val quote: Quote,
         val facts: String,
         val richness: FactsRichness,
+        val sections: List<FactsSection>,
     )
 
     /** F5 프리모템 등 다른 서비스가 종목 분석과 *같은 사실 데이터*를 쓰도록 facts 텍스트만 노출. */
     suspend fun factsText(code: String, position: Position? = null): String = collectFacts(code, position, null).facts
+
+    /**
+     * /facts-audit 계측용 — 종목 1개의 facts를 블록(섹션) 단위로 반환.
+     * 운영 기능 아님. 합성 포지션·논지를 넣으면 메타 블록 최대 콤보 크기를 잴 수 있다.
+     */
+    internal suspend fun auditFactsSections(
+        code: String,
+        position: Position? = null,
+        thesis: String? = null,
+        thesisHistory: List<ThesisSnapshot> = emptyList(),
+        horizonLong: Boolean = false,
+    ): Pair<String, List<FactsSection>> =
+        collectFacts(code, position, thesis, thesisHistory, horizonLong).let { it.name to it.sections }
 
     /** 사실 수집 — 독립 호출은 전부 병렬, name·quote 확보 후 의존 2건(뉴스·sectorRS) 합류. */
     private suspend fun collectFacts(code: String, position: Position?, thesis: String? = null, thesisHistory: List<ThesisSnapshot> = emptyList(), horizonLong: Boolean = false): CollectedFacts = coroutineScope {
@@ -353,7 +367,9 @@ class AnalysisService(
             ?.let { "투자유의(거래소 지정, 현재 발동 중): " + it.joinToString(", ") { w -> w.label } }
         val calendar = calendarD.await()
         val marketCtx = marketCtxD.await()
-        val facts = buildFacts(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis, thesisHistory, marketCtx, horizonLong)
+        // 섹션 리스트를 만들어 concat — buildFacts와 바이트 동일(FactsGoldenTest 계약), /facts-audit가 섹션을 계측.
+        val sections = buildFactsSections(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis, thesisHistory, marketCtx, horizonLong)
+        val facts = sections.joinToString("") { it.text }
         val richness = FactsRichness(
             newsCount = news.size,
             hasInvestorFlow = flows.isNotEmpty(),
@@ -364,10 +380,8 @@ class AnalysisService(
             hasBacktest = backtest?.signals?.any { it.confident } == true,
             hasFlowSensitivity = flowSensitivity?.items?.any { it.confident } == true,
         )
-        CollectedFacts(name = name, quote = quote, facts = facts, richness = richness)
+        CollectedFacts(name = name, quote = quote, facts = facts, richness = richness, sections = sections)
     }
-
-    /** 사실 데이터를 Claude 입력용 한국어 텍스트로 정리. 여기 있는 값만 근거로 쓰라고 시스템 프롬프트가 지시. */
 
     /**
      * 시장 맥락(C17) — 코스피(0001) 확정 종가 기준 전일 등락 + 최근 5거래일 누적.
@@ -806,6 +820,14 @@ class AnalysisService(
 
         // ── Q&A(ask) — 분석 코멘트와 달리 "### 핵심 요약"/소제목 형식 계약이 없다 ──────────
         // 원칙은 동일(사실 한정·통계 한정·시장상태 표현)하되, "질문에 정면으로·짧게"가 형식의 전부.
+
+        /** /facts-audit 계측용 — 트리거별 프롬프트(system, 캐시 90% 할인 대상) 상수 크기. */
+        internal fun promptCharSizes(): Map<String, Int> = mapOf(
+            "analysis_defensive" to DEFENSIVE_PROMPT.length,
+            "analysis_aggressive" to AGGRESSIVE_PROMPT.length,
+            "ask_defensive" to askPrompt(AnalysisMode.DEFENSIVE).length,
+            "ask_aggressive" to askPrompt(AnalysisMode.AGGRESSIVE).length,
+        )
 
         const val ASK_MAX_QUESTION_CHARS = 300
         /** 계좌 성격 파라미터 값 — 앱 account.horizon과 동일 문자열. "long"만 의미 있음(free=미전송=기존 동작). */
