@@ -85,9 +85,13 @@ class FactsGoldenTest {
                 InvestorFlow("20260709", -50_000, 20_000, 30_000),
                 InvestorFlow("20260708", 80_000, 10_000, -90_000),
             ),
+            // 5건 — NEWS_DESC_TOP(4) 경계를 골든에 고정(5번째부터 요약 생략).
             news = listOf(
                 NewsCluster(NewsItem("삼성전자, 대규모 수주 공시", "2조원 규모 반도체 공급 계약 체결", "한국경제", "https://ex.com/1", "not-a-date"), 3),
                 NewsCluster(NewsItem("반도체 업황 회복 전망", "", "매일경제", "https://ex.com/2", "not-a-date"), 1),
+                NewsCluster(NewsItem("HBM4 양산 일정 공개", "내년 상반기 양산 목표로 장비 발주 시작", "전자신문", "https://ex.com/3", "not-a-date"), 2),
+                NewsCluster(NewsItem("파운드리 대형 고객 확보", "북미 빅테크와 3나노 계약", "조선비즈", "https://ex.com/4", "not-a-date"), 1),
+                NewsCluster(NewsItem("주주환원 확대 검토 보도", "자사주 매입 규모 상향 검토", "연합뉴스", "https://ex.com/5", "not-a-date"), 1),
             ),
             consensusTarget = 130_000,
             targetTrend = TargetPriceTrend(

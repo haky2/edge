@@ -19,6 +19,9 @@ import java.time.ZonedDateTime
 /** facts 한 블록. text는 최종 문자열에 그대로 이어붙는 조각(개행 포함) — concat이 곧 buildFacts 출력. */
 internal data class FactsSection(val label: String, val text: String)
 
+/** 뉴스 요약(description)을 포함하는 최신 클러스터 수 — 이후는 제목+날짜만(1b 다이어트). */
+internal const val NEWS_DESC_TOP = 4
+
 internal fun buildFacts(
     code: String,
     name: String,
@@ -194,12 +197,14 @@ internal fun buildFactsSections(
     // 연환산(포워드) PER — 트레일링 PER은 작년 이익 기준이라 이익 급증 종목을 구조적으로
     // "고평가"로 보이게 한다. 최근 분기 누적을 연환산한 추정 PER을 병기해 그 편향을 사실로 보정.
     add("forward_per", AnalysisService.forwardPerLine(q.price, quarterlyIncome, listedShares)?.let { it + "\n" })
+    // 산식 설명("현재가÷최근 연간 실적...")과 소스 혼용 주의(※)는 C8로 이관(1b) —
+    // 종목 무관 고정 문구를 매 호출 정가인 facts에서 캐시되는 system으로.
     add("valuation_band", valuationBand?.takeIf { it.yearsUsed > 0 }?.let { vb ->
         buildString {
             // 적자 연도는 PER 히스토리에서 제외되므로(턴어라운드 종목) 표본이 적을 수 있다. 적으면 신뢰도 경고.
             val sampleNote = if (vb.yearsUsed < 3)
                 " ※ 표본 ${vb.yearsUsed}년으로 적어(적자 연도 제외 등) 밴드 신뢰도 낮음 — 결론은 약하게, 참고만." else ""
-            appendLine("밸류에이션 히스토리 밴드(자체 계산: 현재가÷최근 연간 실적, 연도말 기준 과거 ${vb.yearsUsed}년, 상장주식수 근사치):$sampleNote")
+            appendLine("밸류에이션 히스토리 밴드(자체 계산, 과거 ${vb.yearsUsed}년):$sampleNote")
             if (vb.perCurrent > 0 && vb.perMax > 0) {
                 appendLine(
                     "  PER(자체 계산) 현재 ${"%.1f".format(vb.perCurrent)}배 " +
@@ -218,7 +223,6 @@ internal fun buildFactsSections(
                         "(${vb.pbrLabel})"
                 )
             }
-            appendLine("  ※ KIS 시세 기준과 자체 계산 기준은 산식이 달라 값이 다를 수 있음. 밴드 위치를 논할 땐 자체 계산 값만, 단순 수준 언급엔 한 기준만 골라 일관되게 쓸 것.")
         }
     })
     add("peer_valuation", peerValuation?.takeIf { it.per != null || it.pbr != null }?.let { pv ->
@@ -263,14 +267,17 @@ internal fun buildFactsSections(
     } else null)
     add("backtest", backtestText(backtest)?.let { "\n" + it })
     add("flow_sensitivity", flowSensitivityText(flowSensitivity)?.let { "\n" + it })
+    // 요약(description)은 최신 NEWS_DESC_TOP개 클러스터만 — 뉴스가 facts의 40%를 차지하던 실측(1a)의
+    // 최대 절감 지점. 오래된 기사는 제목+날짜만으로 충분(C6가 낡은 재료 사용을 이미 제한).
+    // 안내문("유사 기사는 묶음..." 66자)은 C6로 이관 — 종목 무관 고정 문구는 system(캐시)에 산다.
     add("news", if (news.isNotEmpty()) {
         buildString {
-            appendLine("최근 뉴스(유사 기사는 묶음, '외 N건'=같은 이슈가 그만큼 쏟아졌다는 관심도 신호. 날짜 주의 — 오래된 기사를 오늘 재료처럼 쓰지 말 것):")
-            news.forEach { c ->
+            appendLine("최근 뉴스:")
+            news.forEachIndexed { i, c ->
                 val more = if (c.count > 1) " (유사 외 ${c.count - 1}건)" else ""
                 val dateLabel = newsDateLabel(c.item.publishedAt)?.let { ", $it" } ?: ""
                 appendLine("  - [${c.item.source}$dateLabel] ${c.item.title}$more")
-                if (c.item.description.isNotBlank()) {
+                if (i < NEWS_DESC_TOP && c.item.description.isNotBlank()) {
                     appendLine("    요약: ${c.item.description}")
                 }
             }
@@ -432,7 +439,7 @@ private fun backtestText(b: Backtest?): String? {
                 " (평소 대비 $edgeSign${"%.2f".format(s.edge)}%p)"
         )
     }
-    sb.appendLine("  ※ 과거 표본 통계일 뿐 미래 보장 아님. 승률과 평균이 어긋나면 소수 급등/급락일이 평균을 끌어당긴 것. n이 십수 건 수준이면 승률의 우연 오차가 ±20%p 안팎이다.")
+    // "과거 통계일 뿐·소표본 오차 ±20%p" 주의문은 C9로 이관(1b) — 고정 문구는 system(캐시)에.
     return sb.toString()
 }
 
@@ -447,7 +454,7 @@ private fun flowSensitivityText(fs: FlowSensitivity?): String? {
         val rSign = if (c.r >= 0) "+" else ""
         sb.appendLine("  ${c.investor}(n=${c.n}): r=$rSign${c.r}, ${c.label}")
     }
-    sb.appendLine("  ※ 상관이 강할수록 해당 주체 수급이 이 종목 당일 가격을 함께 끌어올리거나 내리는 경향. 과거 ${fs.items.firstOrNull()?.n ?: 0}거래일 한정, 미래 보장 아님.")
+    // 상관 해설·"과거 한정 미래 보장 아님" 주의문은 C9로 이관(1b) — n은 각 행에 이미 병기.
     return sb.toString()
 }
 
