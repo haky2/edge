@@ -34,6 +34,7 @@ import com.haky.edge.news.NewsException
 import com.haky.edge.routes.analogRoutes
 import com.haky.edge.routes.analogValidationRoutes
 import com.haky.edge.routes.discoveryValidationRoutes
+import com.haky.edge.routes.moodWeightValidationRoutes
 import com.haky.edge.routes.analysisRoutes
 import com.haky.edge.routes.stanceStatsRoutes
 import com.haky.edge.routes.askRoutes
@@ -280,7 +281,10 @@ fun Application.module() {
     // ②-2a Analog 캘리브레이션 실증 — 유사 국면 카드 forward 분포를 walk-forward replay로 채점.
     val analogValidation = com.haky.edge.ai.AnalogValidationService(dailyHistory, master, signalCodes)
     // ②-2b Discovery 가격 3신호 실증 — peer 유니버스 750봉 × 코스피(^KS11) 초과수익 채점.
-    val discoveryValidation = com.haky.edge.ai.DiscoveryValidationService(dailyHistory, com.haky.edge.macro.YahooHistoryClient())
+    val yahooHistory = com.haky.edge.macro.YahooHistoryClient()
+    val discoveryValidation = com.haky.edge.ai.DiscoveryValidationService(dailyHistory, yahooHistory)
+    // ③ MoodLog 가중치 실측 — Yahoo 2년 8지표 × 코스피 3분류, 홀드아웃 검증.
+    val moodWeightValidation = com.haky.edge.macro.MoodWeightValidationService(yahooHistory)
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     // B 주간 회고 — 토요일 아침, 한 주 서버 기록(방향예측·스탠스·목표가·주간 등락) 회고 → #아침브리핑.
     val weeklyReview = com.haky.edge.slack.WeeklyReviewService(
@@ -357,6 +361,7 @@ fun Application.module() {
             anchorValidationRoutes(anchorValidation)
             analogValidationRoutes(analogValidation)
             discoveryValidationRoutes(discoveryValidation)
+            moodWeightValidationRoutes(moodWeightValidation)
             factsAuditRoutes(analysis, signalCodes)
             prewarmRoutes(kis, dart)
             slackTestRoutes(slack, opsChannel)

@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-07-14 — MoodLog 가중치 실측 ③: 7/8 지지·현행 유지·기저율 교훈 (Fable)
+
+**한 일** — Fable 트랙 2차 ③ 완료 = **트랙 2차 3종 전체 완주**(정본: docs/moodweight-validation-2026-07.md, decisions #16).
+- **3a**: `MoodWeightValidationService`+`GET /moodweight-validation` — Yahoo 2y 8지표(T-1 정렬, 선물 3종은 재구성 불가로 제외 명시) × ^KS11, 483거래일, 전반 적합→후반 홀드아웃. 단변량 **7/8 SUPPORTED**(미국 지수 6종 ρ 0.27~0.34 강지지·dxy 약지지·usdkrw만 INCONCLUSIVE) — 손짐작 부호가 전부 옳았음. 현행 시스템 43.9% = 라이브 43%(21건)와 일치(재현 교차 확인). **기저율 함정 확인: 다수 클래스(BULLISH) 48.2% > 현행 43.9%** — "무작위 33%"만 병기하면 과대평가 오독. 예측 중립 쏠림(43.7% vs 실제 20.3%)도 기록.
+- **3b**: 유일 후보(usdkrw 제거) 홀드아웃 +0.4%p < 채택 기준 +2%p(사전 지정) → **가중치·임계 현행 유지**(연속성 처리 불요). 교정은 프롬프트로: 시장 분위기 규칙 9(방어·공격)에 "33% 웃돈다고 예측력 검증된 듯 서술 금지 — 쏠린 장은 한 방향 찍기로 40%대(기저율)" 보강. 리팩터: inferDirection 로직을 `inferDirectionWith`(companion)로 추출해 검증과 정본 공유(파리티 테스트).
+- 검증: MoodWeightValidationTest 7 + 전체 테스트 + 실측 라우트. 규칙 9 실발화는 로컬 성적표 3건뿐이라 불가 — **운영 배포 후 내일 아침 브리핑에서 관찰**.
+
+**배운 것**
+- usdkrw가 sensitivity(#14)에선 CONTRADICTED, MoodLog에선 INCONCLUSIVE — 같은 지표라도 정렬(lag0 vs T-1)·타깃(섹터 바스켓 vs 코스피)이 다르면 다른 질문이다. 실측 결과를 프레임 무시하고 이식하면 안 됨.
+- 3분류 정확도의 기준선은 "균등 33%"가 아니라 "다수 클래스 비율"이 실전 기준 — 쏠린 국면에선 15%p나 차이났다.
+- 백테스트가 라이브 성적을 ±1%p로 재현하면 그 자체가 파이프라인 정합성 증거(21건 라이브를 483건으로 확장한 셈).
+
+**다음** — Fable 트랙 2차 종료. 9월: edge-calibration-track ②-2(regime 채점)+①-(b)(스탠스 성적표)+선물 3종·임계 재론, 10월: catalyst 재실측.
+
+---
+
 ## 2026-07-14 — 판정 실증 4탄 ②: Analog 캘리브레이션 실패·Discovery 신고가근접 반증 (Fable)
 
 **한 일** — Fable 트랙 2차 ② 완료(정본: docs/discovery-analog-validation-2026-07.md, decisions #15).

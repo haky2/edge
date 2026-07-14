@@ -61,33 +61,9 @@ class MarketMoodLogService {
     /** /market-mood-log 조기 반환 시 오늘 예측이 이미 기록됐는지 빠르게 확인. */
     fun hasTodayEntry(date: String): Boolean = loadLog().any { it.date == date }
 
-    // 코스피 선행 지표 가중치. 음수=강달러·고환율은 코스피에 역방향.
-    // 미국 지수선물(nqfut/esfut/ymfut)은 한국 장 전 미국 야간 흐름을 반영하는 가장 신선한 선행신호 —
-    // 지수 종가(nasdaq/sp500/dow)와 상관 높지만 장 마감 후 변동까지 담아 갭 방향을 앞서 가리킨다.
-    private val LEADING_WEIGHTS = mapOf(
-        "nasdaq" to 3.0, "sp500" to 3.0, "dow" to 2.0,
-        "ewy"    to 3.0, "sox"   to 1.0, "rut" to 1.0,
-        "dxy"    to -2.0, "usdkrw" to -2.0,
-        "nqfut"  to 2.0, "esfut"  to 2.0, "ymfut" to 1.0,
-    )
-
     /** 미국 지수·환율 지표로 코스피 방향 예측. */
-    fun inferDirection(indicators: List<MacroIndicator>): String {
-        var weightedSum = 0.0
-        var totalWeight = 0.0
-        for (ind in indicators) {
-            val w = LEADING_WEIGHTS[ind.key] ?: continue
-            weightedSum += ind.changeRate * w
-            totalWeight += kotlin.math.abs(w)
-        }
-        if (totalWeight == 0.0) return "NEUTRAL"
-        val composite = weightedSum / totalWeight
-        return when {
-            composite > 0.5  -> "BULLISH"
-            composite < -0.5 -> "BEARISH"
-            else             -> "NEUTRAL"
-        }
-    }
+    fun inferDirection(indicators: List<MacroIndicator>): String =
+        inferDirectionWith(LEADING_WEIGHTS, indicators.associate { it.key to it.changeRate })
 
     /**
      * 오늘 예측 기록. 이미 있으면 KOSPI가 채워진 경우(장 마감 후 재조회)에만 업데이트.
@@ -157,10 +133,43 @@ class MarketMoodLogService {
         )
     }
 
-    private fun classifyActual(kospiChange: Double): String = when {
-        kospiChange > 0.3  -> "BULLISH"
-        kospiChange < -0.3 -> "BEARISH"
-        else               -> "NEUTRAL"
+    companion object {
+        // 코스피 선행 지표 가중치. 음수=강달러·고환율은 코스피에 역방향.
+        // 미국 지수선물(nqfut/esfut/ymfut)은 한국 장 전 미국 야간 흐름을 반영하는 가장 신선한 선행신호 —
+        // 지수 종가(nasdaq/sp500/dow)와 상관 높지만 장 마감 후 변동까지 담아 갭 방향을 앞서 가리킨다.
+        // ③ 실측(moodweight-validation)이 이 테이블을 검증 대상으로 공유 — 교정은 실측 근거로만.
+        internal val LEADING_WEIGHTS = mapOf(
+            "nasdaq" to 3.0, "sp500" to 3.0, "dow" to 2.0,
+            "ewy"    to 3.0, "sox"   to 1.0, "rut" to 1.0,
+            "dxy"    to -2.0, "usdkrw" to -2.0,
+            "nqfut"  to 2.0, "esfut"  to 2.0, "ymfut" to 1.0,
+        )
+        internal const val COMPOSITE_THRESHOLD = 0.5
+
+        /** 예측 로직의 정본(가중 평균 → ±THRESHOLD 3분류). 검증 라우트가 가중치를 바꿔가며 재사용. */
+        internal fun inferDirectionWith(weights: Map<String, Double>, changes: Map<String, Double>): String {
+            var weightedSum = 0.0
+            var totalWeight = 0.0
+            for ((key, chg) in changes) {
+                val w = weights[key] ?: continue
+                weightedSum += chg * w
+                totalWeight += kotlin.math.abs(w)
+            }
+            if (totalWeight == 0.0) return "NEUTRAL"
+            val composite = weightedSum / totalWeight
+            return when {
+                composite > COMPOSITE_THRESHOLD  -> "BULLISH"
+                composite < -COMPOSITE_THRESHOLD -> "BEARISH"
+                else                             -> "NEUTRAL"
+            }
+        }
+
+        /** 실제 코스피 등락 3분류(±0.3% 중립 밴드) — 채점·검증 공용. */
+        internal fun classifyActual(kospiChange: Double): String = when {
+            kospiChange > 0.3  -> "BULLISH"
+            kospiChange < -0.3 -> "BEARISH"
+            else               -> "NEUTRAL"
+        }
     }
 
     private fun loadLog(): List<MoodLogEntry> {
