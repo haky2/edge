@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-07-14 — 판정 실증 4탄 ②: Analog 캘리브레이션 실패·Discovery 신고가근접 반증 (Fable)
+
+**한 일** — Fable 트랙 2차 ② 완료(정본: docs/discovery-analog-validation-2026-07.md, decisions #15).
+- **2a**: `AnalogValidationService`+`GET /analog-validation` — 관심 11종목×750봉 walk-forward replay(5거래일 간격, 885표본). **캘리브레이션 실패**: 예측 승률 버킷 단조성 없음(예측 30%→실현 54%, 예측 77%→57%), Spearman 0.057, 부호 일치 51%=나이브(추세 유지) 동률. 부수 발견: 카드 평균 매칭 **7.8건**(상시 n<15). 교정 = CAVEAT_BASE 실측 병기("승률 수치의 예측력 확인 안 됨 — 범위 참고용", 서버 텍스트라 앱 재빌드 불필요).
+- **2b**: `DiscoveryValidationService`+`GET /discovery-validation` — peer 37종목×750봉, 코스피(^KS11, Yahoo 5y — `YahooHistoryClient` 신설, ③ 재사용 예정) 대비 초과수익 채점. 저점반등 지지(20일 +1.23%p·승률 +9.5%p)·상대모멘텀 지지(약, {+3,+5,+7} 전부 지지 → 컷 유지)·**신고가근접 반증(−1.32%p·−4.0%p, n=642) → 신호 제거**. 교집합 컷을 오염시키던 주범 — 제거 후 가격 교집합 +0.58%p·승률 +9.6%p 회복. 회귀 고정 테스트(DiscoveryTest). 수급전환은 KIS 이력 미제공으로 백테스트 불가(스펙 예정대로) — 운영 실후보 추적은 7/10~13 후보 0건이라 9월로.
+- 검증: 신규 유닛 10(AnalogValidationTest 6·DiscoveryValidationTest 5) + 전체 테스트 + 실측 라우트 실행 + 교정 후 재실측 + 라이브 /discovery·/analog caveat 확인.
+
+**배운 것**
+- 로컬 서버 재시작 시 pkill 패턴에 `\|`(escaped alternation)를 쓰면 아무것도 안 죽는다 — 옛 JVM이 8080을 계속 물고 "교정이 반영 안 되는" 가짜 미스터리를 만들었음. `pkill -f "com.haky.edge"` 단일 패턴 또는 lsof로 PID 확인이 정석.
+- /discovery의 강제 갱신 파라미터는 `refresh=true`(force 아님).
+- "관찰 후보" 신호도 실측하면 방향이 갈린다: 저점권 반등은 초과수익, 신고가 근접은 역효과 — 같은 "모멘텀 계열"이라도 묶어 신뢰하면 안 됨.
+
+**다음** — 트랙 ③ MoodLog 가중치 백테스트(3a 실측→3b 교정, Yahoo 8지표+홀드아웃). 배포는 2a·2b 교정분 포함해서.
+
+---
+
 ## 2026-07-14 — facts 다이어트 ① 완주: 계측→교정 -22.1% (Fable)
 
 **한 일** — 커밋 aef2931(분리+골든)·941adc1(1a 계측)·dff9381(1b 교정), 배포. Fable 트랙 2차 ① 완료(정본: docs/facts-diet-2026-07.md).

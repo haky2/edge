@@ -32,6 +32,8 @@ import com.haky.edge.news.NaverTargetPriceClient
 import com.haky.edge.news.TargetPriceLogService
 import com.haky.edge.news.NewsException
 import com.haky.edge.routes.analogRoutes
+import com.haky.edge.routes.analogValidationRoutes
+import com.haky.edge.routes.discoveryValidationRoutes
 import com.haky.edge.routes.analysisRoutes
 import com.haky.edge.routes.stanceStatsRoutes
 import com.haky.edge.routes.askRoutes
@@ -275,6 +277,10 @@ fun Application.module() {
     val catalystValidation = com.haky.edge.ai.CatalystValidationService(catalystEventLog, dailyHistory, kis, master)
     // ②-3 기술적 앵커 실증 — 20일 저점/고점·MA20/60 레벨의 지지/저항 신호를 대조군 대비 채점.
     val anchorValidation = com.haky.edge.ai.AnchorValidationService(dailyHistory, master, signalCodes)
+    // ②-2a Analog 캘리브레이션 실증 — 유사 국면 카드 forward 분포를 walk-forward replay로 채점.
+    val analogValidation = com.haky.edge.ai.AnalogValidationService(dailyHistory, master, signalCodes)
+    // ②-2b Discovery 가격 3신호 실증 — peer 유니버스 750봉 × 코스피(^KS11) 초과수익 채점.
+    val discoveryValidation = com.haky.edge.ai.DiscoveryValidationService(dailyHistory, com.haky.edge.macro.YahooHistoryClient())
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     // B 주간 회고 — 토요일 아침, 한 주 서버 기록(방향예측·스탠스·목표가·주간 등락) 회고 → #아침브리핑.
     val weeklyReview = com.haky.edge.slack.WeeklyReviewService(
@@ -349,6 +355,8 @@ fun Application.module() {
             sensitivityValidationRoutes(sensitivityValidation)
             catalystValidationRoutes(catalystValidation)
             anchorValidationRoutes(anchorValidation)
+            analogValidationRoutes(analogValidation)
+            discoveryValidationRoutes(discoveryValidation)
             factsAuditRoutes(analysis, signalCodes)
             prewarmRoutes(kis, dart)
             slackTestRoutes(slack, opsChannel)

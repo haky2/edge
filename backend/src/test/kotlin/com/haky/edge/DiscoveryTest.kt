@@ -8,7 +8,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** 후보 발굴(D1) 순수 함수 검증 — 52주 위치·수익률·신호 4종·소음 컷. */
+/** 후보 발굴(D1) 순수 함수 검증 — 52주 위치·수익률·신호 3종·소음 컷. */
 class DiscoveryTest {
 
     // ── pos52w / retPct ────────────────────────────────────────────────────
@@ -71,16 +71,21 @@ class DiscoveryTest {
     }
 
     @Test
-    fun `신호 - 신고가근접(90 이상)과 저점반등(30 미만 + 5일 +5%)`() {
-        val high = DiscoveryService.evaluateSignals(92.0, null, null, null, flat, flat)
-        assertEquals(listOf("신고가근접"), high.map { it.type })
-
+    fun `신호 - 저점반등(30 미만 + 5일 +5%)`() {
         val rebound = DiscoveryService.evaluateSignals(25.0, null, 6.0, null, flat, flat)
         assertEquals(listOf("저점반등"), rebound.map { it.type })
 
         // 저점권이어도 반등이 없으면 무신호 / 중간권 반등도 무신호
         assertTrue(DiscoveryService.evaluateSignals(25.0, null, 2.0, null, flat, flat).isEmpty())
         assertTrue(DiscoveryService.evaluateSignals(50.0, null, 9.0, null, flat, flat).isEmpty())
+    }
+
+    @Test
+    fun `신호 - 신고가근접은 실측 반증으로 제거(②-2b 교정 방향 고정)`() {
+        // 52주 위치 ≥90%는 20일 코스피 대비 초과수익 -1.32%p·승률 -4.0%p(n=642, baseline 열위)로
+        // 발굴 신호에서 제거 — 재도입하려면 discovery-validation 재실측으로 근거를 갱신할 것.
+        val high = DiscoveryService.evaluateSignals(92.0, null, null, null, flat, flat)
+        assertTrue(high.none { it.type == "신고가근접" })
     }
 
     @Test

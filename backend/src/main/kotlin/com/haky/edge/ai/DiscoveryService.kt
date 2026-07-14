@@ -45,13 +45,17 @@ data class DiscoveryReport(
  * 유니버스는 전시장이 아니라 **관심 섹터의 peer 바스켓**(PeerValuationService.SECTOR_PEERS 재사용,
  * 관심종목 제외 ±20종목) — KIS 호출량·소음 관리 + "내 투자 문법 안의 후보"라는 명확한 프레임.
  *
- * 신호 4종(전부 기존 인프라·계산 재사용):
+ * 신호 3종(전부 기존 인프라·계산 재사용):
  *  1. 수급전환 — F4 SignalService.detectReversal(외인/기관, 5일 연속 순매도 후 첫 순매수). 발굴
  *     목적이라 매수 전환만 본다(매도 전환 종목을 "지켜봐라"는 어색).
  *  2. 상대모멘텀 — 종목 20일 수익률 − 코스피 20일 수익률 ≥ +5%p. 세부 섹터→KRX 업종지수 매핑이
  *     대분류 1:N 혼재라(SectorBriefingService 참고) 오분류 위험 없는 시장 대비로 판정.
- *  3. 신고가근접 — 52주 위치 ≥ 90%(돌파 관찰 후보).
- *  4. 저점반등 — 52주 위치 < 30% && 최근 5일 ≥ +5%.
+ *  3. 저점반등 — 52주 위치 < 30% && 최근 5일 ≥ +5%.
+ *
+ * ~~신고가근접(52주 위치 ≥ 90%)~~ — ②-2b 실측(2026-07, peer 37종목 750봉·n=642)에서 20일
+ * 코스피 대비 초과수익 −1.32%p·승률 −4.0%p로 baseline보다 **열위** → 제거. 교집합 컷을
+ * 오염시키던 주범(제거 전 교집합 20일 −0.49%p). 상대모멘텀(+0.74%p)·저점반등(+1.23%p)은 지지.
+ * 정본: docs/discovery-analog-validation-2026-07.md.
  *
  * 소음 컷: 신호 **2개 이상** 겹친 종목만, 최대 5종목. 점수화·가중치 튜닝 금지(F1 교훈).
  * 신호 0~1개면 후보 없음(억지로 채우지 않음 — 앱은 섹션 숨김).
@@ -125,10 +129,10 @@ class DiscoveryService(
     }
 
     companion object {
-        const val CAVEAT = "관심 섹터 peer 바스켓 내 스캔 결과입니다(전시장 아님). 신호 2개 이상 겹친 종목만 표시하며, 추천이 아니라 관찰 후보입니다 — 관심 등록 전 상세 분석을 확인하세요."
+        const val CAVEAT = "관심 섹터 peer 바스켓 내 스캔 결과입니다(전시장 아님). 신호 2개 이상 겹친 종목만 표시하며, 추천이 아니라 관찰 후보입니다 — 관심 등록 전 상세 분석을 확인하세요. 실측(2026-07, peer 750봉): 상대모멘텀·저점반등은 20일 코스피 대비 초과수익 지지, 수급전환은 이력 미제공으로 미검증."
 
-        internal const val REL_MOMENTUM_PP = 5.0   // 코스피 대비 20일 초과 수익 임계(%p)
-        internal const val HIGH_POS_PCT = 90.0     // 신고가 근접 = 52주 위치 90% 이상
+        internal const val REL_MOMENTUM_PP = 5.0   // 코스피 대비 20일 초과 수익 임계(%p) — ②-2b {+3,+5,+7} 전부 지지, 컷 유지
+        internal const val HIGH_POS_PCT = 90.0     // (신호 제거됨 — ②-2b 반증) discovery-validation 재실측용으로만 유지
         internal const val LOW_POS_PCT = 30.0      // 저점권 = 52주 위치 30% 미만
         internal const val REBOUND_RET5_PCT = 5.0  // 저점권 반등 = 5일 +5% 이상
         internal const val MIN_SIGNALS = 2         // 소음 컷: 신호 교집합 최소 수
@@ -173,9 +177,7 @@ class DiscoveryService(
             if (ret20 != null && benchRet20 != null && ret20 - benchRet20 >= REL_MOMENTUM_PP) {
                 add(DiscoverySignal("상대모멘텀", "20일 ${fmt1(ret20)}% (코스피 대비 +${fmt1(ret20 - benchRet20)}%p)"))
             }
-            if (pos52w != null && pos52w >= HIGH_POS_PCT) {
-                add(DiscoverySignal("신고가근접", "52주 위치 ${fmt1(pos52w)}% — 신고가 돌파 관찰"))
-            }
+            // 신고가근접(pos52w ≥ HIGH_POS_PCT)은 ②-2b 실측 반증으로 제거 — 클래스 주석 참조
             if (pos52w != null && ret5 != null && pos52w < LOW_POS_PCT && ret5 >= REBOUND_RET5_PCT) {
                 add(DiscoverySignal("저점반등", "52주 저점권(위치 ${fmt1(pos52w)}%)에서 5일 +${fmt1(ret5)}%"))
             }
