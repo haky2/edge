@@ -26,6 +26,7 @@ data class AskRequest(
     val mode: String? = null,                 // defensive(기본) | aggressive
     val history: List<AskTurn> = emptyList(), // 후속 질문 맥락 — 서버는 최근 3턴만 사용
     val thesis: String? = null,               // 투자 논지(선택) — facts에 "검증할 가설"로 주입
+    val horizon: String? = null,              // "long" = 장기 계좌 컨텍스트(Q13 장기 관점 답변). 그 외 = 기존 동작
 )
 
 fun Route.askRoutes(analysis: AnalysisService) {
@@ -58,8 +59,9 @@ fun Route.askRoutes(analysis: AnalysisService) {
             targetPrice = req.targetPrice ?: 0.0,
             stopPrice = req.stopPrice ?: 0.0,
         ) else null
+        val horizon = req.horizon?.takeIf { it == AnalysisService.HORIZON_LONG }
         try {
-            call.respond(analysis.ask(code, question, position, AnalysisMode.from(req.mode), req.history, thesis))
+            call.respond(analysis.ask(code, question, position, AnalysisMode.from(req.mode), req.history, thesis, horizon))
         } catch (e: AskDailyLimitException) {
             call.respond(HttpStatusCode.TooManyRequests, ErrorResponse(e.message ?: "오늘 질문 한도를 모두 사용했습니다"))
         }

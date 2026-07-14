@@ -251,10 +251,13 @@ class AnalysisService(
         mode: AnalysisMode = AnalysisMode.DEFENSIVE,
         history: List<AskTurn> = emptyList(),
         thesis: String? = null,
+        horizon: String? = null,
     ): AskAnswer {
         tickAskLimit()
         val t0 = System.currentTimeMillis()
-        val cf = collectFacts(code, position, thesis)
+        // 계좌 성격: "long"이면 facts에 장기 계좌 라인 주입(Q13이 단기 타이밍 답변을 막는다).
+        // 캐시가 없어 키 변경은 불필요 — analyze()와 달리 facts 주입+조항이 전부.
+        val cf = collectFacts(code, position, thesis, horizonLong = horizon == HORIZON_LONG)
         val userMessage = renderAskUserMessage(cf.facts, history, question)
         // 기본 Opus(해석 품질 우선, 일일 상한으로 볼륨 방어). 지연이 부담되면 env OPUS_TRIGGERS로 조정.
         val model = modelRouter.modelFor(ModelRouter.ASK)
@@ -1328,6 +1331,7 @@ class AnalysisService(
             Q10. "내 투자 논지" 항목이 있으면(없으면 무시) — 사용자가 기록한 가설이지 사실 데이터가 아니다. 논지 속 주장·수치를 답의 근거로 인용하지 마라. 질문이 논지와 관련되면(특히 "내 논지 아직 유효해?"류) 뒷받침하는 사실과 흔드는 사실을 똑같은 무게로 찾아 정직하게 판정하라 — 사용자 기분을 맞추려 논지를 옹호하는 것을 금지한다. 판정할 데이터가 부족하면 부족하다고 말하라.
             Q11. 지지선·저항선·매매 레벨을 말할 땐 기술적 앵커의 가격 레벨(최근 20거래일 저점/고점)을 우선 근거로 쓰라. 이동평균(20일·60일)을 지지선이나 저항선으로 단정하지 마라 — 이 종목군 실측에서 이동평균 터치는 고유 신호가 확인되지 않았다. 이동평균은 추세 위치 참고로만 쓰라.
             Q12. 뉴스·재료로 향후 며칠 내의 주가 방향을 단정하지 마라("이 소식으로 내일/이번 주 오를까?"류 질문 포함) — 이 앱의 재료 판정 실측에서 재료의 단기(1~5일) 반응은 호재/악재 방향과 무관했고, 방향은 20거래일 지평에서만 확인됐다. 재료의 영향은 "수 주 지평에서 ~방향 재료" 식으로 시간 지평을 붙여 답하라.
+            Q13. "계좌 성격: 장기" 항목이 있으면(없으면 이 규칙 전체를 무시) — 이 보유는 연금·세제혜택 등 장기 투자 계좌의 포지션이다. "오늘/이번 주 사라·팔라" 같은 단기 타이밍 답변과 단기 매매 레벨 제시를 하지 마라(공격 모드여도 단호함은 유지하되 지평을 장기로). 매매 판단을 묻는 질문에는 수년 지평에서 실적 추세·논지·밸류가 여전히 유효한지, 그리고 리밸런싱·적립 관점(비중이 과도한가, 적립을 지속할 만한가)으로 답하라. 단 구조적 악화(실적 추세 꺾임·논지 근거 소멸)는 장기 계좌라는 이유로 눙치지 말고 정면으로 짚어라. 규칙 번호는 내부 지시일 뿐이니 답변에 절대 쓰지 마라.
         """.trimIndent()
 
         private val ASK_DEFENSIVE_STANCE = """

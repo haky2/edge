@@ -28,4 +28,6 @@ data class AskRequest(
     val mode: String? = null,
     val history: List<AskTurn> = emptyList(),
     val thesis: String? = null,
+    // "long" = 장기 계좌 컨텍스트(장기 관점 답변). null(기본) = 미전송 → 구버전 서버 호환.
+    val horizon: String? = null,
 )

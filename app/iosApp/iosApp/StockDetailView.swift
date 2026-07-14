@@ -181,7 +181,7 @@ struct StockDetailView: View {
             loadLogs()
         }
         .sheet(isPresented: $showAskSheet) {
-            StockAskSheetView(item: item, api: api, mode: analysisMode)
+            StockAskSheetView(item: item, api: api, mode: analysisMode, horizon: contextHorizon)
         }
         .sheet(isPresented: $showEdit) {
             PositionEditView(item: item, initialAccountId: accountContext ?? initialAccountId) { updated in
@@ -2914,6 +2914,8 @@ struct StockAskSheetView: View {
     let item: WatchItem
     let api: EdgeApi
     let mode: AnalysisMode
+    // 상세 화면의 계좌 컨텍스트 성격 — "long"이면 답변도 장기 관점(Q13). nil = 기존 동작.
+    var horizon: String? = nil
     @Environment(\.dismiss) private var dismiss
 
     @State private var turns: [AskTurn] = []
@@ -3049,7 +3051,8 @@ struct StockAskSheetView: View {
                 stopPrice: item.stopPrice,
                 mode: mode.rawValue,
                 history: turns,
-                thesis: item.thesis
+                thesis: item.thesis,
+                horizon: horizon
             )
             turns.append(AskTurn(question: q, answer: ans.answer))
         } catch {

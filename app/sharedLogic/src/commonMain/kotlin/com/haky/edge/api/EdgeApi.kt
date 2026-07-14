@@ -562,9 +562,11 @@ class EdgeApi(
         mode: String = "defensive",
         history: List<AskTurn> = emptyList(),
         thesis: String? = null,
+        horizon: String? = null,
     ): AskAnswer = client.post("$baseUrl/ask/$code") {
         contentType(ContentType.Application.Json)
-        setBody(AskRequest(question, avgPrice, qty, targetPrice, stopPrice, mode, history, thesis?.trim()?.ifBlank { null }))
+        setBody(AskRequest(question, avgPrice, qty, targetPrice, stopPrice, mode, history, thesis?.trim()?.ifBlank { null },
+            horizon = horizon.takeIf { it == "long" }))
     }.body()
 
     /**

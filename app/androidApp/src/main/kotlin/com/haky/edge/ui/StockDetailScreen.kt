@@ -462,6 +462,7 @@ fun StockDetailScreen(
             item = watchItem,
             api = api,
             mode = AppPrefs.getMode(context),
+            horizon = contextHorizon(),
             onDismiss = { showAskSheet = false },
         )
     }
@@ -1627,6 +1628,8 @@ private fun StockAskSheet(
     item: WatchItem,
     api: EdgeApi,
     mode: String,
+    // 상세 화면의 계좌 컨텍스트 성격 — "long"이면 답변도 장기 관점(Q13). null = 기존 동작.
+    horizon: String? = null,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1661,6 +1664,7 @@ private fun StockAskSheet(
                     mode = mode,
                     history = turns,
                     thesis = item.thesis,
+                    horizon = horizon,
                 )
                 turns = turns + AskTurn(question = q, answer = ans.answer)
             } catch (_: Exception) {
