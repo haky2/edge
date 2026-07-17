@@ -57,6 +57,9 @@ import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import com.haky.edge.analysis.AfterTaxSummary
+import com.haky.edge.analysis.TaxEngine
+import com.haky.edge.analysis.TaxablePosition
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.AccountRepository
 import com.haky.edge.db.HoldingRepository
@@ -76,6 +79,12 @@ import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
+
+private fun taxLabelFor(name: String): String = when (name) {
+    "ISA" -> "ISA"
+    "IRP개인연금", "퇴직연금" -> "연금 (과세이연)"
+    else -> "일반"
+}
 
 // ── 도넛 팔레트 (인덱스 고정) ───────────────────────────────────────────────
 private val sliceColors = listOf(
@@ -289,6 +298,26 @@ fun PortfolioScreen(
                     // G3: 선택 계좌 기준 필터링 (null = 전체, 다계좌 동일 종목은 병합)
                     val displayRows = if (selectedAccountId == null) mergedByCode(rows)
                                       else rows.filter { it.accountId == selectedAccountId }
+                    // 세후 계산: raw rows (unmerged) per account → TaxEngine
+                    val taxSourceRows = if (selectedAccountId == null) rows
+                                        else rows.filter { it.accountId == selectedAccountId }
+                    val accNameMap = accounts.associate { it.id to it.name }
+                    val taxPositions = taxSourceRows.map { row ->
+                        val name = accNameMap[row.accountId] ?: ""
+                        TaxablePosition(code = row.item.code,
+                                        taxType = TaxEngine.taxTypeOf(name),
+                                        avgPrice = row.avg, qty = row.qty,
+                                        currentPrice = row.price)
+                    }
+                    val afterTaxSummary = if (taxPositions.isNotEmpty()) TaxEngine.compute(taxPositions) else null
+                    val afterTaxAccLabels: List<Pair<String, String>> = run {
+                        val seen = mutableSetOf<Long>()
+                        taxSourceRows.mapNotNull { row ->
+                            if (!seen.add(row.accountId)) return@mapNotNull null
+                            val name = accNameMap[row.accountId] ?: ""
+                            name to taxLabelFor(name)
+                        }
+                    }
                     HoldingsList(
                         rows = displayRows,
                         accounts = accounts,
@@ -301,6 +330,8 @@ fun PortfolioScreen(
                                 (map[sectorMap[row.item.code] ?: "기타"] ?: 0.0) + row.evaluated
                             map.entries.sortedByDescending { it.value }.map { it.key to it.value }
                         },
+                        afterTaxSummary = afterTaxSummary,
+                        afterTaxAccLabels = afterTaxAccLabels,
                         review = portfolioReview,
                         rebalanceCheck = rebalanceCheck,
                         reviewLoading = reviewLoading,
@@ -360,6 +391,8 @@ private fun HoldingsList(
     onAccountSelect: (Long?) -> Unit,
     onStockClick: ((WatchItem, Quote?, Long?) -> Unit)? = null,
     sectorRows: List<Pair<String, Double>>,
+    afterTaxSummary: AfterTaxSummary?,
+    afterTaxAccLabels: List<Pair<String, String>>,
     review: PortfolioReview?,
     rebalanceCheck: RebalanceCheck?,
     reviewLoading: Boolean,
@@ -397,6 +430,12 @@ private fun HoldingsList(
         item {
             SummaryCard(rows = rows, sectorRows = sectorRows)
             Spacer(Modifier.height(8.dp))
+        }
+        if (afterTaxSummary != null) {
+            item {
+                AfterTaxCard(summary = afterTaxSummary, accLabels = afterTaxAccLabels)
+                Spacer(Modifier.height(8.dp))
+            }
         }
         if (review != null || reviewLoading) {
             item {
@@ -1060,4 +1099,113 @@ private suspend fun loadPortfolioReview(
         api.getPortfolioReview(positions, theses, mode, refresh, accountScope = accountScope, horizon = horizon)
     }.getOrNull()
     onResult(result)
+}
+
+// ── 세후 손익 카드 ────────────────────────────────────────────────────────────
+
+@Composable
+private fun AfterTaxCard(summary: AfterTaxSummary, accLabels: List<Pair<String, String>>) {
+    val fmt = NumberFormat.getNumberInstance(Locale.KOREA)
+    val netColor = when {
+        summary.netPnl > 0 -> ChangeUp
+        summary.netPnl < 0 -> ChangeDown
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    fun fmtPnl(v: Long): String = "${if (v > 0) "+" else ""}${fmt.format(v)}원"
+
+    Surface(
+        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+               verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // 헤더
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("%", style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF34A853), fontWeight = FontWeight.Bold)
+                Text("세후 손익 (간이 · 전량 매도 기준)", style = MaterialTheme.typography.titleSmall)
+            }
+            HorizontalDivider()
+            // 세전 손익
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("세전 손익", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(fmtPnl(summary.taxableGross), style = MaterialTheme.typography.labelSmall)
+            }
+            // 거래세
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("증권거래세 (0.2%)", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("−${fmt.format(summary.transactionTax)}원",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            // 해외 양도세
+            if (summary.hasOverseas) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("해외 양도세", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("−${fmt.format(summary.overseasTax)}원",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            HorizontalDivider()
+            // 세후 순손익
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("세후 순손익", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                Text(fmtPnl(summary.netPnl),
+                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+                    color = netColor)
+            }
+            // 연금 별도
+            if (summary.hasPension) {
+                HorizontalDivider()
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("연금 계좌 (과세이연)", style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold, color = OrangeAccent)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("평가손익", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(fmtPnl(summary.pensionGross), style = MaterialTheme.typography.labelSmall)
+                    }
+                    Text("세후 순손익에 미포함 · 인출 방식·시점에 따라 세율 가변 (3.3~16.5%).",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            // ISA 안내
+            if (summary.hasIsa) {
+                HorizontalDivider()
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("ℹ", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("ISA 계좌의 주식 매매차익은 일반 계좌와 동일하게 계산됩니다. ISA 비과세 한도는 배당·이자 소득에 해당됩니다.",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            // 계좌별 세제 (2개 이상)
+            if (accLabels.size > 1) {
+                HorizontalDivider()
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("계좌별 적용 세제", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    accLabels.forEach { (name, label) ->
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(name, style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp))
+                            Text(label, style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+            // footer
+            HorizontalDivider()
+            Text("간이 계산 (오늘 전량 매도 가정). 배당·연금 인출·대주주세·수수료 등 제외 — 정확한 세액은 세무사 상담.",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+        }
+    }
 }

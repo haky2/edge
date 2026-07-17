@@ -164,6 +164,10 @@ struct PortfolioView: View {
                 summaryCard
             }
 
+            Section {
+                afterTaxCard
+            }
+
             if portfolioReview != nil || reviewLoading {
                 Section {
                     portfolioReviewCard
@@ -337,6 +341,116 @@ struct PortfolioView: View {
                 }
             }
         }
+    }
+
+    // MARK: - 세후 손익 카드
+
+    private func taxLabelFor(accountName: String) -> String {
+        switch accountName {
+        case "ISA": return "ISA"
+        case "IRP개인연금", "퇴직연금": return "연금 (과세이연)"
+        default: return "일반"
+        }
+    }
+
+    private var afterTaxCard: some View {
+        let sourceRows: [HoldingRow] = {
+            if let selId = selectedAccountId { return rows.filter { $0.accountId == selId } }
+            return rows
+        }()
+        let nameMap = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0.name) })
+        let positions: [TaxablePosition] = sourceRows.map { row in
+            let accName = nameMap[row.accountId] ?? ""
+            return TaxablePosition(code: row.item.code,
+                                   taxType: TaxEngine.shared.taxTypeOf(accountName: accName),
+                                   avgPrice: row.avg, qty: row.qty, currentPrice: row.price)
+        }
+        let s = TaxEngine.shared.compute(positions: positions)
+        let netColor: Color = s.netPnl > 0 ? .red : s.netPnl < 0 ? .blue : .secondary
+        let grossSign = s.taxableGross > 0 ? "+" : ""
+        let grossStr = "\(grossSign)\(Int(s.taxableGross).formatted())원"
+        let txTaxStr = "−\(Int(s.transactionTax).formatted())원"
+        let netSign = s.netPnl > 0 ? "+" : ""
+        let netStr = "\(netSign)\(Int(s.netPnl).formatted())원"
+        let pensionSign = s.pensionGross > 0 ? "+" : ""
+        let pensionStr = "\(pensionSign)\(Int(s.pensionGross).formatted())원"
+        let overseasTaxStr = "−\(Int(s.overseasTax).formatted())원"
+        var seenIds = Set<Int64>()
+        let accLabels: [(name: String, label: String)] = sourceRows.compactMap { row in
+            guard seenIds.insert(row.accountId).inserted else { return nil }
+            let name = nameMap[row.accountId] ?? ""
+            return (name: name, label: taxLabelFor(accountName: name))
+        }
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 4) {
+                Image(systemName: "percent").font(.caption).foregroundColor(.green)
+                Text("세후 손익 (간이 · 전량 매도 기준)").font(.subheadline.weight(.semibold))
+            }
+            Divider()
+            HStack {
+                Text("세전 손익").font(.caption).foregroundColor(.secondary)
+                Spacer()
+                Text(grossStr).font(.caption.monospacedDigit())
+            }
+            HStack {
+                Text("증권거래세 (0.2%)").font(.caption).foregroundColor(.secondary)
+                Spacer()
+                Text(txTaxStr).font(.caption.monospacedDigit()).foregroundColor(.secondary)
+            }
+            if s.hasOverseas {
+                HStack {
+                    Text("해외 양도세").font(.caption).foregroundColor(.secondary)
+                    Spacer()
+                    Text(overseasTaxStr).font(.caption.monospacedDigit()).foregroundColor(.secondary)
+                }
+            }
+            Divider()
+            HStack {
+                Text("세후 순손익").font(.caption.weight(.semibold))
+                Spacer()
+                Text(netStr).font(.subheadline.weight(.semibold).monospacedDigit()).foregroundColor(netColor)
+            }
+            if s.hasPension {
+                Divider()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("연금 계좌 (과세이연)").font(.caption.weight(.semibold)).foregroundColor(.orange)
+                    HStack {
+                        Text("평가손익").font(.caption2).foregroundColor(.secondary)
+                        Spacer()
+                        Text(pensionStr).font(.caption2.monospacedDigit())
+                    }
+                    Text("세후 순손익에 미포함 · 인출 방식·시점에 따라 세율 가변 (3.3~16.5%).")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+            }
+            if s.hasIsa {
+                Divider()
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "info.circle").font(.caption2).foregroundColor(.secondary)
+                    Text("ISA 계좌의 주식 매매차익은 일반 계좌와 동일하게 계산됩니다. ISA 비과세 한도는 배당·이자 소득에 해당됩니다.")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+            }
+            if accLabels.count > 1 {
+                Divider()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("계좌별 적용 세제").font(.caption).foregroundColor(.secondary)
+                    ForEach(0..<accLabels.count, id: \.self) { i in
+                        let entry = accLabels[i]
+                        HStack {
+                            Text(entry.name).font(.caption2)
+                            Spacer()
+                            Text(entry.label).font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            Divider()
+            Text("간이 계산 (오늘 전량 매도 가정). 배당·연금 인출·대주주세·수수료 등 제외 — 정확한 세액은 세무사 상담.")
+                .font(.caption2).foregroundColor(Color(.tertiaryLabel))
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: - 포트폴리오 종합 진단 카드
