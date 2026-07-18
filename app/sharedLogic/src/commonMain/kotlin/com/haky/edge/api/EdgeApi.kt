@@ -43,6 +43,9 @@ import com.haky.edge.model.OverseasStockInfo
 import com.haky.edge.model.JudgmentComparison
 import com.haky.edge.model.JudgmentComparisonRequest
 import com.haky.edge.model.JudgmentTradeEntry
+import com.haky.edge.model.PortfolioRisk
+import com.haky.edge.model.PortfolioRiskEntry
+import com.haky.edge.model.PortfolioRiskRequest
 import com.haky.edge.model.PersonalWeeklyPositionEntry
 import com.haky.edge.model.PersonalWeeklyReview
 import com.haky.edge.model.PersonalWeeklyReviewRequest
@@ -626,6 +629,14 @@ class EdgeApi(
             setBody(PersonalWeeklyReviewRequest(posEntries, trades, thesisChanges, refresh))
         }.body()
     }
+
+    /** POST /portfolio-risk — 실측 상관 기반 리스크 스냅샷(LLM 0). */
+    @Throws(Exception::class)
+    suspend fun postPortfolioRisk(positions: List<PortfolioRiskEntry>): PortfolioRisk =
+        client.post("$baseUrl/portfolio-risk") {
+            contentType(ContentType.Application.Json)
+            setBody(PortfolioRiskRequest(positions))
+        }.body()
 
     /**
      * POST /judgment-comparison — "AI 말 들었으면?" 반사실 성적 대조.

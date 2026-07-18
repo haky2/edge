@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,6 +67,9 @@ import com.haky.edge.db.HoldingRepository
 import com.haky.edge.model.AccountInfo
 import com.haky.edge.model.DriftEntry
 import com.haky.edge.model.PortfolioReview
+import com.haky.edge.model.PortfolioRisk
+import com.haky.edge.model.PortfolioRiskEntry
+import com.haky.edge.model.RiskStock
 import com.haky.edge.model.Quote
 import com.haky.edge.model.RebalanceCheck
 import com.haky.edge.db.WatchlistRepository
@@ -165,11 +169,25 @@ fun PortfolioScreen(
     var sectorMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var portfolioReview by remember { mutableStateOf<PortfolioReview?>(null) }
     var rebalanceCheck by remember { mutableStateOf<RebalanceCheck?>(null) }
+    var portfolioRisk by remember { mutableStateOf<PortfolioRisk?>(null) }
+    var riskLoading by remember { mutableStateOf(false) }
     var reviewLoading by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var showAccountMgmt by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
+
+    suspend fun loadRisk() {
+        val scopeId = selectedAccountId
+        val scopeRows = if (scopeId == null) mergedByCode(rows) else rows.filter { it.accountId == scopeId }
+        if (scopeRows.isEmpty()) return
+        riskLoading = true
+        portfolioRisk = runCatching {
+            val positions = scopeRows.map { r -> PortfolioRiskEntry(r.item.code, r.qty.toLong()) }
+            api.postPortfolioRisk(positions)
+        }.getOrNull()
+        riskLoading = false
+    }
 
     // 진단 범위 = 계좌 탭 선택. 전체 탭은 병합 전체, 계좌 탭은 그 계좌만(빈 계좌면 카드 숨김).
     suspend fun loadReview(force: Boolean) {
@@ -224,10 +242,11 @@ fun PortfolioScreen(
             HoldingRow(item, quote, avg, qty, price, h.accountId)
         }
         loading = false
-        // 섹터 분류 + 포트폴리오 진단은 화면 표시 차단 없이 별도 로드
+        // 섹터 분류 + 리스크 + 포트폴리오 진단은 화면 표시 차단 없이 별도 로드
         runCatching { api.getSectorClassify(codes) }.getOrNull()?.let { entries ->
             sectorMap = entries.associate { it.code to it.sectorLabel }
         }
+        loadRisk()
         loadReview(false)
         // 리밸런싱 체크는 전체 포트폴리오 기준(R1 스냅샷)이라 전체 탭에서만 조회.
         rebalanceCheck = if (selectedAccountId == null) {
@@ -242,6 +261,8 @@ fun PortfolioScreen(
     LaunchedEffect(selectedAccountId) {
         if (rows.isNotEmpty()) {
             portfolioReview = null
+            portfolioRisk = null
+            loadRisk()
             loadReview(false)
             rebalanceCheck = if (selectedAccountId == null) {
                 runCatching { api.getRebalanceCheck() }.getOrNull()
@@ -332,6 +353,8 @@ fun PortfolioScreen(
                         },
                         afterTaxSummary = afterTaxSummary,
                         afterTaxAccLabels = afterTaxAccLabels,
+                        risk = portfolioRisk,
+                        riskLoading = riskLoading,
                         review = portfolioReview,
                         rebalanceCheck = rebalanceCheck,
                         reviewLoading = reviewLoading,
@@ -393,6 +416,8 @@ private fun HoldingsList(
     sectorRows: List<Pair<String, Double>>,
     afterTaxSummary: AfterTaxSummary?,
     afterTaxAccLabels: List<Pair<String, String>>,
+    risk: PortfolioRisk?,
+    riskLoading: Boolean,
     review: PortfolioReview?,
     rebalanceCheck: RebalanceCheck?,
     reviewLoading: Boolean,
@@ -434,6 +459,12 @@ private fun HoldingsList(
         if (afterTaxSummary != null) {
             item {
                 AfterTaxCard(summary = afterTaxSummary, accLabels = afterTaxAccLabels)
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+        if (risk != null || riskLoading) {
+            item {
+                PortfolioRiskCard(risk = risk, loading = riskLoading)
                 Spacer(Modifier.height(8.dp))
             }
         }
@@ -1207,5 +1238,176 @@ private fun AfterTaxCard(summary: AfterTaxSummary, accLabels: List<Pair<String, 
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
         }
+    }
+}
+
+// ── 리스크 스냅샷 카드 ───────────────────────────────────────────────────────
+
+@Composable
+private fun PortfolioRiskCard(risk: PortfolioRisk?, loading: Boolean) {
+    val tealColor = Color(0xFF009688)
+    Surface(
+        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+               verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            // ── 헤더 ──
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("리스크 스냅샷",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                risk?.let { r ->
+                    val (hhiLabel, hhiColor) = when {
+                        r.hhi < 1500 -> "분산형" to Color(0xFF4CAF50)
+                        r.hhi < 2500 -> "보통" to Color(0xFFFF9800)
+                        else -> "집중형" to Color(0xFFF44336)
+                    }
+                    Text(hhiLabel,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = hhiColor,
+                        modifier = Modifier
+                            .background(hhiColor.copy(alpha = 0.15f), RoundedCornerShape(50))
+                            .padding(horizontal = 6.dp, vertical = 2.dp))
+                }
+                if (loading) {
+                    Spacer(Modifier.weight(1f))
+                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                }
+            }
+
+            if (risk == null) {
+                if (loading) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Text("리스크 계산 중…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                return@Column
+            }
+
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(10.dp))
+
+            // ── 수치 요약 행 ──
+            Row(modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                RoundedCornerShape(8.dp))
+                    .padding(vertical = 6.dp)) {
+                RiskStatCell("변동성", String.format("%.1f%%", risk.portfolioVolPct),
+                             Modifier.weight(1f))
+                risk.portfolioBeta?.let { beta ->
+                    RiskStatCell("베타", String.format("%.2f", beta), Modifier.weight(1f))
+                }
+                RiskStatCell("분산효과", String.format("%.2f배", risk.diversificationRatio),
+                             Modifier.weight(1f))
+                risk.avgCorr?.let { ac ->
+                    RiskStatCell("평균상관", String.format("%.2f", ac), Modifier.weight(1f))
+                }
+            }
+
+            // ── 클러스터 경고 ──
+            val warnClusters = risk.clusters.filter { it.names.size > 1 }
+            if (warnClusters.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    warnClusters.take(2).forEach { cl ->
+                        Row(verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("🔗", style = MaterialTheme.typography.labelSmall)
+                            Text("${cl.names.joinToString("·")} 동조 클러스터 " +
+                                 "(${String.format("%.0f", cl.weightPct)}% 비중, r≥0.7)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = OrangeAccent)
+                        }
+                    }
+                }
+            }
+
+            // ── 종목별 비중 vs 리스크 기여도 ──
+            if (risk.stocks.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(6.dp))
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Text("종목", style = MaterialTheme.typography.labelSmall,
+                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                         modifier = Modifier.weight(1f))
+                    Text("비중", style = MaterialTheme.typography.labelSmall,
+                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                         textAlign = TextAlign.End, modifier = Modifier.width(44.dp))
+                    Text("리스크 기여", style = MaterialTheme.typography.labelSmall,
+                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                         textAlign = TextAlign.End, modifier = Modifier.width(70.dp))
+                }
+                Spacer(Modifier.height(4.dp))
+                risk.stocks.sortedByDescending { it.riskContribPct }.forEach { s ->
+                    val diff = s.riskContribPct - s.weightPct
+                    val diffColor = when {
+                        diff > 5 -> ChangeUp
+                        diff < -5 -> ChangeDown
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text(s.name,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f))
+                        Text(String.format("%.1f%%", s.weightPct),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier.width(44.dp))
+                        val sign = if (diff >= 0) "+" else ""
+                        Text("$sign${String.format("%.1f", diff)}%p",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = diffColor,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier.width(40.dp))
+                        Text(String.format("%.1f%%", s.riskContribPct),
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = if (s.riskContribPct > s.weightPct + 5) FontWeight.SemiBold else FontWeight.Normal),
+                            color = if (s.riskContribPct > s.weightPct + 5) ChangeUp
+                                    else MaterialTheme.colorScheme.onSurface,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier.width(44.dp))
+                    }
+                }
+            }
+
+            // ── 제외 종목 caveat ──
+            if (risk.excluded.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(4.dp))
+                Text(risk.caveat.ifEmpty { "${risk.excluded.joinToString(", ")} 제외 (관측 부족)" },
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            // ── 날짜 ──
+            Spacer(Modifier.height(6.dp))
+            Text("${risk.date} · ${risk.windowDays}거래일 실측",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+        }
+    }
+}
+
+@Composable
+private fun RiskStatCell(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally,
+           verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall,
+             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
     }
 }

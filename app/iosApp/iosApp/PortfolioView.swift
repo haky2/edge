@@ -11,6 +11,8 @@ struct PortfolioView: View {
     @State private var portfolioReview: PortfolioReview? = nil
     @State private var rebalanceCheck: RebalanceCheck? = nil
     @State private var baselineResetting = false
+    @State private var portfolioRisk: PortfolioRisk? = nil
+    @State private var riskLoading = false
     @State private var reviewLoading = false
     @State private var reviewExpanded = true
     @State private var reviewCommentExpanded = false
@@ -98,9 +100,13 @@ struct PortfolioView: View {
             Task { await loadPortfolioReview(force: false) }
         }
         .onChange(of: selectedAccountId) {
-            // 계좌 탭 전환 → 그 계좌 범위로 진단 재조회(같은 날 같은 범위면 서버 캐시 적중).
+            // 계좌 탭 전환 → 그 계좌 범위로 진단·리스크 재조회(같은 날 같은 범위면 서버 캐시 적중).
             portfolioReview = nil
-            Task { await loadPortfolioReview(force: false) }
+            portfolioRisk = nil
+            Task {
+                await loadPortfolioRisk()
+                await loadPortfolioReview(force: false)
+            }
         }
     }
 
@@ -166,6 +172,12 @@ struct PortfolioView: View {
 
             Section {
                 afterTaxCard
+            }
+
+            if portfolioRisk != nil || riskLoading {
+                Section {
+                    portfolioRiskCard
+                }
             }
 
             if portfolioReview != nil || reviewLoading {
@@ -451,6 +463,134 @@ struct PortfolioView: View {
                 .font(.caption2).foregroundColor(Color(.tertiaryLabel))
         }
         .padding(.vertical, 4)
+    }
+
+    // MARK: - 리스크 스냅샷 카드
+
+    @ViewBuilder
+    private var portfolioRiskCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // ── 헤더 ──
+            HStack(spacing: 6) {
+                Image(systemName: "waveform.path.ecg").foregroundColor(.teal)
+                Text("리스크 스냅샷").font(.subheadline.weight(.semibold))
+                if let r = portfolioRisk {
+                    let hhiLabel = r.hhi < 1500 ? "분산형" : r.hhi < 2500 ? "보통" : "집중형"
+                    let hhiColor: Color = r.hhi < 1500 ? .green : r.hhi < 2500 ? .orange : .red
+                    Text(hhiLabel)
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(hhiColor.opacity(0.15))
+                        .foregroundColor(hhiColor)
+                        .clipShape(Capsule())
+                }
+                Spacer()
+                if riskLoading { ProgressView().scaleEffect(0.8) }
+            }
+            .padding(.vertical, 10)
+
+            if let r = portfolioRisk {
+                Divider()
+                VStack(alignment: .leading, spacing: 10) {
+
+                    // ── 포트폴리오 수치 요약 ──
+                    HStack(spacing: 0) {
+                        riskStatCell(label: "변동성", value: String(format: "%.1f%%", r.portfolioVolPct))
+                        Divider().frame(height: 28)
+                        if let beta = r.portfolioBeta {
+                            riskStatCell(label: "베타", value: String(format: "%.2f", beta))
+                            Divider().frame(height: 28)
+                        }
+                        riskStatCell(label: "분산효과", value: String(format: "%.2f배", r.diversificationRatio))
+                        if let ac = r.avgCorr {
+                            Divider().frame(height: 28)
+                            riskStatCell(label: "평균상관", value: String(format: "%.2f", ac))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    // ── 클러스터 경고 ──
+                    let warnClusters = r.clusters.filter { $0.names.count > 1 }
+                    if !warnClusters.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(warnClusters.prefix(2).enumerated()), id: \.offset) { _, cl in
+                                HStack(spacing: 6) {
+                                    Image(systemName: "link").font(.caption2).foregroundColor(.orange)
+                                    Text("\(cl.names.joined(separator: "·")) 동조 클러스터 (\(String(format: "%.0f", cl.weightPct))% 비중, r≥0.7)")
+                                        .font(.caption2)
+                                        .foregroundColor(.orange)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    }
+
+                    // ── 종목별 비중 vs 리스크 기여도 ──
+                    if !r.stocks.isEmpty {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text("종목").font(.caption2).foregroundColor(.secondary).frame(width: 80, alignment: .leading)
+                                Text("비중").font(.caption2).foregroundColor(.secondary).frame(width: 40, alignment: .trailing)
+                                Spacer()
+                                Text("리스크 기여").font(.caption2).foregroundColor(.secondary).frame(width: 64, alignment: .trailing)
+                            }
+                            ForEach(r.stocks.sorted { $0.riskContribPct > $1.riskContribPct }, id: \.code) { s in
+                                let diff = s.riskContribPct - s.weightPct
+                                let diffColor: Color = diff > 5 ? .red : diff < -5 ? .blue : .secondary
+                                HStack {
+                                    Text(s.name).font(.caption2).lineLimit(1).frame(width: 80, alignment: .leading)
+                                    Text(String(format: "%.1f%%", s.weightPct))
+                                        .font(.caption2.monospacedDigit()).foregroundColor(.secondary)
+                                        .frame(width: 40, alignment: .trailing)
+                                    Spacer()
+                                    let sign = diff >= 0 ? "+" : ""
+                                    Text("\(sign)\(String(format: "%.1f", diff))%p")
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundColor(diffColor)
+                                    Text(String(format: "%.1f%%", s.riskContribPct))
+                                        .font(.caption2.monospacedDigit().weight(.semibold))
+                                        .foregroundColor(s.riskContribPct > s.weightPct + 5 ? .red : .primary)
+                                        .frame(width: 42, alignment: .trailing)
+                                }
+                            }
+                        }
+                    }
+
+                    // ── 제외 종목 caveat ──
+                    if !r.excluded.isEmpty {
+                        Divider()
+                        Text(r.caveat.isEmpty ? "\(r.excluded.joined(separator: ", ")) 제외 (관측 부족)" : r.caveat)
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+
+                    // ── 날짜 ──
+                    Text("\(r.date) · \(r.windowDays)거래일 실측")
+                        .font(.caption2).foregroundColor(Color(.tertiaryLabel))
+                }
+                .padding(.top, 6).padding(.bottom, 4)
+            } else if riskLoading {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("리스크 계산 중…").font(.footnote).foregroundColor(.secondary)
+                    Spacer()
+                }
+                .padding(.vertical, 8)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func riskStatCell(label: String, value: String) -> some View {
+        VStack(spacing: 2) {
+            Text(label).font(.caption2).foregroundColor(.secondary)
+            Text(value).font(.caption.weight(.semibold).monospacedDigit())
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
     }
 
     // MARK: - 포트폴리오 종합 진단 카드
@@ -826,11 +966,24 @@ struct PortfolioView: View {
         lastUpdated = Date()
         loading = false
 
-        // 섹터 분류 + 포트폴리오 진단은 화면 표시 차단 없이 별도 비동기 로드
+        // 섹터 분류 + 리스크 + 포트폴리오 진단은 화면 표시 차단 없이 별도 비동기 로드
         if let entries = try? await api.getSectorClassify(codes: codes) {
             sectorClassify = Dictionary(uniqueKeysWithValues: entries.map { ($0.code, $0.sectorLabel) })
         }
+        await loadPortfolioRisk()
         await loadPortfolioReview(force: false)
+    }
+
+    private func loadPortfolioRisk() async {
+        let scopeRows = displayRows
+        guard scopeRows.count >= 1 else { return }
+        await MainActor.run { riskLoading = true }
+        defer { Task { @MainActor in riskLoading = false } }
+        let positions = scopeRows.map { row in
+            PortfolioRiskEntry(code: row.item.code, qty: Int64(row.qty))
+        }
+        let result = try? await api.postPortfolioRisk(positions: positions)
+        await MainActor.run { portfolioRisk = result }
     }
 
     private func loadPortfolioReview(force: Bool) async {
