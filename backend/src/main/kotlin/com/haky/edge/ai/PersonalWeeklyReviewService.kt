@@ -43,11 +43,19 @@ data class WeeklyThesisChange(
 data class PersonalWeeklyReview(
     val weekStart: String,       // 회고 대상 월요일 YYYY-MM-DD
     val weekEnd: String,         // 회고 대상 금요일 YYYY-MM-DD
-    val factLines: String,       // 계산 요약 블록(사실) — 앱이 그대로 표시
+    val factLines: String,       // 계산 요약 블록(사실, 매매·스탠스·논지) — 앱이 그대로 표시
+    val holdingMoves: List<HoldingMove> = emptyList(), // 보유 종목 주간 등락 — 앱이 정렬된 행으로 렌더
     val comment: String,         // Opus 해석 본문
     val summary: String? = null, // "### 핵심 요약" 파싱(분석 코멘트와 동일 계약)
     val generatedAt: String = "",
     val tradeCount: Int = 0,
+)
+
+/** 보유 종목 1건의 주간 등락 — 앱이 종목명(좌)·등락률(우, 색상)로 정렬 렌더. */
+@Serializable
+data class HoldingMove(
+    val name: String,
+    val changePct: Double,
 )
 
 /**
@@ -144,40 +152,31 @@ class PersonalWeeklyReviewService(
         // ④ 다음 주 이벤트(9일 = 다음 주 금요일까지).
         val upcoming = runCatching { eventSync.getUpcoming(9) }.getOrElse { emptyList() }
 
-        // ── 계산 요약 블록(사실) — 앱이 그대로 렌더 ──────────────────────────
+        // ── 보유 종목 주간 등락(구조화) — 앱이 정렬된 색상 행으로 렌더 ────────────
+        val holdingMoves = positions.keys
+            .mapNotNull { c -> weeklyMove[c]?.let { HoldingMove(nameOf[c] ?: c, it) } }
+            .sortedByDescending { it.changePct }
+
+        // ── 나머지 계산 요약 블록(사실: 매매·스탠스·논지) — 앱이 그대로 렌더 ────────
         val weekTrades = trades.filter { it.date in mondayStr..fridayStr }.sortedBy { it.date }
         val factLines = buildString {
             if (weekTrades.isNotEmpty()) {
-                appendLine("*이번 주 매매* ${weekTrades.size}건")
+                appendLine("이번 주 매매 ${weekTrades.size}건")
                 weekTrades.forEach { t ->
                     val name = t.name?.takeIf { it.isNotBlank() } ?: nameOf[t.code] ?: t.code
                     val act = actionKo(t.action)
                     val at = t.price?.let { " @${fmtWon(it)}" } ?: ""
-                    appendLine("· ${WeeklyReviewService.koreanDate(t.date)} $act $name$at")
-                }
-            }
-            if (positions.isNotEmpty()) {
-                val moves = positions.keys
-                    .mapNotNull { c -> weeklyMove[c]?.let { (nameOf[c] ?: c) to it } }
-                    .sortedByDescending { it.second }
-                if (moves.isNotEmpty()) {
-                    // 4종목 미만이면 상위/하위 분할이 같은 종목을 중복 표기 → 그냥 전부 나열.
-                    if (moves.size < 4) {
-                        appendLine("*보유 종목 주간* " + moves.joinToString(" · ") { "${it.first} ${fmtPct(it.second)}" })
-                    } else {
-                        val top = moves.take(2).joinToString(" · ") { "${it.first} ${fmtPct(it.second)}" }
-                        val bottom = moves.takeLast(2).reversed().joinToString(" · ") { "${it.first} ${fmtPct(it.second)}" }
-                        appendLine("*보유 종목 주간* 상위: $top / 하위: $bottom")
-                    }
+                    appendLine("  ${WeeklyReviewService.koreanDate(t.date)} $act $name$at")
                 }
             }
             if (transitions.isNotEmpty()) {
-                appendLine("*AI 스탠스 전환* " + transitions.joinToString(", ") { t ->
-                    "${nameOf[t.code] ?: t.code} ${t.from}→${t.to}"
-                })
+                appendLine("AI 스탠스 전환")
+                transitions.forEach { t ->
+                    appendLine("  ${nameOf[t.code] ?: t.code} ${t.from}→${t.to}")
+                }
             }
             if (thesisChanges.isNotEmpty()) {
-                appendLine("*논지 변경* " + thesisChanges.joinToString(" · ") { nameOf[it.code] ?: it.code })
+                appendLine("논지 변경: " + thesisChanges.joinToString(", ") { nameOf[it.code] ?: it.code })
             }
         }.trimEnd()
 
@@ -196,6 +195,7 @@ class PersonalWeeklyReviewService(
             weekStart = monday.toString(),
             weekEnd = friday.toString(),
             factLines = factLines,
+            holdingMoves = holdingMoves,
             comment = comment,
             summary = summary,
             generatedAt = now,

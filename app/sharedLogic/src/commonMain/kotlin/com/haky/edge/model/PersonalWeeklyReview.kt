@@ -8,11 +8,16 @@ data class PersonalWeeklyReview(
     val weekStart: String,
     val weekEnd: String,
     val factLines: String,
+    val holdingMoves: List<HoldingMove> = emptyList(),
     val comment: String,
     val summary: String? = null,
     val generatedAt: String = "",
     val tradeCount: Int = 0,
 )
+
+/** 보유 종목 1건의 주간 등락 — 앱이 종목명(좌)·등락률(우, 색상) 행으로 렌더. */
+@Serializable
+data class HoldingMove(val name: String, val changePct: Double)
 
 /** 이번 주 매매 1건(buy/sell). date = YYYY-MM-DD(KST). */
 @Serializable

@@ -80,27 +80,48 @@ struct StatsView: View {
                     Text("이번 주 회고 생성 중…").font(.footnote).foregroundColor(.secondary)
                 }
             } else if let rev = weeklyReview {
-                Text(rev.factLines)
-                    .font(.footnote.monospacedDigit())
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 2)
-                if let summary = rev.summary {
-                    Divider()
-                    Text(summary)
-                        .font(.callout)
-                        .padding(.vertical, 4)
-                }
-                Divider()
-                DisclosureGroup(isExpanded: $weeklyCommentExpanded) {
-                    Text(rev.comment)
-                        .font(.footnote)
-                        .foregroundColor(.primary)
-                        .padding(.top, 4)
-                } label: {
-                    Text("전문 보기")
-                        .font(.caption)
-                        .foregroundColor(.accentColor)
+                VStack(alignment: .leading, spacing: 0) {
+                    if !rev.holdingMoves.isEmpty {
+                        Text("보유 종목 주간 등락")
+                            .font(.caption).fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                            .padding(.bottom, 8)
+                        VStack(spacing: 10) {
+                            ForEach(Array(rev.holdingMoves.enumerated()), id: \.offset) { _, m in
+                                HStack {
+                                    Text(m.name)
+                                        .font(.subheadline)
+                                    Spacer(minLength: 12)
+                                    Text(fmtPct(m.changePct))
+                                        .font(.subheadline.monospacedDigit().weight(.semibold))
+                                        .foregroundColor(pctColor(m.changePct))
+                                }
+                            }
+                        }
+                    }
+                    let facts = rev.factLines.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !facts.isEmpty {
+                        if !rev.holdingMoves.isEmpty { Divider().padding(.vertical, 10) }
+                        mdText(facts)
+                            .font(.footnote.monospacedDigit())
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if let summary = rev.summary {
+                        Divider().padding(.vertical, 10)
+                        mdText(summary).font(.callout)
+                    }
+                    Divider().padding(.vertical, 10)
+                    DisclosureGroup(isExpanded: $weeklyCommentExpanded) {
+                        mdText(rev.comment)
+                            .font(.footnote)
+                            .foregroundColor(.primary)
+                            .padding(.top, 4)
+                    } label: {
+                        Text("전문 보기")
+                            .font(.caption)
+                            .foregroundColor(.accentColor)
+                    }
                 }
             }
         } header: {
@@ -111,6 +132,35 @@ struct StatsView: View {
                     .font(.caption2)
             }
         }
+    }
+
+    // 등락률 포맷/색 — 한국 관례: 상승 빨강, 하락 파랑, 보합 회색.
+    private func fmtPct(_ p: Double) -> String {
+        String(format: p >= 0 ? "+%.2f%%" : "%.2f%%", p)
+    }
+    private func pctColor(_ p: Double) -> Color {
+        if p > 0 { return .red }
+        if p < 0 { return .blue }
+        return .secondary
+    }
+
+    private func mdText(_ text: String) -> Text {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var result = AttributedString()
+        let nsStr = trimmed as NSString
+        let regex = try! NSRegularExpression(pattern: #"\*\*(.+?)\*\*"#, options: [.dotMatchesLineSeparators])
+        let matches = regex.matches(in: trimmed, range: NSRange(location: 0, length: nsStr.length))
+        var cursor = 0
+        for m in matches {
+            let pre = NSRange(location: cursor, length: m.range.location - cursor)
+            result += AttributedString(nsStr.substring(with: pre))
+            var bold = AttributedString(nsStr.substring(with: m.range(at: 1)))
+            bold.inlinePresentationIntent = .stronglyEmphasized
+            result += bold
+            cursor = m.range.location + m.range.length
+        }
+        result += AttributedString(nsStr.substring(from: cursor))
+        return Text(result)
     }
 
     // MARK: - 섹션: 종목 코멘트 적중률 (F6)

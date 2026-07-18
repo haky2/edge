@@ -54,6 +54,7 @@ import com.haky.edge.db.HoldingRepository
 import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.model.ActionLogEntry
 import com.haky.edge.model.Holding
+import com.haky.edge.model.HoldingMove
 import com.haky.edge.model.PersonalWeeklyReview
 import com.haky.edge.model.WatchItem
 import com.haky.edge.model.WeeklyThesisChangeEntry
@@ -258,14 +259,45 @@ fun StatsScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         } else if (rev != null) {
-                            Text(rev.factLines,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(vertical = 2.dp))
+                            if (rev.holdingMoves.isNotEmpty()) {
+                                Text("보유 종목 주간 등락",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 8.dp))
+                                rev.holdingMoves.forEach { m ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(m.name, style = MaterialTheme.typography.bodyMedium)
+                                        Text(fmtPct(m.changePct),
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontFeatureSettings = "tnum"),
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = when {
+                                                m.changePct > 0 -> ChangeUp
+                                                m.changePct < 0 -> ChangeDown
+                                                else -> Color.Gray
+                                            })
+                                    }
+                                }
+                            }
+                            val facts = rev.factLines.trim()
+                            if (facts.isNotEmpty()) {
+                                if (rev.holdingMoves.isNotEmpty()) {
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+                                }
+                                Text(facts,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 2.dp))
+                            }
                             rev.summary?.let { summary ->
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                                Text(summary, style = MaterialTheme.typography.bodyMedium,
+                                Text(summary.stripMarkdown(), style = MaterialTheme.typography.bodyMedium,
                                     modifier = Modifier.padding(bottom = 4.dp))
                             }
                             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -283,7 +315,7 @@ fun StatsScreen(
                                 )
                             }
                             AnimatedVisibility(visible = weeklyCommentExpanded) {
-                                Text(rev.comment, style = MaterialTheme.typography.bodySmall,
+                                Text(rev.comment.stripMarkdown(), style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.padding(top = 8.dp))
                             }
                         }
@@ -1049,6 +1081,15 @@ private fun weekStartInfo(): Pair<Long, String> {
     val epochMillis = monday.atStartOfDay(kst).toInstant().toEpochMilli()
     return epochMillis to monday.toString()
 }
+
+// 등락률 포맷 — 색은 호출부(@Composable)에서 ChangeUp/ChangeDown로 결정(한국 관례: 상승 빨강, 하락 파랑).
+private fun fmtPct(p: Double): String =
+    if (p >= 0) "+%.2f%%".format(p) else "%.2f%%".format(p)
+
+private fun String.stripMarkdown(): String =
+    this.replace(Regex("\\*\\*(.+?)\\*\\*"), "$1")
+        .replace(Regex("\\*([^*]+)\\*"), "$1")
+        .trim()
 
 private fun epochToIsoDate(millis: Long): String {
     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.KOREA)
