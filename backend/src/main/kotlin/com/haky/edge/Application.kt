@@ -78,6 +78,7 @@ import com.haky.edge.routes.factsAuditRoutes
 import com.haky.edge.routes.catalystValidationRoutes
 import com.haky.edge.routes.morningBriefRoutes
 import com.haky.edge.routes.personalWeeklyReviewRoutes
+import com.haky.edge.routes.judgmentComparisonRoutes
 import com.haky.edge.routes.weeklyReviewRoutes
 import com.haky.edge.routes.eventReminderRoutes
 import com.haky.edge.routes.costSummaryRoutes
@@ -293,6 +294,8 @@ fun Application.module() {
     // B2 개인 주간 회고 — 앱이 포지션·매매·논지를 POST, 서버가 주간 등락·스탠스·목표가·이벤트를 합쳐 Opus 해석.
     val personalWeeklyReview = com.haky.edge.ai.PersonalWeeklyReviewService(
         kis, master, stanceLog, stanceStats, targetPriceLog, eventSync, claude, modelRouter)
+    // 판단 대조 — 내 매매 vs AI 스탠스 반사실 성적(20거래일 초과수익 동일 잣대, LLM 0).
+    val judgmentComparison = com.haky.edge.ai.JudgmentComparisonService(kis, stanceLog, dailyHistory)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
     val costSummary = CostSummaryService(slack, costChannel, usageTracker)
     // S3a/b+F4+F3+F5+R2 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가·수급 전환점·실적 리뷰·프리모템 발동·비중 점검 → #알림-신호 채널.
@@ -372,6 +375,7 @@ fun Application.module() {
             morningBriefRoutes(morningBrief)
             weeklyReviewRoutes(weeklyReview)
             personalWeeklyReviewRoutes(personalWeeklyReview)
+            judgmentComparisonRoutes(judgmentComparison)
             eventReminderRoutes(eventReminder)
             costSummaryRoutes(costSummary)
             signalRoutes(signalService)
