@@ -80,6 +80,7 @@ import com.haky.edge.routes.morningBriefRoutes
 import com.haky.edge.routes.personalWeeklyReviewRoutes
 import com.haky.edge.routes.judgmentComparisonRoutes
 import com.haky.edge.routes.portfolioRiskRoutes
+import com.haky.edge.routes.signalLabRoutes
 import com.haky.edge.routes.weeklyReviewRoutes
 import com.haky.edge.routes.eventReminderRoutes
 import com.haky.edge.routes.costSummaryRoutes
@@ -299,6 +300,8 @@ fun Application.module() {
     val judgmentComparison = com.haky.edge.ai.JudgmentComparisonService(kis, stanceLog, dailyHistory)
     // 포트폴리오 리스크 엔진 — 실측 상관·변동성·리스크 기여도·클러스터(LLM 0).
     val portfolioRisk = com.haky.edge.ai.PortfolioRiskService(kis, master, dailyHistory)
+    // 전략 실험실 — 선언적 신호 수트 → 유니버스 리플레이 + 대조군 + 초과수익 채점(LLM 0).
+    val signalLab = com.haky.edge.lab.SignalLabService(dailyHistory, yahooHistory, signalCodes)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
     val costSummary = CostSummaryService(slack, costChannel, usageTracker)
     // S3a/b+F4+F3+F5+R2 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가·수급 전환점·실적 리뷰·프리모템 발동·비중 점검 → #알림-신호 채널.
@@ -380,6 +383,7 @@ fun Application.module() {
             personalWeeklyReviewRoutes(personalWeeklyReview)
             judgmentComparisonRoutes(judgmentComparison)
             portfolioRiskRoutes(portfolioRisk)
+            signalLabRoutes(signalLab)
             eventReminderRoutes(eventReminder)
             costSummaryRoutes(costSummary)
             signalRoutes(signalService)
