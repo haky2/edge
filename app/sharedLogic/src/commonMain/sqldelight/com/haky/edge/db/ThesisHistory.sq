@@ -16,3 +16,6 @@ SELECT thesis, changed_on FROM thesis_history WHERE code = ? ORDER BY id DESC LI
 
 countByCode:
 SELECT count(*) FROM thesis_history WHERE code = ?;
+
+sinceDateAll:
+SELECT code, thesis, changed_on FROM thesis_history WHERE changed_on >= ? ORDER BY id DESC;

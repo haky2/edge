@@ -80,6 +80,12 @@ class WatchlistRepository(driverFactory: DriverFactory) {
             com.haky.edge.model.ThesisSnapshot(d = changedOn, t = thesis)
         }.executeAsList().reversed()
 
+    /** 이번 주(date 이후) 논지 변경 전체. B2 개인 주간 회고 POST에 사용. date = "YYYY-MM-DD". */
+    fun thesisChangesSince(date: String): List<com.haky.edge.model.WeeklyThesisChangeEntry> =
+        db.thesisHistoryQueries.sinceDateAll(date) { code, thesis, changedOn ->
+            com.haky.edge.model.WeeklyThesisChangeEntry(code, thesis, changedOn)
+        }.executeAsList()
+
     /** 관심종목 삭제. */
     fun remove(code: String) = queries.deleteByCode(code)
 }

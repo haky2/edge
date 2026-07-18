@@ -40,10 +40,15 @@ import com.haky.edge.model.PeerValuation
 import com.haky.edge.model.DiscoveryReport
 import com.haky.edge.model.OverseasQuote
 import com.haky.edge.model.OverseasStockInfo
+import com.haky.edge.model.PersonalWeeklyPositionEntry
+import com.haky.edge.model.PersonalWeeklyReview
+import com.haky.edge.model.PersonalWeeklyReviewRequest
 import com.haky.edge.model.PortfolioReview
 import com.haky.edge.model.PortfolioReviewRequest
 import com.haky.edge.model.RebalanceCheck
 import com.haky.edge.model.ReviewPositionEntry
+import com.haky.edge.model.WeeklyThesisChangeEntry
+import com.haky.edge.model.WeeklyTradeEntry
 import com.haky.edge.model.SectorRotation
 import com.haky.edge.model.DeepResearch
 import com.haky.edge.model.TradeReview
@@ -596,6 +601,26 @@ class EdgeApi(
                 // 장기 계좌 컨텍스트만 전송(자유는 기존 동작·캐시 키 불변)
                 horizon = horizon.takeIf { it == "long" },
             ))
+        }.body()
+    }
+
+    /**
+     * B2 개인 주간 회고. 앱 로컬 포지션·이번 주 매매·논지 변경을 POST, 서버가 주간 등락·스탠스·이벤트를
+     * 합쳐 Opus 해석. positions = 다계좌 병합 후 code → (수량가중평균 평단, 수량).
+     */
+    @Throws(Exception::class)
+    suspend fun postPersonalWeeklyReview(
+        positions: Map<String, Pair<Double, Long>>,
+        trades: List<WeeklyTradeEntry> = emptyList(),
+        thesisChanges: List<WeeklyThesisChangeEntry> = emptyList(),
+        refresh: Boolean = false,
+    ): PersonalWeeklyReview {
+        val posEntries = positions.map { (code, pos) ->
+            PersonalWeeklyPositionEntry(code, pos.first, pos.second)
+        }
+        return client.post("$baseUrl/weekly-review/personal") {
+            contentType(ContentType.Application.Json)
+            setBody(PersonalWeeklyReviewRequest(posEntries, trades, thesisChanges, refresh))
         }.body()
     }
 

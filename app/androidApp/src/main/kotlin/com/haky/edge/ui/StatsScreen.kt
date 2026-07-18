@@ -54,7 +54,14 @@ import com.haky.edge.db.HoldingRepository
 import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.model.ActionLogEntry
 import com.haky.edge.model.Holding
+import com.haky.edge.model.PersonalWeeklyReview
 import com.haky.edge.model.WatchItem
+import com.haky.edge.model.WeeklyThesisChangeEntry
+import com.haky.edge.model.WeeklyTradeEntry
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.temporal.TemporalAdjusters
 import com.haky.edge.ui.theme.ChangeDown
 import com.haky.edge.ui.theme.ChangeUp
 import com.haky.edge.ui.theme.EdgeTheme
@@ -158,6 +165,10 @@ fun StatsScreen(
     var missedRows by remember { mutableStateOf<List<MissedRow>>(emptyList()) }
     var missedLoading by remember { mutableStateOf(false) }
     var stanceStats by remember { mutableStateOf<com.haky.edge.model.StanceStats?>(null) } // 종목 코멘트 적중률(F6)
+    // B2 개인 주간 회고
+    var weeklyReview        by remember { mutableStateOf<PersonalWeeklyReview?>(null) }
+    var weeklyReviewLoading by remember { mutableStateOf(false) }
+    var weeklyCommentExpanded by remember { mutableStateOf(false) }
 
     // 접기/펼치기 — SharedPrefs 영속
     var recentExpanded by remember { mutableStateOf(AppPrefs.getStatsExpanded(ctx, AppPrefs.STATS_RECENT)) }
@@ -210,6 +221,13 @@ fun StatsScreen(
         missedLoading = true
         missedRows = loadMissed(entries, nameMap, api)
         missedLoading = false
+
+        // B2 개인 주간 회고
+        weeklyReviewLoading = true
+        weeklyReview = runCatching {
+            loadPersonalWeeklyReview(entries, nameMap, watchlistRepo, holdingRepo, api)
+        }.getOrNull()
+        weeklyReviewLoading = false
     }
 
     Scaffold(
@@ -225,6 +243,54 @@ fun StatsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(bottom = 80.dp),
         ) {
+            // ── B2 개인 주간 회고 ──
+            item {
+                if (weeklyReviewLoading || weeklyReview != null) {
+                    val rev = weeklyReview
+                    SectionCard(
+                        header = if (rev != null) "이번 주 회고 · ${rev.weekStart} ~ ${rev.weekEnd}" else "이번 주 회고",
+                        footer = rev?.let { "생성 ${it.generatedAt}" },
+                    ) {
+                        if (weeklyReviewLoading) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Text("이번 주 회고 생성 중…", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        } else if (rev != null) {
+                            Text(rev.factLines,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 2.dp))
+                            rev.summary?.let { summary ->
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                                Text(summary, style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.padding(bottom = 4.dp))
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable { weeklyCommentExpanded = !weeklyCommentExpanded },
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text("전문 보기", style = MaterialTheme.typography.labelSmall, color = PurpleAccent)
+                                Icon(
+                                    if (weeklyCommentExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                            AnimatedVisibility(visible = weeklyCommentExpanded) {
+                                Text(rev.comment, style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(top = 8.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
             // ── 요약 ──
             item {
                 val oldestDate = entries.minOfOrNull { it.createdAt }
@@ -973,4 +1039,69 @@ private fun shortDate(millis: Long): String {
 private fun shortTs(millis: Long): String {
     val sdf = SimpleDateFormat("MM/dd HH:mm", Locale.KOREA)
     return sdf.format(Date(millis))
+}
+
+// ── B2 개인 주간 회고 ─────────────────────────────────────────────────────────
+
+private fun weekStartInfo(): Pair<Long, String> {
+    val kst = ZoneId.of("Asia/Seoul")
+    val monday = LocalDate.now(kst).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    val epochMillis = monday.atStartOfDay(kst).toInstant().toEpochMilli()
+    return epochMillis to monday.toString()
+}
+
+private fun epochToIsoDate(millis: Long): String {
+    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.KOREA)
+    sdf.timeZone = TimeZone.getTimeZone("Asia/Seoul")
+    return sdf.format(Date(millis))
+}
+
+private suspend fun loadPersonalWeeklyReview(
+    entries: List<ActionLogEntry>,
+    nameMap: Map<String, String>,
+    watchlistRepo: WatchlistRepository,
+    holdingRepo: HoldingRepository,
+    api: EdgeApi,
+): PersonalWeeklyReview? {
+    val (weekEpoch, weekDateStr) = weekStartInfo()
+
+    // 전 계좌 보유 → code별 수량 가중평균 병합
+    val costMap = mutableMapOf<String, Double>()
+    val qtyMap  = mutableMapOf<String, Double>()
+    for (h in holdingRepo.all()) {
+        val avg = h.avgPrice ?: continue
+        val qty = h.qty?.toDouble() ?: continue
+        if (avg <= 0 || qty <= 0) continue
+        costMap[h.code] = (costMap[h.code] ?: 0.0) + avg * qty
+        qtyMap[h.code]  = (qtyMap[h.code]  ?: 0.0) + qty
+    }
+    val positions = costMap.mapValues { (code, totalCost) ->
+        (totalCost / qtyMap[code]!!) to qtyMap[code]!!.toLong()
+    }
+
+    // 이번 주(월요일~) buy/sell 거래
+    val weekTrades = entries
+        .filter { (it.action == "buy" || it.action == "sell") && it.createdAt >= weekEpoch }
+        .map { e ->
+            WeeklyTradeEntry(
+                code   = e.code,
+                name   = nameMap[e.code] ?: e.name,
+                action = e.action,
+                reason = e.reason,
+                price  = e.price,
+                date   = epochToIsoDate(e.createdAt),
+            )
+        }
+
+    // 이번 주 논지 변경
+    val thesisChanges: List<WeeklyThesisChangeEntry> = watchlistRepo.thesisChangesSince(weekDateStr)
+
+    if (positions.isEmpty() && weekTrades.isEmpty() && thesisChanges.isEmpty()) return null
+
+    return api.postPersonalWeeklyReview(
+        positions     = positions,
+        trades        = weekTrades,
+        thesisChanges = thesisChanges,
+        refresh       = false,
+    )
 }

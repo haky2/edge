@@ -77,6 +77,7 @@ import com.haky.edge.routes.anchorValidationRoutes
 import com.haky.edge.routes.factsAuditRoutes
 import com.haky.edge.routes.catalystValidationRoutes
 import com.haky.edge.routes.morningBriefRoutes
+import com.haky.edge.routes.personalWeeklyReviewRoutes
 import com.haky.edge.routes.weeklyReviewRoutes
 import com.haky.edge.routes.eventReminderRoutes
 import com.haky.edge.routes.costSummaryRoutes
@@ -289,6 +290,9 @@ fun Application.module() {
     // B 주간 회고 — 토요일 아침, 한 주 서버 기록(방향예측·스탠스·목표가·주간 등락) 회고 → #아침브리핑.
     val weeklyReview = com.haky.edge.slack.WeeklyReviewService(
         slack, briefingChannel, kis, master, signalCodes, stanceLog, stanceStats, moodLog, targetPriceLog, eventSync, claude, modelRouter)
+    // B2 개인 주간 회고 — 앱이 포지션·매매·논지를 POST, 서버가 주간 등락·스탠스·목표가·이벤트를 합쳐 Opus 해석.
+    val personalWeeklyReview = com.haky.edge.ai.PersonalWeeklyReviewService(
+        kis, master, stanceLog, stanceStats, targetPriceLog, eventSync, claude, modelRouter)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
     val costSummary = CostSummaryService(slack, costChannel, usageTracker)
     // S3a/b+F4+F3+F5+R2 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가·수급 전환점·실적 리뷰·프리모템 발동·비중 점검 → #알림-신호 채널.
@@ -367,6 +371,7 @@ fun Application.module() {
             slackTestRoutes(slack, opsChannel)
             morningBriefRoutes(morningBrief)
             weeklyReviewRoutes(weeklyReview)
+            personalWeeklyReviewRoutes(personalWeeklyReview)
             eventReminderRoutes(eventReminder)
             costSummaryRoutes(costSummary)
             signalRoutes(signalService)

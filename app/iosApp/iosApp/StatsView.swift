@@ -15,15 +15,21 @@ struct StatsView: View {
     @State private var missedRows: [MissedRow] = []
     @State private var missedLoading = false
     @State private var stanceStats: StanceStats?   // 종목 코멘트 적중률(F6, 시장 방향 예측과 별도)
+    // B2 개인 주간 회고
+    @State private var weeklyReview: PersonalWeeklyReview? = nil
+    @State private var weeklyReviewLoading = false
     // 접기/펼치기 상태 (앱 재시작 시 유지)
-    @AppStorage("statsRecentExpanded") private var recentExpanded = false
-    @AppStorage("statsCodeExpanded")   private var codeExpanded   = false
-    @AppStorage("statsHoldExpanded")   private var holdExpanded   = false
-    @AppStorage("statsReasonExpanded") private var reasonExpanded = false
+    @AppStorage("statsRecentExpanded")       private var recentExpanded       = false
+    @AppStorage("statsCodeExpanded")         private var codeExpanded         = false
+    @AppStorage("statsHoldExpanded")         private var holdExpanded         = false
+    @AppStorage("statsReasonExpanded")       private var reasonExpanded       = false
+    @AppStorage("statsWeeklyCommentExpanded") private var weeklyCommentExpanded = false
 
     var body: some View {
         NavigationStack {
             List {
+                // B2 주간 회고 — 서버 생성이라 entries 여부와 무관하게 표시
+                weeklyReviewSection
                 if entries.isEmpty {
                     Section {
                         emptyPlaceholder
@@ -60,6 +66,50 @@ struct StatsView: View {
             recentSection
             codeSection
             if avgHoldDays != nil || !pairRows.isEmpty { holdSection }
+        }
+    }
+
+    // MARK: - 섹션: B2 개인 주간 회고
+
+    @ViewBuilder
+    private var weeklyReviewSection: some View {
+        Section {
+            if weeklyReviewLoading {
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.8)
+                    Text("이번 주 회고 생성 중…").font(.footnote).foregroundColor(.secondary)
+                }
+            } else if let rev = weeklyReview {
+                Text(rev.factLines)
+                    .font(.footnote.monospacedDigit())
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 2)
+                if let summary = rev.summary {
+                    Divider()
+                    Text(summary)
+                        .font(.callout)
+                        .padding(.vertical, 4)
+                }
+                Divider()
+                DisclosureGroup(isExpanded: $weeklyCommentExpanded) {
+                    Text(rev.comment)
+                        .font(.footnote)
+                        .foregroundColor(.primary)
+                        .padding(.top, 4)
+                } label: {
+                    Text("전문 보기")
+                        .font(.caption)
+                        .foregroundColor(.accentColor)
+                }
+            }
+        } header: {
+            Text("이번 주 회고")
+        } footer: {
+            if let rev = weeklyReview {
+                Text("생성 \(rev.generatedAt) · \(rev.weekStart) ~ \(rev.weekEnd)")
+                    .font(.caption2)
+            }
         }
     }
 
@@ -663,6 +713,62 @@ struct StatsView: View {
         }
     }
 
+    // MARK: - B2 주간 회고 로드
+
+    private func loadWeeklyReview(refresh: Bool) async {
+        await MainActor.run { weeklyReviewLoading = true }
+        defer { Task { @MainActor in weeklyReviewLoading = false } }
+
+        let (weekEpoch, weekDateStr) = weekStartInfo()
+
+        // 포지션 — 전 계좌 보유를 code별로 수량 가중평균 병합
+        var costMap: [String: Double] = [:]
+        var qtyMap:  [String: Double] = [:]
+        for h in holdingRepo.all() {
+            guard let avg = h.avgPrice?.doubleValue, let qty = h.qty?.int64Value,
+                  avg > 0, qty > 0 else { continue }
+            costMap[h.code, default: 0] += avg * Double(qty)
+            qtyMap[h.code, default: 0]  += Double(qty)
+        }
+        var positions: [String: KotlinPair<KotlinDouble, KotlinLong>] = [:]
+        for (code, totalCost) in costMap {
+            let totalQty = qtyMap[code]!
+            positions[code] = KotlinPair(
+                first:  KotlinDouble(value: totalCost / totalQty),
+                second: KotlinLong(value: Int64(totalQty))
+            )
+        }
+
+        // 이번 주 buy/sell(action_log 필터)
+        let localEntries  = await MainActor.run { entries }
+        let localNameMap  = await MainActor.run { nameMap }
+        let weekTrades = localEntries
+            .filter { ($0.action == "buy" || $0.action == "sell") && $0.createdAt >= weekEpoch }
+            .map { e in
+                WeeklyTradeEntry(
+                    code:   e.code,
+                    name:   localNameMap[e.code],
+                    action: e.action,
+                    reason: e.reason,
+                    price:  e.price,
+                    date:   epochToIso(e.createdAt)
+                )
+            }
+
+        // 이번 주 논지 변경(thesis_history)
+        let thesisChanges = watchRepo.thesisChangesSince(date: weekDateStr)
+
+        guard !positions.isEmpty || !weekTrades.isEmpty || !thesisChanges.isEmpty else { return }
+
+        let review = try? await api.postPersonalWeeklyReview(
+            positions: positions,
+            trades: weekTrades,
+            thesisChanges: thesisChanges,
+            refresh: refresh
+        )
+        await MainActor.run { weeklyReview = review }
+    }
+
     // MARK: - 로드
 
     private func reload() {
@@ -687,6 +793,7 @@ struct StatsView: View {
             let ss = try? await api.getStanceStats()
             await MainActor.run { stanceStats = ss }
         }
+        Task { await loadWeeklyReview(refresh: false) }
         // 3) 여전히 모르는 코드는 검색 API로 조회 → 메인 스레드에서 일괄 반영
         let unknownCodes = Set(entries.map { $0.code }).subtracting(resolved.keys)
         if !unknownCodes.isEmpty {
@@ -774,6 +881,26 @@ struct StatsView: View {
     }
 
     // MARK: - 포맷 헬퍼
+
+    private func weekStartInfo() -> (epoch: Int64, dateStr: String) {
+        var cal = Calendar(identifier: .iso8601)
+        cal.timeZone = TimeZone(identifier: "Asia/Seoul")!
+        let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())
+        let monday = cal.date(from: comps)!
+        let epoch = Int64(monday.timeIntervalSince1970 * 1000)
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "Asia/Seoul")
+        return (epoch, f.string(from: monday))
+    }
+
+    private func epochToIso(_ millis: Int64) -> String {
+        let d = Date(timeIntervalSince1970: Double(millis) / 1000)
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "Asia/Seoul")
+        return f.string(from: d)
+    }
 
     private func epochToYYYYMMDD(_ millis: Int64) -> String {
         let d = Date(timeIntervalSince1970: Double(millis) / 1000)
