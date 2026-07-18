@@ -40,6 +40,9 @@ import com.haky.edge.model.PeerValuation
 import com.haky.edge.model.DiscoveryReport
 import com.haky.edge.model.OverseasQuote
 import com.haky.edge.model.OverseasStockInfo
+import com.haky.edge.model.JudgmentComparison
+import com.haky.edge.model.JudgmentComparisonRequest
+import com.haky.edge.model.JudgmentTradeEntry
 import com.haky.edge.model.PersonalWeeklyPositionEntry
 import com.haky.edge.model.PersonalWeeklyReview
 import com.haky.edge.model.PersonalWeeklyReviewRequest
@@ -623,6 +626,17 @@ class EdgeApi(
             setBody(PersonalWeeklyReviewRequest(posEntries, trades, thesisChanges, refresh))
         }.body()
     }
+
+    /**
+     * POST /judgment-comparison — "AI 말 들었으면?" 반사실 성적 대조.
+     * 날짜 변환은 플랫폼별 앱에서 처리 후 List<JudgmentTradeEntry>로 전달한다.
+     */
+    @Throws(Exception::class)
+    suspend fun postJudgmentComparison(trades: List<JudgmentTradeEntry>): JudgmentComparison =
+        client.post("$baseUrl/judgment-comparison") {
+            contentType(ContentType.Application.Json)
+            setBody(JudgmentComparisonRequest(trades))
+        }.body()
 
     /** 리밸런싱 비중 점검 결과. 스냅샷 없거나 낡으면 evaluated=false. */
     @Throws(Exception::class)

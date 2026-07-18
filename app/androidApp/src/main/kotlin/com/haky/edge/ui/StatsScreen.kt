@@ -55,6 +55,8 @@ import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.model.ActionLogEntry
 import com.haky.edge.model.Holding
 import com.haky.edge.model.HoldingMove
+import com.haky.edge.model.JudgmentComparison
+import com.haky.edge.model.JudgmentTradeEntry
 import com.haky.edge.model.PersonalWeeklyReview
 import com.haky.edge.model.WatchItem
 import com.haky.edge.model.WeeklyThesisChangeEntry
@@ -170,6 +172,9 @@ fun StatsScreen(
     var weeklyReview        by remember { mutableStateOf<PersonalWeeklyReview?>(null) }
     var weeklyReviewLoading by remember { mutableStateOf(false) }
     var weeklyCommentExpanded by remember { mutableStateOf(false) }
+    // 판단 대조 ("AI 말 들었으면?")
+    var judgmentComparison  by remember { mutableStateOf<JudgmentComparison?>(null) }
+    var judgmentLoading     by remember { mutableStateOf(false) }
 
     // 접기/펼치기 — SharedPrefs 영속
     var recentExpanded by remember { mutableStateOf(AppPrefs.getStatsExpanded(ctx, AppPrefs.STATS_RECENT)) }
@@ -229,6 +234,20 @@ fun StatsScreen(
             loadPersonalWeeklyReview(entries, nameMap, watchlistRepo, holdingRepo, api)
         }.getOrNull()
         weeklyReviewLoading = false
+
+        // 판단 대조 ("AI 말 들었으면?")
+        if (entries.isNotEmpty()) {
+            judgmentLoading = true
+            judgmentComparison = runCatching {
+                val kst = TimeZone.getTimeZone("Asia/Seoul")
+                val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).apply { timeZone = kst }
+                val trades = entries
+                    .filter { it.action == "buy" || it.action == "sell" || it.action == "interest" }
+                    .map { e -> JudgmentTradeEntry(e.code, e.action, fmt.format(Date(e.createdAt))) }
+                api.postJudgmentComparison(trades)
+            }.getOrNull()
+            judgmentLoading = false
+        }
     }
 
     Scaffold(
@@ -633,6 +652,145 @@ fun StatsScreen(
                     }
                 }
             }
+
+            // ── 판단 대조 ("AI 말 들었으면?") ──
+            if (judgmentLoading || judgmentComparison != null) {
+                item {
+                    SectionCard(
+                        header = "판단 대조 · AI 말 들었으면?",
+                        footer = judgmentComparison?.caveat,
+                    ) {
+                        if (judgmentLoading) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Text("판단 대조 계산 중…", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        } else {
+                            val jc = judgmentComparison!!
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                // 내 매수·매도 성적
+                                if (jc.myBuy != null || jc.mySell != null) {
+                                    Row(modifier = Modifier.fillMaxWidth()) {
+                                        jc.myBuy?.let { JudgmentBucketCell(it, "내 매수", Modifier.weight(1f)) }
+                                        if (jc.myBuy != null && jc.mySell != null) {
+                                            androidx.compose.material3.VerticalDivider(modifier = Modifier.height(60.dp))
+                                        }
+                                        jc.mySell?.let { JudgmentBucketCell(it, "내 매도", Modifier.weight(1f)) }
+                                    }
+                                }
+                                // AI 스탠스 재채점
+                                if (jc.aiPositive != null || jc.aiNegative != null) {
+                                    HorizontalDivider()
+                                    Text("AI 스탠스 동일 잣대 재채점",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Row(modifier = Modifier.fillMaxWidth()) {
+                                        jc.aiPositive?.let { JudgmentBucketCell(it, "AI 긍정", Modifier.weight(1f)) }
+                                        if (jc.aiPositive != null && jc.aiNegative != null) {
+                                            androidx.compose.material3.VerticalDivider(modifier = Modifier.height(60.dp))
+                                        }
+                                        jc.aiNegative?.let { JudgmentBucketCell(it, "AI 부정", Modifier.weight(1f)) }
+                                    }
+                                }
+                                // 매수 스탠스 매트릭스
+                                if (jc.buyMatrix.isNotEmpty()) {
+                                    HorizontalDivider()
+                                    Text("매수 시점 AI 스탠스 매칭",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    jc.buyMatrix.forEach { b -> JudgmentMatrixRow(b) }
+                                }
+                                // 관심 후 미매수 기회비용
+                                jc.missedInterest?.let { mi ->
+                                    HorizontalDivider()
+                                    Text("관심 후 미매수 기회비용 (${mi.n}건)",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("상승 비율", style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("${mi.roseN}/${mi.n}건 (${(mi.roseN * 100.0 / maxOf(1, mi.n)).toInt()}%)",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (mi.roseN > mi.n / 2) ChangeUp else MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("평균 초과수익", style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("%+.2f%%".format(mi.avgExcessPct),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = when {
+                                                mi.avgExcessPct > 0 -> ChangeUp
+                                                mi.avgExcessPct < 0 -> ChangeDown
+                                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                            })
+                                    }
+                                    if (mi.aiPositiveN > 0) {
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            Text("AI 긍정 미매수", style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text("${mi.aiPositiveRoseN}/${mi.aiPositiveN} 상승",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                                // 채점 대기
+                                if (jc.pendingTrades > 0) {
+                                    Text("채점 대기 ${jc.pendingTrades}건 (${jc.horizonDays}거래일 미경과)",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun JudgmentBucketCell(b: com.haky.edge.model.ComparisonBucket, label: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("${b.winRatePct.toInt()}%",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = if (b.winRatePct >= 50) ChangeUp else ChangeDown)
+        Text("${b.wins}/${b.n}건",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("%+.1f%%".format(b.avgExcessPct),
+            style = MaterialTheme.typography.labelSmall,
+            color = when {
+                b.avgExcessPct > 0 -> ChangeUp
+                b.avgExcessPct < 0 -> ChangeDown
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            })
+    }
+}
+
+@Composable
+private fun JudgmentMatrixRow(b: com.haky.edge.model.ComparisonBucket) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(b.label, style = MaterialTheme.typography.labelSmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("${b.winRatePct.toInt()}% (${b.wins}/${b.n})",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (b.winRatePct >= 50) ChangeUp else ChangeDown)
+            Text("%+.1f%%".format(b.avgExcessPct),
+                style = MaterialTheme.typography.labelSmall,
+                color = when {
+                    b.avgExcessPct > 0 -> ChangeUp
+                    b.avgExcessPct < 0 -> ChangeDown
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                })
         }
     }
 }

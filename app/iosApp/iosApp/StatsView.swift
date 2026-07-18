@@ -18,6 +18,9 @@ struct StatsView: View {
     // B2 개인 주간 회고
     @State private var weeklyReview: PersonalWeeklyReview? = nil
     @State private var weeklyReviewLoading = false
+    // 판단 대조 ("AI 말 들었으면?")
+    @State private var judgmentComparison: JudgmentComparison? = nil
+    @State private var judgmentLoading = false
     // 접기/펼치기 상태 (앱 재시작 시 유지)
     @AppStorage("statsRecentExpanded")       private var recentExpanded       = false
     @AppStorage("statsCodeExpanded")         private var codeExpanded         = false
@@ -46,6 +49,8 @@ struct StatsView: View {
                 }
                 // 종목 코멘트 적중률은 행동 로그와 무관(서버 집계)이라 로그가 비어도 표시
                 if let ss = stanceStats, ss.scored > 0 || ss.pending > 0 { stanceSection(ss) }
+                // 판단 대조 ("AI 말 들었으면?")
+                if judgmentLoading || judgmentComparison != nil { judgmentSection }
             }
             .contentMargins(.top, 0, for: .scrollContent)
             .navigationTitle("내 패턴")
@@ -844,6 +849,7 @@ struct StatsView: View {
             await MainActor.run { stanceStats = ss }
         }
         Task { await loadWeeklyReview(refresh: false) }
+        Task { await loadJudgmentComparison() }
         // 3) 여전히 모르는 코드는 검색 API로 조회 → 메인 스레드에서 일괄 반영
         let unknownCodes = Set(entries.map { $0.code }).subtracting(resolved.keys)
         if !unknownCodes.isEmpty {
@@ -1002,5 +1008,158 @@ struct StatsView: View {
         let d = Date(timeIntervalSince1970: Double(millis) / 1000)
         let f = DateFormatter(); f.dateFormat = "MM/dd HH:mm"
         return f.string(from: d)
+    }
+
+    // MARK: - 섹션: 판단 대조 ("AI 말 들었으면?")
+
+    @ViewBuilder
+    private var judgmentSection: some View {
+        Section {
+            if judgmentLoading {
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.8)
+                    Text("판단 대조 계산 중…").font(.footnote).foregroundColor(.secondary)
+                }
+            } else if let jc = judgmentComparison {
+                VStack(alignment: .leading, spacing: 12) {
+                    // ── 내 매수·매도 성적 ──
+                    if let buy = jc.myBuy, let sell = jc.mySell {
+                        HStack(spacing: 0) {
+                            judgmentBucketCell(buy, label: "내 매수", isWinHigh: true)
+                            Divider().frame(height: 44)
+                            judgmentBucketCell(sell, label: "내 매도", isWinHigh: true)
+                        }
+                        .frame(maxWidth: .infinity)
+                    } else if let buy = jc.myBuy {
+                        judgmentBucketCell(buy, label: "내 매수", isWinHigh: true).frame(maxWidth: .infinity)
+                    } else if let sell = jc.mySell {
+                        judgmentBucketCell(sell, label: "내 매도", isWinHigh: true).frame(maxWidth: .infinity)
+                    }
+
+                    // ── AI 스탠스 재채점 (같은 잣대) ──
+                    if jc.aiPositive != nil || jc.aiNegative != nil {
+                        Divider()
+                        Text("AI 스탠스 동일 잣대 재채점")
+                            .font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+                        HStack(spacing: 0) {
+                            if let pos = jc.aiPositive {
+                                judgmentBucketCell(pos, label: "AI 긍정", isWinHigh: true)
+                            }
+                            if jc.aiPositive != nil && jc.aiNegative != nil {
+                                Divider().frame(height: 44)
+                            }
+                            if let neg = jc.aiNegative {
+                                judgmentBucketCell(neg, label: "AI 부정", isWinHigh: true)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+
+                    // ── 매수 스탠스 매칭 매트릭스 ──
+                    if !jc.buyMatrix.isEmpty {
+                        Divider()
+                        Text("매수 시점 AI 스탠스 매칭")
+                            .font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+                        ForEach(Array(jc.buyMatrix.enumerated()), id: \.offset) { _, b in
+                            judgmentMatrixRow(b, isWinHigh: true)
+                        }
+                    }
+
+                    // ── 관심 후 미매수 기회비용 ──
+                    if let mi = jc.missedInterest {
+                        Divider()
+                        Text("관심 후 미매수 기회비용 (\(mi.n)건)")
+                            .font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+                        HStack {
+                            Text("상승 비율")
+                                .font(.caption).foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(mi.roseN)/\(mi.n)건 (\(Int(Double(mi.roseN) * 100 / max(1, Double(mi.n))))%)")
+                                .font(.caption.monospacedDigit())
+                                .foregroundColor(mi.roseN > mi.n / 2 ? .red : .secondary)
+                        }
+                        HStack {
+                            Text("평균 초과수익")
+                                .font(.caption).foregroundColor(.secondary)
+                            Spacer()
+                            Text(String(format: "%+.2f%%", mi.avgExcessPct))
+                                .font(.caption.monospacedDigit())
+                                .foregroundColor(mi.avgExcessPct > 0 ? .red : .blue)
+                        }
+                        if mi.aiPositiveN > 0 {
+                            HStack {
+                                Text("AI 긍정 미매수")
+                                    .font(.caption).foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(mi.aiPositiveRoseN)/\(mi.aiPositiveN) 상승")
+                                    .font(.caption.monospacedDigit()).foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    // ── 채점 대기 ──
+                    if jc.pendingTrades > 0 {
+                        Text("채점 대기 \(jc.pendingTrades)건 (\(jc.horizonDays)거래일 미경과)")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+            }
+        } header: {
+            Text("판단 대조 · AI 말 들었으면?")
+        } footer: {
+            if let jc = judgmentComparison {
+                Text(jc.caveat).font(.caption2)
+            }
+        }
+    }
+
+    private func judgmentBucketCell(_ b: ComparisonBucket, label: String, isWinHigh: Bool) -> some View {
+        VStack(spacing: 4) {
+            Text(label).font(.caption2).foregroundColor(.secondary)
+            Text("\(Int(b.winRatePct))%")
+                .font(.title3.monospacedDigit().weight(.bold))
+                .foregroundColor(b.winRatePct >= 50 ? .red : .blue)
+            Text("\(b.wins)/\(b.n)건").font(.caption2).foregroundColor(.secondary)
+            Text(String(format: "평균 %+.1f%%", b.avgExcessPct))
+                .font(.caption2.monospacedDigit())
+                .foregroundColor(b.avgExcessPct > 0 ? .red : b.avgExcessPct < 0 ? .blue : .secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
+    }
+
+    private func judgmentMatrixRow(_ b: ComparisonBucket, isWinHigh: Bool) -> some View {
+        HStack {
+            Text(b.label).font(.caption).foregroundColor(.primary)
+            Spacer()
+            Text("\(Int(b.winRatePct))% (\(b.wins)/\(b.n))")
+                .font(.caption.monospacedDigit())
+                .foregroundColor(b.winRatePct >= 50 ? .red : .blue)
+            Text(String(format: "%+.1f%%", b.avgExcessPct))
+                .font(.caption2.monospacedDigit())
+                .foregroundColor(b.avgExcessPct > 0 ? .red : b.avgExcessPct < 0 ? .blue : .secondary)
+                .frame(width: 56, alignment: .trailing)
+        }
+    }
+
+    private func loadJudgmentComparison() async {
+        guard !entries.isEmpty else { return }
+        await MainActor.run { judgmentLoading = true }
+        defer { Task { @MainActor in judgmentLoading = false } }
+
+        let kst = TimeZone(identifier: "Asia/Seoul")!
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = kst
+
+        let trades = entries.compactMap { e -> JudgmentTradeEntry? in
+            guard e.action == "buy" || e.action == "sell" || e.action == "interest" else { return nil }
+            let date = f.string(from: Date(timeIntervalSince1970: Double(e.createdAt) / 1000))
+            return JudgmentTradeEntry(code: e.code, action: e.action, date: date)
+        }
+        guard !trades.isEmpty else { return }
+
+        let result = try? await api.postJudgmentComparison(trades: trades)
+        await MainActor.run { judgmentComparison = result }
     }
 }
