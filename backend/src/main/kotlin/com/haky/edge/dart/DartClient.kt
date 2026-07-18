@@ -8,6 +8,9 @@ import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.bodyAsBytes
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.haky.edge.ai.FileCache
@@ -427,6 +430,54 @@ class DartClient(private val apiKey: String) {
         val value = net?.thisCumulative()
         cumulativeNetCache.put(today, cacheKey, Optional(value))
         return value
+    }
+
+    // 수주·재고 선행지표 캐시. 분기 잔액은 하루 안에 안 바뀌므로 날짜 단위. key="date|code".
+    private val leadingCache = DayScopedCache<Optional<LeadingIndicators>>()
+
+    /**
+     * 제조업 선행지표 — 최근 5개 분기의 재고자산·계약부채(수주잔고 근사)·매출채권·매출 누적.
+     * fnlttSinglAcntAll(전체 계정)에서 추출, 연결(CFS) 우선·없으면 별도(OFS).
+     * 재무상태표 지표가 있는 분기가 2개 미만이면 null — 추세를 말할 수 없고,
+     * 이 게이트가 금융·서비스업(재고·계약부채 없음)을 자동 배제한다.
+     */
+    suspend fun getLeadingIndicators(stockCode: String): LeadingIndicators? {
+        if (apiKey.isBlank()) return null
+        val today = LocalDate.now(KST).toString()
+        val cacheKey = "$today|$stockCode"
+        leadingCache.get(today, cacheKey)?.let { return it.value }
+
+        ensureCorpCodeMap()
+        val corpCode = corpCodeMap?.get(stockCode)
+        if (corpCode == null) { leadingCache.put(today, cacheKey, Optional(null)); return null }
+
+        val quarters = coroutineScope {
+            LeadingIndicatorMath.periodSequence(LocalDate.now(KST)).map { (y, q) ->
+                async { fetchLeadingQuarter(corpCode, y, q) }
+            }.awaitAll()
+        }.filterNotNull().filter { it.hasBalanceMetric }
+
+        val result = if (quarters.size >= 2) LeadingIndicators(quarters) else null
+        leadingCache.put(today, cacheKey, Optional(result))
+        return result
+    }
+
+    private suspend fun fetchLeadingQuarter(corpCode: String, year: Int, quarter: Int): LeadingQuarter? {
+        for (fsDiv in listOf("CFS", "OFS")) {
+            val resp = runCatching {
+                http.get("https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json") {
+                    parameter("crtfc_key", apiKey)
+                    parameter("corp_code", corpCode)
+                    parameter("bsns_year", year.toString())
+                    parameter("reprt_code", LeadingIndicatorMath.reprtCode(quarter))
+                    parameter("fs_div", fsDiv)
+                }.body<DartAllAcntResponse>()
+            }.getOrNull() ?: continue
+            val rows = resp.takeIf { it.status == "000" }?.list ?: continue
+            if (rows.isEmpty()) continue
+            return LeadingIndicatorMath.extract(rows, year, quarter)
+        }
+        return null
     }
 
     // ConcurrentHashMap은 null value를 넣을 수 없어 Optional로 감싼다.

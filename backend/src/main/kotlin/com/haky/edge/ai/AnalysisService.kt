@@ -327,6 +327,8 @@ class AnalysisService(
         val backtestD       = async { runCatching { backtestSvc.getBacktest(code) }.getOrNull() }
         val flowSensD       = async { runCatching { backtestSvc.getFlowSensitivity(code) }.getOrNull() }
         val quarterlyD      = async { runCatching { dart.getQuarterlyIncome(code) }.getOrNull() }
+        // 수주·재고 선행지표(분기 전체 계정 5콜, 일 캐시) — 수주산업 계약부채=수주잔고 근사(C19).
+        val leadingD        = async { runCatching { dart.getLeadingIndicators(code) }.getOrNull() }
         // 상장주식수: 연환산(포워드) PER 계산용. inquire-price 재호출이라 가벼움(캐시 대상).
         val sharesD         = async { runCatching { kis.getListedShares(code) }.getOrNull() }
         val warningsD       = async { runCatching { toss.getActiveWarnings(code) }.getOrElse { emptyList() } }
@@ -354,6 +356,7 @@ class AnalysisService(
         val backtest        = backtestD.await()
         val flowSensitivity = flowSensD.await()
         val quarterlyIncome = quarterlyD.await()
+        val leading         = leadingD.await()
         val listedShares    = sharesD.await()
         val sectorChangeRate = sectorRsD.await()
         val news            = dedupeNews(rawNewsD.await(), limit = 8)
@@ -368,7 +371,7 @@ class AnalysisService(
         val calendar = calendarD.await()
         val marketCtx = marketCtxD.await()
         // 섹션 리스트를 만들어 concat — buildFacts와 바이트 동일(FactsGoldenTest 계약), /facts-audit가 섹션을 계측.
-        val sections = buildFactsSections(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis, thesisHistory, marketCtx, horizonLong)
+        val sections = buildFactsSections(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis, thesisHistory, marketCtx, horizonLong, leading)
         val facts = sections.joinToString("") { it.text }
         val richness = FactsRichness(
             newsCount = news.size,
@@ -721,6 +724,15 @@ class AnalysisService(
                   규칙 번호(C17 등)는 내부 지시일 뿐이니 코멘트 본문에 절대 쓰지 마라.
                 - 단, 구조적 악화(실적 추세 꺾임·논지 근거 소멸·거래소 리스크 지정)는 장기 계좌라는 이유로 눙치지
                   마라 — 장기 보유일수록 구조 악화는 더 정면으로 짚어라.
+            C19. "수주·재고 선행지표" 항목이 있으면(없으면 이 규칙 전체를 무시) — 분기 재무상태표에서 추출한
+                분기말 잔액의 추이다. 수주산업(조선·방산·전력기기 등 수주 기반 제조업)에서 계약부채(고객에게
+                미리 받은 수주 계약금)가 늘어나는 추세는 수주잔고가 쌓이는 신호, 줄어드는 추세는 잔고 소진
+                (매출 인식이 신규 수주보다 빠름) 신호로 해석하라. 단 매출 인식 시점 때문에 분기 단위 출렁임이
+                크니 한 분기 등락이 아니라 여러 분기의 방향으로 판단하라. 재고자산이 매출 증가보다 뚜렷이
+                빠르게 늘면 수요 둔화·출하 지연 가능성을, 매출채권이 매출보다 빠르게 늘면 회수 리스크를
+                경계 신호로 짚어라 — 단 수주형 사업의 재고는 건조·제작 중 물량(오히려 일감 신호)일 수 있으니
+                업종 성격과 함께 저울질하고 단정하지 마라. 수주산업이 아닌 종목(일반 소비재 등)에선 계약부채
+                해석을 생략해도 된다. 제공된 수치 범위에서만 서술하라.
         """.trimIndent()
 
         // 말미 재강조 — 거대 프롬프트에서 지시 준수율은 서두보다 말미가 높다.

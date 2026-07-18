@@ -1,6 +1,8 @@
 package com.haky.edge.ai
 
 import com.haky.edge.dart.FinancialSummary
+import com.haky.edge.dart.LeadingIndicators
+import com.haky.edge.dart.LeadingQuarter
 import com.haky.edge.dart.QuarterlyIncome
 import com.haky.edge.kis.DailyBar
 import com.haky.edge.kis.InvestorFlow
@@ -49,12 +51,13 @@ internal fun buildFacts(
     thesisHistory: List<ThesisSnapshot> = emptyList(),
     marketContext: String? = null,
     horizonLong: Boolean = false,
+    leading: LeadingIndicators? = null,
     now: ZonedDateTime = ZonedDateTime.now(ZoneId.of("Asia/Seoul")),
 ): String = buildFactsSections(
     code, name, q, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents,
     sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity,
     quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis,
-    thesisHistory, marketContext, horizonLong, now,
+    thesisHistory, marketContext, horizonLong, leading, now,
 ).joinToString("") { it.text }
 
 /**
@@ -88,6 +91,7 @@ internal fun buildFactsSections(
     thesisHistory: List<ThesisSnapshot> = emptyList(),
     marketContext: String? = null,
     horizonLong: Boolean = false,
+    leading: LeadingIndicators? = null,
     now: ZonedDateTime = ZonedDateTime.now(ZoneId.of("Asia/Seoul")),
 ): List<FactsSection> {
     val sections = mutableListOf<FactsSection>()
@@ -256,6 +260,8 @@ internal fun buildFactsSections(
     // 회사 재무(DART 연간) — 급등락이 펀더멘털 성장에 근거하는지 판단할 근거.
     add("financials", financialSummaryText(financials)?.let { "\n" + it })
     add("quarterly_income", quarterlyIncomeText(quarterlyIncome)?.let { "\n" + it })
+    // 수주·재고 선행지표(분기 재무상태표 잔액 추이) — 수주산업의 계약부채는 수주잔고 근사 지표(C19).
+    add("leading_indicators", leadingIndicatorsText(leading)?.let { "\n" + it })
 
     add("flows", if (flows.isNotEmpty()) {
         buildString {
@@ -491,6 +497,54 @@ private fun quarterlyIncomeText(q: QuarterlyIncome?): String? {
     }
     val yoyText = if (yoy != null) ", 전년 동기 대비 ${if (yoy >= 0) "+" else ""}${"%.1f".format(yoy)}%$direction" else ""
     return "${q.label} 누적 순이익: ${"%,d".format(niEok)}억$yoyText\n"
+}
+
+/**
+ * 수주·재고 선행지표 — 분기말 잔액 시리즈(오래된 순)를 "2025.1Q 1,234 → … → 2026.1Q 1,700" 형태로.
+ * 시리즈 첫·끝이 정확히 1년 차이(같은 분기)면 전년 동기 대비 %를 병기(분기 결측 시 생략 —
+ * 다른 분기끼리의 비율은 계절성 때문에 오독 유발). 지표별 포인트 2개 미만이면 그 줄 생략,
+ * 전부 없으면 null(섹션 자체 생략). 해석 지침은 C19.
+ */
+internal fun leadingIndicatorsText(li: LeadingIndicators?): String? {
+    val qs = li?.quarters ?: return null
+    fun eok(v: Long) = "%,d".format(Math.round(v / 1e8))
+    fun signed(p: Double) = "${if (p >= 0) "+" else ""}${"%.1f".format(p)}%"
+
+    fun seriesLine(name: String, metric: (LeadingQuarter) -> Long?): String? {
+        val pts = qs.mapNotNull { q -> metric(q)?.let { q to it } }
+        if (pts.size < 2) return null
+        val body = pts.joinToString(" → ") { (q, v) -> "${q.label} ${eok(v)}" }
+        val (fq, fv) = pts.first()
+        val (lq, lv) = pts.last()
+        val yoy = if (lq.year == fq.year + 1 && lq.quarter == fq.quarter && fv != 0L)
+            " (전년 동기 대비 ${signed((lv - fv).toDouble() / kotlin.math.abs(fv) * 100)})" else ""
+        return "  $name: $body$yoy"
+    }
+
+    // 매출은 연초 누적이라 시리즈로 이으면 연말→연초에 뚝 떨어져 보인다 → 전년 동기 1점 비교만.
+    fun revenueLine(): String? {
+        val last = qs.lastOrNull { it.revenueCum != null } ?: return null
+        val prev = qs.firstOrNull { it.year == last.year - 1 && it.quarter == last.quarter && it.revenueCum != null }
+            ?: return null
+        val lv = last.revenueCum!!
+        val pv = prev.revenueCum!!
+        if (pv == 0L) return null
+        val pct = (lv - pv).toDouble() / kotlin.math.abs(pv) * 100
+        return "  매출액(연초 누적): ${last.label} ${eok(lv)} vs 전년 동기 ${eok(pv)} (${signed(pct)})"
+    }
+
+    val contractName = if (qs.any { it.contractLiabIsAdvance }) "선수금(계약부채 미표기 회사, 같은 성격)" else "계약부채"
+    val lines = listOfNotNull(
+        seriesLine(contractName) { it.contractLiabilities },
+        seriesLine("재고자산") { it.inventories },
+        seriesLine("매출채권") { it.tradeReceivables },
+        revenueLine(),
+    )
+    if (lines.isEmpty()) return null
+    return buildString {
+        appendLine("수주·재고 선행지표(DART 분기 재무제표 자체 추출, 분기말 잔액, 단위 억원):")
+        lines.forEach { appendLine(it) }
+    }
 }
 
 /** "매출액 1,234억 (전년 1,000억, YoY +23.4%)" 형태. 당기 없으면 null. */
