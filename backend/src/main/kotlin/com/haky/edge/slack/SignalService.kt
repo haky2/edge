@@ -45,6 +45,7 @@ class SignalService(
     private val earningsPreview: com.haky.edge.ai.EarningsPreviewService? = null, // F3 리뷰용(없으면 skip)
     private val premortem: com.haky.edge.ai.PremortemService? = null, // F5 무효화 조건 감시(없으면 skip)
     private val rebalance: com.haky.edge.ai.RebalanceService? = null, // R2 비중 점검 신호(없으면 skip)
+    private val investorHistory: com.haky.edge.kis.InvestorHistoryLog? = null, // 수급 아카이브(없으면 skip)
 ) {
     private val dataDir = File(System.getenv("DATA_DIR") ?: ".data").also { it.mkdirs() }
     private val stateFile = File(dataDir, "signal_state.json")
@@ -87,6 +88,10 @@ class SignalService(
 
             // 1. 연속 순매수 — 미확정(전부 0)일은 getInvestorFlow가 이미 제외함.
             val flowsOrNull = runCatching { kis.getInvestorFlow(code, days = 10) }.getOrNull()?.takeIf { it.isNotEmpty() }
+
+            // 수급 아카이브 — KIS는 과거 이력 조회가 없어 오늘 안 남기면 영영 사라진다.
+            // 신호 평가와 무관하게 확정 일별값을 영속(실패해도 스캔은 계속).
+            flowsOrNull?.let { flows -> runCatching { investorHistory?.appendNew(code, flows) } }
             flowsOrNull?.let { flows ->
                 for (type in FlowType.entries) {
                     val sig = evalFlow(code, name, type, flows) ?: continue

@@ -2,6 +2,7 @@ package com.haky.edge.routes
 
 import com.haky.edge.ErrorResponse
 import com.haky.edge.kis.InvestorFlow
+import com.haky.edge.kis.InvestorHistoryLog
 import com.haky.edge.kis.KisClient
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
@@ -13,7 +14,17 @@ import kotlinx.coroutines.coroutineScope
 
 private val CODE_REGEX = Regex("""[0-9A-Z]{6}""")
 
-fun Route.investorRoutes(kis: KisClient) {
+fun Route.investorRoutes(kis: KisClient, history: InvestorHistoryLog? = null) {
+    // GET /investor-history/stats — 수급 아카이브 적재 현황(운영 확인용: 행수·종목수·기간).
+    get("/investor-history/stats") {
+        val h = history
+        if (h == null) {
+            call.respond(HttpStatusCode.NotFound, ErrorResponse("수급 아카이브가 설정되지 않았습니다"))
+            return@get
+        }
+        call.respond(h.stats())
+    }
+
     // GET /investor/{code}?days=5 — 종목별 일별 외인/기관/개인 순매수(최근 N일, 최신일이 앞).
     get("/investor/{code}") {
         val code = call.parameters["code"].orEmpty()
