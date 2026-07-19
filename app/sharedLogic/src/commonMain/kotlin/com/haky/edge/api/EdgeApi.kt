@@ -47,6 +47,9 @@ import com.haky.edge.model.JudgmentTradeEntry
 import com.haky.edge.model.PortfolioRisk
 import com.haky.edge.model.PortfolioRiskEntry
 import com.haky.edge.model.PortfolioRiskRequest
+import com.haky.edge.model.PositionSizing
+import com.haky.edge.model.PositionSizingEntry
+import com.haky.edge.model.PositionSizingRequest
 import com.haky.edge.model.PersonalWeeklyPositionEntry
 import com.haky.edge.model.PersonalWeeklyReview
 import com.haky.edge.model.PersonalWeeklyReviewRequest
@@ -643,6 +646,18 @@ class EdgeApi(
         client.post("$baseUrl/portfolio-risk") {
             contentType(ContentType.Application.Json)
             setBody(PortfolioRiskRequest(positions))
+        }.body()
+
+    /** POST /position-sizing — 리스크 기여 상한 역산(LLM 0). 보유 있을 때만 의미. */
+    @Throws(Exception::class)
+    suspend fun postPositionSizing(
+        positions: List<PositionSizingEntry>,
+        candidateCode: String,
+        riskCapPct: Double = 15.0,
+    ): PositionSizing =
+        client.post("$baseUrl/position-sizing") {
+            contentType(ContentType.Application.Json)
+            setBody(PositionSizingRequest(positions, candidateCode, riskCapPct))
         }.body()
 
     /**

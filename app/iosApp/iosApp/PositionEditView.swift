@@ -20,6 +20,12 @@ struct PositionEditView: View {
     @State private var accounts: [AccountInfo] = []
     @State private var selectedAccountId: Int64
 
+    // N1: 리스크 기준 수량 (보유 포지션 있을 때만)
+    @State private var showSizing = false
+    @State private var sizing: PositionSizing?
+    @State private var sizingLoading = false
+    @State private var capPct: Double = 15
+
     private static let thesisMaxChars = 200
 
     init(item: WatchItem, onSave: @escaping (WatchItem) -> Void, initialAccountId: Int64? = nil) {
@@ -64,6 +70,9 @@ struct PositionEditView: View {
                 Section("목표 / 손절") {
                     priceField("목표가", $target)
                     priceField("손절가", $stop)
+                }
+                if hasExistingHoldings {
+                    sizingSection
                 }
                 Section {
                     VStack(alignment: .leading, spacing: 4) {
@@ -113,6 +122,98 @@ struct PositionEditView: View {
             qty    = existing?.qty.map         { String($0.int64Value) } ?? ""
             target = existing?.targetPrice.map { Self.fmtPrice(Int($0.doubleValue)) } ?? ""
             stop   = existing?.stopPrice.map   { Self.fmtPrice(Int($0.doubleValue)) } ?? ""
+        }
+    }
+
+    // 다계좌 같은 종목은 수량 합산(리스크 엔드포인트 계약). avg·qty 있는 보유만.
+    private var sizingEntries: [PositionSizingEntry] {
+        var byCode: [String: Int64] = [:]
+        for h in Db.holding.all() {
+            guard h.avgPrice != nil, let q = h.qty else { continue }
+            byCode[h.code, default: 0] += q.int64Value
+        }
+        return byCode.map { PositionSizingEntry(code: $0.key, qty: $0.value) }
+    }
+
+    private var hasExistingHoldings: Bool { !sizingEntries.isEmpty }
+
+    @ViewBuilder
+    private var sizingSection: some View {
+        Section {
+            DisclosureGroup(isExpanded: $showSizing) {
+                Picker("리스크 상한", selection: $capPct) {
+                    Text("10%").tag(10.0)
+                    Text("15%").tag(15.0)
+                    Text("20%").tag(20.0)
+                    Text("25%").tag(25.0)
+                }
+                .pickerStyle(.segmented)
+
+                if sizingLoading {
+                    HStack { Spacer(); ProgressView(); Spacer() }
+                } else if let s = sizing {
+                    sizingResult(s)
+                } else {
+                    Text("리스크 상한을 골라 최대 수량을 계산합니다.")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            } label: {
+                Label("리스크 기준 수량 보기", systemImage: "scalemass")
+                    .font(.subheadline.weight(.semibold))
+            }
+        } footer: {
+            Text("이 종목이 포트폴리오 리스크의 상한 %만 차지하도록 하는 최대 수량입니다. 매수 추천이 아니라 리스크 상한 역산입니다.")
+                .font(.caption)
+        }
+        .onChange(of: showSizing) { open in
+            if open && sizing == nil { Task { await loadSizing() } }
+        }
+        .onChange(of: capPct) { _ in
+            if showSizing { Task { await loadSizing() } }
+        }
+    }
+
+    @ViewBuilder
+    private func sizingResult(_ s: PositionSizing) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("최대 \(s.maxShares)주")
+                    .font(.title3.weight(.bold))
+                Spacer()
+                Text("≈ \(Self.fmtPrice(Int(s.maxAmount)))원")
+                    .font(.subheadline).foregroundColor(.secondary)
+            }
+            HStack(spacing: 6) {
+                sizingChip("비중 \(String(format: "%.1f", s.targetWeightPct))%")
+                sizingChip("리스크 기여 \(String(format: "%.0f", s.atRiskContributionPct))%")
+                sizingChip("변동성 \(String(format: "%.0f", s.sigmaPct))%")
+            }
+            if s.approxByPeer {
+                Text("⚠︎ 관측 부족 — 섹터 유사 종목 변동성으로 근사")
+                    .font(.caption2).foregroundColor(.orange)
+            }
+            Text(s.caveat)
+                .font(.caption2).foregroundColor(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func sizingChip(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.weight(.medium))
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Color.secondary.opacity(0.12))
+            .cornerRadius(8)
+    }
+
+    private func loadSizing() async {
+        await MainActor.run { sizingLoading = true }
+        let entries = sizingEntries
+        let result = try? await Db.api.postPositionSizing(
+            positions: entries, candidateCode: code, riskCapPct: capPct)
+        await MainActor.run {
+            sizing = result
+            sizingLoading = false
         }
     }
 

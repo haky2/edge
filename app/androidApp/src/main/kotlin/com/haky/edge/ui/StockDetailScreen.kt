@@ -540,6 +540,7 @@ fun StockDetailScreen(
             holdingRepo = holdingRepo,
             accountRepo = accountRepo,
             watchlistRepo = watchlistRepo,
+            api = api,
             onDismiss = { showPositionSheet = false },
             onSave = { updated ->
                 val prevThesis = watchItem.thesis

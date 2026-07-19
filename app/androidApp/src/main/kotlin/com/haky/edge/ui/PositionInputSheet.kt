@@ -9,38 +9,50 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.AccountRepository
 import com.haky.edge.db.HoldingRepository
 import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.model.AccountInfo
+import com.haky.edge.model.PositionSizing
+import com.haky.edge.model.PositionSizingEntry
 import com.haky.edge.model.WatchItem
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,6 +62,7 @@ fun PositionInputSheet(
     holdingRepo: HoldingRepository,
     accountRepo: AccountRepository,
     watchlistRepo: WatchlistRepository,
+    api: EdgeApi,
     onDismiss: () -> Unit,
     onSave: (WatchItem) -> Unit,
     initialAccountId: Long? = null,
@@ -93,6 +106,30 @@ fun PositionInputSheet(
     }
     var thesisText by remember { mutableStateOf(item.thesis ?: "") }
     val thesisMaxChars = 200
+
+    // N1: 리스크 기준 수량 (보유 포지션 있을 때만). 다계좌 같은 종목은 수량 합산.
+    val sizingEntries = remember {
+        holdingRepo.all()
+            .filter { it.avgPrice != null && it.qty != null }
+            .groupBy { it.code }
+            .map { (code, hs) -> PositionSizingEntry(code, hs.sumOf { it.qty!! }) }
+    }
+    val hasExistingHoldings = sizingEntries.isNotEmpty()
+    val scope = rememberCoroutineScope()
+    var showSizing by remember { mutableStateOf(false) }
+    var capPct by remember { mutableStateOf(15.0) }
+    var sizing by remember { mutableStateOf<PositionSizing?>(null) }
+    var sizingLoading by remember { mutableStateOf(false) }
+
+    fun loadSizing() {
+        scope.launch {
+            sizingLoading = true
+            sizing = runCatching {
+                api.postPositionSizing(sizingEntries, item.code, capPct)
+            }.getOrNull()
+            sizingLoading = false
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -176,6 +213,23 @@ fun PositionInputSheet(
             PriceField("손절가", stopTfv) { new ->
                 val digits = new.text.filter { it.isDigit() }
                 stopTfv = digitsToTfv(digits)
+            }
+
+            if (hasExistingHoldings) {
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(16.dp))
+                SizingSection(
+                    show = showSizing,
+                    onToggle = {
+                        showSizing = !showSizing
+                        if (showSizing && sizing == null) loadSizing()
+                    },
+                    capPct = capPct,
+                    onCapChange = { capPct = it; if (showSizing) loadSizing() },
+                    loading = sizingLoading,
+                    sizing = sizing,
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -274,6 +328,113 @@ private fun QtyField(label: String, value: String, onValueChange: (String) -> Un
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SizingSection(
+    show: Boolean,
+    onToggle: () -> Unit,
+    capPct: Double,
+    onCapChange: (Double) -> Unit,
+    loading: Boolean,
+    sizing: PositionSizing?,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "리스크 기준 수량 보기",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onToggle) { Text(if (show) "접기" else "펼치기") }
+    }
+    if (show) {
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(10.0, 15.0, 20.0, 25.0).forEach { c ->
+                FilterChip(
+                    selected = capPct == c,
+                    onClick = { onCapChange(c) },
+                    label = { Text("${c.toInt()}%") },
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        when {
+            loading -> Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+            ) { CircularProgressIndicator(modifier = Modifier.height(24.dp).wrapContentWidth()) }
+            sizing != null -> SizingResult(sizing)
+            else -> Text(
+                "리스크 상한을 골라 최대 수량을 계산합니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "이 종목이 포트폴리오 리스크의 상한 %만 차지하도록 하는 최대 수량입니다. 매수 추천이 아니라 리스크 상한 역산입니다.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun SizingResult(s: PositionSizing) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            Text(
+                "최대 ${String.format(Locale.US, "%,d", s.maxShares)}주",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "≈ ${String.format(Locale.US, "%,d", s.maxAmount)}원",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            SizingChip("비중 ${String.format(Locale.US, "%.1f", s.targetWeightPct)}%")
+            SizingChip("리스크 기여 ${String.format(Locale.US, "%.0f", s.atRiskContributionPct)}%")
+            SizingChip("변동성 ${String.format(Locale.US, "%.0f", s.sigmaPct)}%")
+        }
+        if (s.approxByPeer) {
+            Text(
+                "⚠ 관측 부족 — 섹터 유사 종목 변동성으로 근사",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        }
+        Text(
+            s.caveat,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun SizingChip(text: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+        )
+    }
 }
 
 private fun priceToTfv(n: Long): TextFieldValue {
