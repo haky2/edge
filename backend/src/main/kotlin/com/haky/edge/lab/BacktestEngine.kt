@@ -265,6 +265,7 @@ object BacktestEngine {
         val suite: String,
         val universeLabel: String,
         val universeSize: Int,
+        val universeCodes: List<String> = emptyList(), // 표본 재현성용(R3 대조 유니버스 문서화)
         val codesScored: Int,
         val benchDays: Int,
         val dateRange: String,
@@ -279,6 +280,7 @@ object BacktestEngine {
         appendLine("═══ 전략 실험실 — 수트 ${r.suite} ═══")
         appendLine("유니버스 ${r.universeLabel}(${r.universeSize}) · 채점 ${r.codesScored}종목 · 기간 ${r.dateRange} · " +
             "벤치 ${r.benchDays}일 · 조인 누락 ${r.joinFailures}일")
+        if (r.universeCodes.isNotEmpty()) appendLine("종목: ${r.universeCodes.joinToString(",")}")
         val byLabel = r.buckets.groupBy { it.label }
         val base = byLabel[BASELINE]?.associateBy { it.days } ?: emptyMap()
         val order = listOf(BASELINE, CTL_DOWN, CTL_UP) + byLabel.keys.filter {

@@ -9,7 +9,7 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 
 /**
- * GET /signal-lab?suite=anchor|discovery|volume&universe=peer|watch — 전략 실험실.
+ * GET /signal-lab?suite=anchor|discovery|volume&universe=peer|watch|control — 전략 실험실.
  * 선언적 신호 수트를 유니버스 리플레이 + 대조군 + 초과수익 채점으로 실측한다.
  */
 fun Route.signalLabRoutes(service: SignalLabService) {

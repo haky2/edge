@@ -23,6 +23,7 @@ class SignalLabService(
     private val history: DailyHistoryService,
     private val yahoo: YahooHistoryClient,
     private val watchCodes: List<String>,
+    private val controlUniverse: ControlUniverseService? = null, // R3 대조 유니버스(없으면 control 미지원)
 ) {
     suspend fun run(suite: String, universe: String): BacktestEngine.SignalLabReport {
         val signals = SUITES[suite]
@@ -30,7 +31,10 @@ class SignalLabService(
         val codes = when (universe) {
             "peer" -> PeerValuationService.peerUniverse().keys.sorted()
             "watch" -> watchCodes
-            else -> throw IllegalArgumentException("없는 유니버스: $universe (가능: peer, watch)")
+            // R3: 시총 상위 근사 무작위 표본 — 관심종목(모멘텀 편향)과 독립된 대조 표본.
+            "control" -> controlUniverse?.universe()
+                ?: throw IllegalArgumentException("control 유니버스 미설정")
+            else -> throw IllegalArgumentException("없는 유니버스: $universe (가능: peer, watch, control)")
         }
 
         val kospiRaw = yahoo.dailyCloses("^KS11", range = "5y", zone = SEOUL)
@@ -63,6 +67,7 @@ class SignalLabService(
             suite = suite,
             universeLabel = universe,
             universeSize = codes.size,
+            universeCodes = codes.sorted(),
             codesScored = scored,
             benchDays = bench.dates.size,
             dateRange = if (allDates.isEmpty()) "-" else "${allDates.min()} ~ ${allDates.max()}",
