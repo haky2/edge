@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-07-19 — E2 배당 클라 카드 + A3 Slack 질문 (Sonnet)
+
+**한 일**
+- **E2 배당 클라 카드**: `GET /dividend/{code}` 백엔드 엔드포인트 + `DividendCard` SharedLogic 모델 + iOS `dividendCardView()` + Android `DividendCard()` composable. 무배당 404, 예상배당수익률은 현재가로 서버 계산. KMP 박싱(`KotlinLong?.int64Value`, `KotlinDouble?.doubleValue`) 처리.
+- **A3 Slack 자유 질문**: `SlackCommandService`에 `물어봐|질문` 서브커맨드 추가. `/edge 물어봐 종목명 질문` → `analysis.ask()` 호출 → ephemeral+공유 버튼. `handleAsk()`+`formatAskAnswer()` + `generateContent()` 케이스 추가.
+- 백엔드·iOS·Android 전부 빌드 성공.
+
+**다음**
+- E1+E2+A3 포함 전체 push + 배포 + 앱 재빌드.
+
+---
+
 ## 2026-07-19 — E 배당 트래킹 E1 백엔드 (Opus)
 
 **한 일**

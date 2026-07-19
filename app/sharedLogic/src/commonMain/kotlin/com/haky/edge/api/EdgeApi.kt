@@ -14,6 +14,7 @@ import com.haky.edge.model.CatalystImpact
 import com.haky.edge.model.CatalystReport
 import com.haky.edge.model.Comparison
 import com.haky.edge.model.Backtest
+import com.haky.edge.model.DividendCard
 import com.haky.edge.model.FlowSensitivity
 import com.haky.edge.model.DailyBar
 import com.haky.edge.model.DartDisclosure
@@ -465,6 +466,12 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun getFlowSensitivity(code: String): FlowSensitivity? = runCatching {
         client.get("$baseUrl/flow-sensitivity/$code").body<FlowSensitivity>()
+    }.getOrNull()
+
+    /** DART 배당사항 기반 배당 카드. 무배당 또는 DART 미제출이면 null. */
+    @Throws(Exception::class)
+    suspend fun getDividend(code: String): DividendCard? = runCatching {
+        client.get("$baseUrl/dividend/$code").body<DividendCard>()
     }.getOrNull()
 
     /**

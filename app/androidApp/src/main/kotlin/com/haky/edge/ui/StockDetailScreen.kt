@@ -128,6 +128,7 @@ fun StockDetailScreen(
     var deepResearchLoading by remember { mutableStateOf(false) }
     var deepResearchError by remember { mutableStateOf(false) }  // 실패·일일 한도 안내(무피드백 방지)
     var flowSensitivity by remember { mutableStateOf<com.haky.edge.model.FlowSensitivity?>(null) }
+    var dividendCard by remember { mutableStateOf<com.haky.edge.model.DividendCard?>(null) }
     var earnings by remember { mutableStateOf<com.haky.edge.model.EarningsEntry?>(null) }
     var stockSignal by remember { mutableStateOf<com.haky.edge.model.StockImpact?>(null) }
     var targetPrice by remember { mutableStateOf<com.haky.edge.model.TargetPriceInfo?>(null) }
@@ -263,6 +264,7 @@ fun StockDetailScreen(
         try { backtest = api.getBacktest(code) } catch (_: Exception) {}
         try { analog = api.getAnalog(code) } catch (_: Exception) {}
         try { flowSensitivity = api.getFlowSensitivity(code) } catch (_: Exception) {}
+        try { dividendCard = api.getDividend(code) } catch (_: Exception) {}
         try { earnings = api.getEarnings(listOf(code)).firstOrNull() } catch (_: Exception) {}
         try { stockSignal = api.getStockSignals(code) } catch (_: Exception) {}
         try { targetPrice = api.getTargetPrice(code) } catch (_: Exception) {}
@@ -426,6 +428,7 @@ fun StockDetailScreen(
             analog?.let { AnalogCard(it) }
             flowSensitivity?.let { FlowSensitivityCard(it) }
             shortSelling?.let { ShortSellingCard(it) }
+            dividendCard?.let { DividendCard(it) }
             earnings?.let { EarningsCard(it) }
             stockSignal?.let { MacroSignalCard(it) }
             premortem?.let { PremortemCard(it) }

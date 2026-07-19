@@ -99,3 +99,18 @@ data class DartAlotRow(
     @SerialName("lwfr")      val prev2Term: String = "",   // 전전기
     @SerialName("stlm_dt")   val settleDate: String? = null, // 결산기준일(YYYY-MM-DD)
 )
+
+/** GET /dividend/{code} 응답 DTO. SharedLogic model/DividendCard.kt와 필드명·타입 동일. */
+@Serializable
+data class DividendCard(
+    val code: String,
+    val fiscalYear: Int,
+    val dpsThis: Long,
+    val dpsPrev: Long? = null,
+    val dpsPrev2: Long? = null,
+    val dpsYoyPct: Double? = null,
+    val yieldPctAtRecord: Double? = null,
+    val payoutPct: Double? = null,
+    val settleMonth: Int? = null,
+    val expectedYieldPct: Double? = null,
+)

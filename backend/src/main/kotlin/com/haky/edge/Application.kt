@@ -40,6 +40,7 @@ import com.haky.edge.routes.stanceStatsRoutes
 import com.haky.edge.routes.askRoutes
 import com.haky.edge.routes.portfolioReviewRoutes
 import com.haky.edge.routes.backtestRoutes
+import com.haky.edge.routes.dividendRoutes
 import com.haky.edge.routes.catalystImpactRoutes
 import com.haky.edge.routes.catalystRoutes
 import com.haky.edge.routes.comparisonRoutes
@@ -363,6 +364,7 @@ fun Application.module() {
             valuationBandRoutes(valuationBand)
             peerValuationRoutes(peerValuation)
             backtestRoutes(backtest)
+            dividendRoutes(dart, kis)
             comparisonRoutes(comparison)
             portfolioReviewRoutes(portfolioReview, rebalance)
             rebalanceRoutes(rebalance)

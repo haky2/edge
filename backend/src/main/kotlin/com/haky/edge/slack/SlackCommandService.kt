@@ -1,6 +1,7 @@
 package com.haky.edge.slack
 
 import com.haky.edge.ai.Analysis
+import com.haky.edge.ai.AskAnswer
 import com.haky.edge.ai.AnalysisService
 import com.haky.edge.ai.Comparison
 import com.haky.edge.ai.ComparisonService
@@ -16,14 +17,15 @@ import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
 /**
- * Slack 슬래시 명령 처리(S7 기반, S8 라운지 명령어 추가).
+ * Slack 슬래시 명령 처리(S7 기반, S8 라운지 명령어 추가, A3 자유 질문 추가).
  *
  * 지원 명령어:
- *   /edge 종목명        → AI 분석 코멘트 (S7 기존)
- *   /edge 시황          → 오늘 시장 분위기 코멘트
- *   /edge 이벤트        → 거시 이벤트 캘린더 (30일)
- *   /edge 비교 A B      → 두 종목 나란히 비교
- *   /edge 신호 종목명   → 외인/기관 수급 신호 확인
+ *   /edge 종목명             → AI 분석 코멘트 (S7 기존)
+ *   /edge 시황               → 오늘 시장 분위기 코멘트
+ *   /edge 이벤트             → 거시 이벤트 캘린더 (30일)
+ *   /edge 비교 A B           → 두 종목 나란히 비교
+ *   /edge 신호 종목명        → 외인/기관 수급 신호 확인
+ *   /edge 물어봐 종목명 질문 → 종목 자유 질문 (A3)
  *
  * 모든 응답은 ephemeral(나만 보임) + [채널에 공유] Block Kit 버튼. 버튼 클릭 →
  * handleInteraction() → 동일 내용을 in_channel 로 재게시 + "OO님이 공유했어요" 헤더.
@@ -50,7 +52,8 @@ class SlackCommandService(
 • `/edge 시황` — 오늘 시장 분위기
 • `/edge 이벤트` — 거시 이벤트 캘린더
 • `/edge 비교 종목A 종목B` — 두 종목 비교
-• `/edge 신호 종목명` — 수급 신호 확인""")
+• `/edge 신호 종목명` — 수급 신호 확인
+• `/edge 물어봐 종목명 질문` — 종목 자유 질문""")
             return
         }
         runCatching {
@@ -63,6 +66,8 @@ class SlackCommandService(
                 sub == "비교" -> slack.postToResponseUrl(responseUrl, "사용법: `/edge 비교 종목A 종목B` (예: `/edge 비교 삼성전자 SK하이닉스`)")
                 sub == "신호" && parts.size >= 2 -> handleSignal(parts[1], responseUrl)
                 sub == "신호" -> slack.postToResponseUrl(responseUrl, "사용법: `/edge 신호 종목명` (예: `/edge 신호 삼성전자`)")
+                (sub == "물어봐" || sub == "질문") && parts.size >= 3 -> handleAsk(parts[1], parts[2], responseUrl)
+                (sub == "물어봐" || sub == "질문") -> slack.postToResponseUrl(responseUrl, "사용법: `/edge 물어봐 종목명 질문` (예: `/edge 물어봐 삼성전자 지금 저점인가요?`)")
                 else -> handleAnalysis(text, responseUrl)
             }
         }.onFailure { e ->
@@ -110,6 +115,10 @@ class SlackCommandService(
                 val code = resolveCode(parts[1]) ?: error("종목 미발견: ${parts[1]}")
                 val name = resolveStockName(code)
                 formatSignalStatus(code, name, kis.getInvestorFlow(code, days = 5))
+            }
+            (sub == "물어봐" || sub == "질문") && parts.size >= 3 -> {
+                val code = resolveCode(parts[1]) ?: error("종목 미발견: ${parts[1]}")
+                formatAskAnswer(analysis.ask(code, parts[2]))
             }
             else -> {
                 val code = resolveCode(cmd) ?: error("종목 미발견: $cmd")
@@ -251,6 +260,24 @@ class SlackCommandService(
             if ((v > 0 && sign > 0) || (v < 0 && sign < 0)) count++ else break
         }
         return count * sign
+    }
+
+    // ─── 종목 자유 질문 (A3) ──────────────────────────────────────────────────
+
+    private suspend fun handleAsk(stockText: String, question: String, responseUrl: String) {
+        val code = resolveCode(stockText) ?: run {
+            slack.postToResponseUrl(responseUrl, "'$stockText' 종목을 못 찾았어요. 정확한 종목명이나 6자리 코드로 다시 시도해 주세요.")
+            return
+        }
+        val result = analysis.ask(code, question)
+        slack.postWithShareButton(responseUrl, formatAskAnswer(result), shareValue = "물어봐 $stockText $question")
+    }
+
+    private fun formatAskAnswer(a: AskAnswer): String = buildString {
+        appendLine("*${a.name}* (${a.code}) — ${a.question}")
+        appendLine()
+        append(a.answer.trim())
+        append("\n\n_${a.generatedAt.ifBlank { a.date }} 기준 · 참고용_")
     }
 
     // ─── 분석 (기존 S7) ───────────────────────────────────────────────────────
