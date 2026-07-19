@@ -46,6 +46,7 @@ class SignalService(
     private val premortem: com.haky.edge.ai.PremortemService? = null, // F5 무효화 조건 감시(없으면 skip)
     private val rebalance: com.haky.edge.ai.RebalanceService? = null, // R2 비중 점검 신호(없으면 skip)
     private val investorHistory: com.haky.edge.kis.InvestorHistoryLog? = null, // 수급 아카이브(없으면 skip)
+    private val signalFiredLog: SignalFiredLog? = null, // N3-a 발화 로그(없으면 skip)
 ) {
     private val dataDir = File(System.getenv("DATA_DIR") ?: ".data").also { it.mkdirs() }
     private val stateFile = File(dataDir, "signal_state.json")
@@ -238,6 +239,13 @@ class SignalService(
             premortemSignals.map { "${it.name}(${it.code}) 무효화 조건 발동: ${it.descriptions.joinToString("; ")}" } +
             rebalanceSignals.map { "비중 점검 신호: ${it.text}" }
 
+        // N3-a: 발송 직전 — 디듀프 통과분(signal lists)을 jsonl에 영속.
+        if (descriptions.isNotEmpty()) {
+            runCatching {
+                signalFiredLog?.appendNew(buildFiredEntries(today, flowSignals, disclosureSignals, valuationSignals, reversalSignals, reviewSignals, premortemSignals, rebalanceSignals))
+            }
+        }
+
         var posted = false
         if (descriptions.isNotEmpty()) {
             posted = slack.postMessage(signalChannel, formatMessage(flowSignals, disclosureSignals, valuationSignals, reversalSignals, reviewSignals, premortemSignals, rebalanceSignals))
@@ -253,6 +261,26 @@ class SignalService(
             println("[Signals] Slack 발송 실패 — 상태 저장·프리모템 비활성화 보류(다음 스캔 재시도)")
         }
         return ScanResult(scanned = codes.size, fired = descriptions, posted = posted)
+    }
+
+    /** 발화한 신호 목록을 SignalFired 레코드로 변환(N3-a 로그용). */
+    private fun buildFiredEntries(
+        date: String,
+        flows: List<FlowSignal>,
+        discs: List<DisclosureSignal>,
+        vals: List<ValuationSignal>,
+        reversals: List<ReversalSignal>,
+        reviews: List<EarningsReviewSignal>,
+        premortems: List<PremortemSignal>,
+        rebalances: List<RebalanceSignal>,
+    ): List<SignalFired> = buildList {
+        flows.forEach { add(SignalFired(date, it.code, "FLOW", "${it.type.label} ${it.streak}일 연속 순매수")) }
+        discs.forEach { add(SignalFired(date, it.code, "DISCLOSURE", it.title)) }
+        vals.forEach { add(SignalFired(date, it.code, "VALUATION", "PER ${"%.1f".format(it.perCurrent)}배 (역사적 하위 ${it.percentile}%)")) }
+        reversals.forEach { add(SignalFired(date, it.code, "REVERSAL", "${it.type.label} ${if (it.toBuy) "매수" else "매도"} 전환")) }
+        reviews.forEach { add(SignalFired(date, it.code, "EARNINGS_REVIEW", "${it.review.periodLabel} ${it.review.verdict}")) }
+        premortems.forEach { add(SignalFired(date, it.code, "PREMORTEM", it.descriptions.joinToString("; "))) }
+        rebalances.forEach { add(SignalFired(date, "", "REBALANCE", it.text)) }
     }
 
     /** 한 종목·한 신호종류의 연속 순매수 streak. THRESHOLD 미만이면 null. */

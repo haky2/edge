@@ -85,6 +85,7 @@ import com.haky.edge.routes.signalLabRoutes
 import com.haky.edge.routes.weeklyReviewRoutes
 import com.haky.edge.routes.eventReminderRoutes
 import com.haky.edge.routes.costSummaryRoutes
+import com.haky.edge.routes.signalFiredRoutes
 import com.haky.edge.routes.signalRoutes
 import com.haky.edge.routes.overseasRoutes
 import com.haky.edge.routes.prewarmRoutes
@@ -308,7 +309,8 @@ fun Application.module() {
     // S3a/b+F4+F3+F5+R2 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가·수급 전환점·실적 리뷰·프리모템 발동·비중 점검 → #알림-신호 채널.
     // 수급 아카이브 — signals-scan이 매일 확정 일별 수급을 jsonl로 영속(F4 사후 검증의 데이터 기반).
     val investorHistory = com.haky.edge.kis.InvestorHistoryLog()
-    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes, backtest, earningsPreview, premortem, rebalance, investorHistory)
+    val signalFiredLog = com.haky.edge.slack.SignalFiredLog()
+    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes, backtest, earningsPreview, premortem, rebalance, investorHistory, signalFiredLog)
     // S7·S8 슬래시 명령 + 라운지 명령어. 서명검증 + 멀티 커맨드 라우팅.
     val slackVerifier = SlackSignatureVerifier(System.getenv("SLACK_SIGNING_SECRET").orEmpty())
     val slackCommand = SlackCommandService(analysis, master, slack, kis, marketMood, eventSync, comparison)
@@ -391,6 +393,7 @@ fun Application.module() {
             eventReminderRoutes(eventReminder)
             costSummaryRoutes(costSummary)
             signalRoutes(signalService)
+            signalFiredRoutes(signalFiredLog)
             slackCommandRoutes(slackVerifier, slackCommand, cloudTasks)
         }
     }
