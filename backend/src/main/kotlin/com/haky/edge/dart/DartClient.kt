@@ -432,6 +432,48 @@ class DartClient(private val apiKey: String) {
         return value
     }
 
+    // 배당 정보 캐시. 연 1회 확정값이라 날짜 단위로 충분. key="date|code".
+    private val dividendCache = DayScopedCache<Optional<DividendInfo>>()
+
+    /**
+     * 배당 정보 — 최신 확정 사업연도의 보통주 주당배당금(3년 추이)·시가배당률·배당성향·EPS.
+     * alotMatter(배당에 관한 사항)에서 추출. 최신 연도부터 프로브해 보통주 주당배당금 실값이
+     * 있는 첫 연도를 채택한다(사업보고서 제출 직후 당해 배당이 구조화 데이터에 없는 시차 회피).
+     * 무배당 회사는 null(보통주 주당배당금 없음).
+     */
+    suspend fun getDividendInfo(stockCode: String): DividendInfo? {
+        if (apiKey.isBlank()) return null
+        val today = LocalDate.now(KST).toString()
+        val cacheKey = "$today|$stockCode"
+        dividendCache.get(today, cacheKey)?.let { return it.value }
+
+        ensureCorpCodeMap()
+        val corpCode = corpCodeMap?.get(stockCode)
+        if (corpCode == null) { dividendCache.put(today, cacheKey, Optional(null)); return null }
+
+        val latest = DividendMath.latestFiledYear(LocalDate.now(KST))
+        var result: DividendInfo? = null
+        for (year in latest downTo latest - 1) {
+            result = fetchDividend(corpCode, year)
+            if (result != null) break
+        }
+        dividendCache.put(today, cacheKey, Optional(result))
+        return result
+    }
+
+    private suspend fun fetchDividend(corpCode: String, year: Int): DividendInfo? {
+        val resp = runCatching {
+            http.get("https://opendart.fss.or.kr/api/alotMatter.json") {
+                parameter("crtfc_key", apiKey)
+                parameter("corp_code", corpCode)
+                parameter("bsns_year", year.toString())
+                parameter("reprt_code", "11011") // 사업보고서(연간 확정 배당)
+            }.body<DartAlotResponse>()
+        }.getOrNull() ?: return null
+        val rows = resp.takeIf { it.status == "000" }?.list ?: return null
+        return DividendMath.extract(rows)
+    }
+
     // 수주·재고 선행지표 캐시. 분기 잔액은 하루 안에 안 바뀌므로 날짜 단위. key="date|code".
     private val leadingCache = DayScopedCache<Optional<LeadingIndicators>>()
 

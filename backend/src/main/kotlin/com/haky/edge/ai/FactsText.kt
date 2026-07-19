@@ -1,5 +1,6 @@
 package com.haky.edge.ai
 
+import com.haky.edge.dart.DividendInfo
 import com.haky.edge.dart.FinancialSummary
 import com.haky.edge.dart.LeadingIndicators
 import com.haky.edge.dart.LeadingQuarter
@@ -52,12 +53,13 @@ internal fun buildFacts(
     marketContext: String? = null,
     horizonLong: Boolean = false,
     leading: LeadingIndicators? = null,
+    dividend: DividendInfo? = null,
     now: ZonedDateTime = ZonedDateTime.now(ZoneId.of("Asia/Seoul")),
 ): String = buildFactsSections(
     code, name, q, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents,
     sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity,
     quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis,
-    thesisHistory, marketContext, horizonLong, leading, now,
+    thesisHistory, marketContext, horizonLong, leading, dividend, now,
 ).joinToString("") { it.text }
 
 /**
@@ -92,6 +94,7 @@ internal fun buildFactsSections(
     marketContext: String? = null,
     horizonLong: Boolean = false,
     leading: LeadingIndicators? = null,
+    dividend: DividendInfo? = null,
     now: ZonedDateTime = ZonedDateTime.now(ZoneId.of("Asia/Seoul")),
 ): List<FactsSection> {
     val sections = mutableListOf<FactsSection>()
@@ -262,6 +265,8 @@ internal fun buildFactsSections(
     add("quarterly_income", quarterlyIncomeText(quarterlyIncome)?.let { "\n" + it })
     // 수주·재고 선행지표(분기 재무상태표 잔액 추이) — 수주산업의 계약부채는 수주잔고 근사 지표(C19).
     add("leading_indicators", leadingIndicatorsText(leading)?.let { "\n" + it })
+    // 배당(DART 배당사항) — 주당배당금 추이 + 현재가 기준 예상 수익률(C20).
+    add("dividend", dividendText(dividend, q.price)?.let { "\n" + it })
 
     add("flows", if (flows.isNotEmpty()) {
         buildString {
@@ -544,6 +549,42 @@ internal fun leadingIndicatorsText(li: LeadingIndicators?): String? {
     return buildString {
         appendLine("수주·재고 선행지표(DART 분기 재무제표 자체 추출, 분기말 잔액, 단위 억원):")
         lines.forEach { appendLine(it) }
+    }
+}
+
+/**
+ * 배당 사실 블록. 주당배당금 3년 추이 + 현재가 기준 예상 수익률(사실 계산) + 당시 시가배당률·배당성향 참고.
+ * 배당락 확정일은 다루지 않는다(상법 개정 후 불규칙) — 결산월만 사실로 제시하고 해석은 C20이 규율한다.
+ */
+internal fun dividendText(div: DividendInfo?, currentPrice: Long): String? {
+    val d = div ?: return null
+    fun won(v: Long) = "%,d원".format(v)
+    fun signed(p: Double) = "${if (p >= 0) "+" else ""}${"%.1f".format(p)}%"
+
+    // 주당배당금 추이 — 오래된 순으로 있는 값만. (연도, 값) 구성.
+    val series = listOfNotNull(
+        d.dpsPrev2?.let { (d.fiscalYear - 2) to it },
+        d.dpsPrev?.let { (d.fiscalYear - 1) to it },
+        (d.fiscalYear to d.dpsThis),
+    )
+    val trendBody = series.joinToString(" → ") { (y, v) -> "$y ${won(v)}" }
+    val yoy = d.dpsYoyPct?.let { " (전년 대비 ${signed(it)})" } ?: ""
+
+    val expectedYield = if (currentPrice > 0L) d.dpsThis.toDouble() / currentPrice * 100 else null
+
+    val refParts = listOfNotNull(
+        d.yieldPctAtRecord?.let { "배당 시점 시가배당률 ${"%.1f".format(it)}%" },
+        d.payoutPct?.let { "현금배당성향 ${"%.1f".format(it)}%" },
+        d.settleDate?.substring(5, 7)?.toIntOrNull()?.let { "결산월 ${it}월" },
+    )
+
+    return buildString {
+        appendLine("배당(DART 배당사항, 최신 확정 ${d.fiscalYear} 사업연도 기준):")
+        appendLine("  주당 현금배당금: $trendBody$yoy")
+        if (expectedYield != null)
+            appendLine("  현재가(${won(currentPrice)}) 기준 예상 배당수익률: ${"%.2f".format(expectedYield)}% (최신 주당배당금 ÷ 현재가, 차기 배당 미확정)")
+        if (refParts.isNotEmpty())
+            appendLine("  참고: ${refParts.joinToString(", ")}")
     }
 }
 

@@ -329,6 +329,8 @@ class AnalysisService(
         val quarterlyD      = async { runCatching { dart.getQuarterlyIncome(code) }.getOrNull() }
         // 수주·재고 선행지표(분기 전체 계정 5콜, 일 캐시) — 수주산업 계약부채=수주잔고 근사(C19).
         val leadingD        = async { runCatching { dart.getLeadingIndicators(code) }.getOrNull() }
+        // 배당(alotMatter, 최신 확정 연도 1~2콜, 일 캐시) — 주당배당금 추이+현재가 기준 예상수익률(C20).
+        val dividendD       = async { runCatching { dart.getDividendInfo(code) }.getOrNull() }
         // 상장주식수: 연환산(포워드) PER 계산용. inquire-price 재호출이라 가벼움(캐시 대상).
         val sharesD         = async { runCatching { kis.getListedShares(code) }.getOrNull() }
         val warningsD       = async { runCatching { toss.getActiveWarnings(code) }.getOrElse { emptyList() } }
@@ -357,6 +359,7 @@ class AnalysisService(
         val flowSensitivity = flowSensD.await()
         val quarterlyIncome = quarterlyD.await()
         val leading         = leadingD.await()
+        val dividend        = dividendD.await()
         val listedShares    = sharesD.await()
         val sectorChangeRate = sectorRsD.await()
         val news            = dedupeNews(rawNewsD.await(), limit = 8)
@@ -371,7 +374,7 @@ class AnalysisService(
         val calendar = calendarD.await()
         val marketCtx = marketCtxD.await()
         // 섹션 리스트를 만들어 concat — buildFacts와 바이트 동일(FactsGoldenTest 계약), /facts-audit가 섹션을 계측.
-        val sections = buildFactsSections(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis, thesisHistory, marketCtx, horizonLong, leading)
+        val sections = buildFactsSections(code, name, quote, bars, financials, flows, news, consensusTarget, targetTrend, targetEvents, sectorChangeRate, shortSelling, valuationBand, peerValuation, backtest, flowSensitivity, quarterlyIncome, listedShares, eventsText, warningsText, calendar, position, thesis, thesisHistory, marketCtx, horizonLong, leading, dividend)
         val facts = sections.joinToString("") { it.text }
         val richness = FactsRichness(
             newsCount = news.size,
@@ -735,6 +738,14 @@ class AnalysisService(
                 경계 신호로 짚어라 — 단 수주형 사업의 재고는 건조·제작 중 물량(오히려 일감 신호)일 수 있으니
                 업종 성격과 함께 저울질하고 단정하지 마라. 수주산업이 아닌 종목(일반 소비재 등)에선 계약부채
                 해석을 생략해도 된다. 제공된 수치 범위에서만 서술하라.
+            C20. "배당" 항목이 있으면(없으면 이 규칙 전체를 무시 — 무배당·자료없음 종목은 배당을 언급하지 마라) —
+                주당 현금배당금의 여러 해 추이와 현재가 기준 예상 배당수익률이다. 배당이 늘어온 추세인지 삭감·
+                동결인지 방향을 짚고, 예상 배당수익률로 지금 이 가격에서 배당 매력이 어느 정도인지 서술하라.
+                단 다음을 지켜라: (1) "예상 배당수익률"은 최신 확정 주당배당금을 현재가로 나눈 값일 뿐 차기 배당은
+                아직 확정되지 않았다 — "확정 배당" "받게 될 배당"으로 단정하지 말고 "전년 수준 유지 시" 같은 조건을
+                붙여라. (2) 배당락일·배당기준일 같은 날짜는 사실 데이터에 없다(상법 개정 후 회사별로 불규칙) —
+                결산월만 사실이고, 구체적 배당락 날짜를 지어내지 마라. (3) 배당성향이 100%에 근접하거나 순이익이
+                줄어드는데 배당을 유지·확대하면 지속가능성을 경계 신호로 짚어라. 제공된 수치 범위에서만 서술하라.
         """.trimIndent()
 
         // 말미 재강조 — 거대 프롬프트에서 지시 준수율은 서두보다 말미가 높다.
