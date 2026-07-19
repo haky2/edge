@@ -1935,7 +1935,6 @@ struct StockDetailView: View {
     }
 
     private func analogHorizonRow(_ h: AnalogHorizon) -> some View {
-        let win = Int(h.winRate)
         let up = h.median >= 0
         let accent: Color = up ? .red : .blue
         return VStack(alignment: .leading, spacing: 6) {
@@ -1947,26 +1946,8 @@ struct StockDetailView: View {
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(accent.opacity(0.15)).foregroundColor(accent).cornerRadius(8)
             }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.gray.opacity(0.18)).frame(height: 6)
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(accent.opacity(0.7))
-                        .frame(width: geo.size.width * CGFloat(win) / 100.0, height: 6)
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.5))
-                        .frame(width: 1.5, height: 10)
-                        .offset(x: geo.size.width * 0.5 - 0.75, y: -2)
-                }
-            }
-            .frame(height: 10)
-            HStack {
-                Text("상승 확률 \(win)%").font(.caption2)
-                Spacer()
-                Text("평균 \(String(format: "%+.1f", h.avg))% · 범위 \(String(format: "%.1f", h.min))~\(String(format: "%+.1f", h.max))%")
-                    .font(.caption2).foregroundColor(.secondary)
-            }
+            Text("범위 \(String(format: "%.1f", h.min))~\(String(format: "%+.1f", h.max))%")
+                .font(.caption2).foregroundColor(.secondary)
         }
     }
 

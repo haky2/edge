@@ -664,24 +664,12 @@ internal fun AnalogCard(an: AnalogReport) {
 private fun AnalogHorizonRow(h: AnalogHorizon) {
     val up = h.median >= 0
     val accent = if (up) ChangeUp else ChangeDown
-    val onSurface = MaterialTheme.colorScheme.onSurface
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("${h.days}일 후", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f))
             BadgePill("중앙값 %+.1f%%".format(h.median), accent)
         }
-        ProbabilityBar(
-            winFraction = (h.winRate / 100f).toFloat(),
-            baselineFraction = 0.5f,
-            color = accent,
-            dimmed = false,
-            baselineColor = onSurface,
-            modifier = Modifier.fillMaxWidth().height(10.dp),
-        )
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("상승 확률 ${h.winRate.toInt()}%", style = MaterialTheme.typography.labelSmall, color = onSurface)
-            Text("평균 %+.1f%% · 범위 %.1f~%+.1f%%".format(h.avg, h.min, h.max), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        Text("범위 %.1f~%+.1f%%".format(h.min, h.max), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
