@@ -59,21 +59,6 @@ struct StatsView: View {
         }
     }
 
-    // MARK: - 메인 리스트 (하위 호환, 현재는 body에 인라인)
-
-    private var contentList: some View {
-        List {
-            summarySection
-            disciplineSection
-            winRateSection
-            missedSection
-            reasonSection
-            recentSection
-            codeSection
-            if avgHoldDays != nil || !pairRows.isEmpty { holdSection }
-        }
-    }
-
     // MARK: - 섹션: B2 개인 주간 회고
 
     @ViewBuilder

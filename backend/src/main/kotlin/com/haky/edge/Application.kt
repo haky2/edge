@@ -72,7 +72,6 @@ import com.haky.edge.routes.peerValuationRoutes
 import com.haky.edge.routes.targetPriceRoutes
 import com.haky.edge.routes.valuationBandRoutes
 import com.haky.edge.routes.warningsRoutes
-import com.haky.edge.routes.webSearchTestRoutes
 import com.haky.edge.routes.sensitivityValidationRoutes
 import com.haky.edge.routes.anchorValidationRoutes
 import com.haky.edge.routes.factsAuditRoutes
@@ -200,9 +199,10 @@ fun Application.module() {
     )
     // 종목 마스터는 인증이 필요 없는 공개 다운로드라 별도의 평범한 HttpClient 를 쓴다(KisClient 와 분리).
     // 토스 보강 소스(한투에 없는 투자유의·개장캘린더·상하한가). 슬라이스0=인증/연결 확인.
-    // 키 미설정이면 warmup/호출이 조용히 건너뛰므로 로컬에선 .env 없이도 서버가 뜬다.
+    // 키 미설정이면 warmup/호출이 조용히 건너뜀. 라우트 등록은 키 존재 시에만(아래 rateLimit 블록).
+    val tossClientId = System.getenv("TOSS_CLIENT_ID").orEmpty()
     val toss = TossClient(
-        clientId = System.getenv("TOSS_CLIENT_ID").orEmpty(),
+        clientId = tossClientId,
         clientSecret = System.getenv("TOSS_CLIENT_SECRET").orEmpty(),
         baseUrl = System.getenv("TOSS_BASE_URL") ?: "https://openapi.tossinvest.com",
     )
@@ -342,7 +342,7 @@ fun Application.module() {
     // 첫 번째 실제 요청이 올 때 이 두 초기화 작업(각 수 초)을 기다리지 않아도 되게 함.
     launch {
         runCatching { kis.warmup() }   // KIS 접근토큰 선발급
-        runCatching { toss.warmup() }  // 토스 접근토큰 선발급(키 미설정이면 내부에서 건너뜀)
+        if (tossClientId.isNotBlank()) runCatching { toss.warmup() }  // 토스 접근토큰 선발급
         runCatching { dart.warmup() }  // DART corpCode.xml 다운로드·파싱
     }
 
@@ -353,8 +353,10 @@ fun Application.module() {
         rateLimit(ApiRateLimit) {
             quoteRoutes(kis)
             overseasRoutes(kis, overseasMaster, overseasAnalysis)
-            warningsRoutes(toss)
-            marketCalendarRoutes(toss)
+            if (tossClientId.isNotBlank()) {
+                warningsRoutes(toss)
+                marketCalendarRoutes(toss)
+            }
             chartRoutes(kis)
             investorRoutes(kis, investorHistory)
             macroRoutes(kis, fearGreed, copper, ecos, yahoo)
@@ -390,7 +392,6 @@ fun Application.module() {
             rebalanceRoutes(rebalance)
             discoveryRoutes(discovery)
             eventRoutes(eventSync)
-            webSearchTestRoutes(claude)
             sensitivityValidationRoutes(sensitivityValidation)
             catalystValidationRoutes(catalystValidation)
             anchorValidationRoutes(anchorValidation)
