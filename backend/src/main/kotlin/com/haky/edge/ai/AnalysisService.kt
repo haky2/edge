@@ -17,6 +17,8 @@ import com.haky.edge.news.NaverTargetPriceClient
 import com.haky.edge.news.NewsItem
 import com.haky.edge.news.TargetPriceLogService
 import com.haky.edge.news.TargetPriceTrend
+import com.haky.edge.slack.SignalFired
+import com.haky.edge.slack.SignalFiredLog
 import com.haky.edge.slack.SlackClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
@@ -59,6 +61,9 @@ data class Analysis(
     val stance: String? = null,
     val prevStance: String? = null,
     val prevStanceDate: String? = null, // 직전 스탠스의 생성 기준일 YYYY-MM-DD
+    // R5 델타 스트립: 전일 대비 달라진 항목 한 줄씩(스탠스 전환·목표가 이벤트·국면 전환·신호 발화).
+    // 없으면 빈 리스트 — 앱은 비면 스트립 미표시.
+    val deltaLines: List<String> = emptyList(),
 )
 
 /** Q&A 한 턴(질문·답). 후속 질문 시 앱이 이전 문답을 history로 되보낸다(서버 무상태). */
@@ -128,6 +133,7 @@ class AnalysisService(
     private val notifyScope: CoroutineScope? = null,
     private val askDailyLimit: Int = 200,
     private val stanceLog: StanceLog = StanceLog(),
+    private val signalFiredLog: SignalFiredLog? = null,
 ) {
     private data class Cached(val analysis: Analysis)
     private val cache = ConcurrentHashMap<String, Cached>()
@@ -222,10 +228,19 @@ class AnalysisService(
 
         val now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Seoul"))
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+        val currentStance = stance.takeIf { it != "미상" }
+        val deltaLines = buildDeltaLines(
+            stance = currentStance,
+            prev = prev,
+            targetEvents = cf.targetEvents,
+            currentRegime = extractRegime(facts),
+            todaySignals = signalFiredLog?.todayFor(code, today) ?: emptyList(),
+        )
         val analysis = Analysis(
             code = code, name = cf.name, date = today, comment = comment, summary = summary,
             generatedAt = now, generatedPrice = cf.quote.price.toDouble(), factsRichness = cf.richness, numberWarning = false,
-            stance = stance.takeIf { it != "미상" }, prevStance = prev?.stance, prevStanceDate = prev?.date,
+            stance = currentStance, prevStance = prev?.stance, prevStanceDate = prev?.date,
+            deltaLines = deltaLines,
         )
         cache[key] = Cached(analysis)
         fileCache.put(key, analysis)
@@ -294,6 +309,7 @@ class AnalysisService(
         val facts: String,
         val richness: FactsRichness,
         val sections: List<FactsSection>,
+        val targetEvents: com.haky.edge.news.TargetPriceEvents? = null,
     )
 
     /** F5 프리모템 등 다른 서비스가 종목 분석과 *같은 사실 데이터*를 쓰도록 facts 텍스트만 노출. */
@@ -387,7 +403,7 @@ class AnalysisService(
             hasBacktest = backtest?.signals?.any { it.confident } == true,
             hasFlowSensitivity = flowSensitivity?.items?.any { it.confident } == true,
         )
-        CollectedFacts(name = name, quote = quote, facts = facts, richness = richness, sections = sections)
+        CollectedFacts(name = name, quote = quote, facts = facts, richness = richness, sections = sections, targetEvents = targetEvents)
     }
 
     /**
@@ -658,6 +674,34 @@ class AnalysisService(
         /** facts 텍스트에서 국면 판정 라벨(짧은 형태)만 추출 — 스탠스 로그의 레짐별 집계용. */
         internal fun extractRegime(facts: String): String? =
             Regex("""국면 판정\(계산\): (리레이팅 국면|디레이팅 경계)""").find(facts)?.groupValues?.get(1)
+
+        private val SIGNAL_KIND_LABEL = mapOf(
+            "FLOW" to "수급 신호", "DISCLOSURE" to "공시 신호",
+            "VALUATION" to "밸류 신호", "REVERSAL" to "수급 전환",
+            "EARNINGS_REVIEW" to "실적 리뷰", "PREMORTEM" to "프리모템",
+            "REBALANCE" to "리밸런싱",
+        )
+
+        internal fun buildDeltaLines(
+            stance: String?,
+            prev: StanceEntry?,
+            targetEvents: com.haky.edge.news.TargetPriceEvents?,
+            currentRegime: String?,
+            todaySignals: List<SignalFired>,
+        ): List<String> = buildList {
+            if (stance != null && prev?.stance != null && stance != prev.stance)
+                add("스탠스 전환: ${prev.stance} → $stance")
+            if (targetEvents != null) {
+                if (targetEvents.raisesIn90d > 0) add("목표가 90일 내 ${targetEvents.raisesIn90d}회 상향")
+                if (targetEvents.cutsIn90d > 0) add("목표가 90일 내 ${targetEvents.cutsIn90d}회 하향")
+            }
+            if (currentRegime != null && prev?.regime != null && currentRegime != prev.regime)
+                add("국면 전환: ${prev.regime} → $currentRegime")
+            todaySignals.forEach { s ->
+                val label = SIGNAL_KIND_LABEL[s.kind] ?: s.kind
+                add("$label: ${s.detail.take(40)}")
+            }
+        }
 
         // ── 시스템 프롬프트(캐시 대상) ────────────────────────────────────────
         // 방어/공격 공통 규칙은 COMMON_RULES 한 곳에만 둔다 — 두 프롬프트가 80% 복제였던

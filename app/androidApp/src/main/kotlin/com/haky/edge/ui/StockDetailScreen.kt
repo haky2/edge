@@ -371,6 +371,7 @@ fun StockDetailScreen(
                     onTrendHelpToggle = { trendHelpExpanded = !trendHelpExpanded },
                 )
             }
+            analysis?.deltaLines?.takeIf { it.isNotEmpty() }?.let { DeltaStrip(it) }
             PositionCard(
                 item = watchItem,
                 quote = quote,
@@ -1102,54 +1103,48 @@ private fun TechnicalCard(
     helpExpanded: Boolean,
     onHelpToggle: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text("기술적 지표", style = MaterialTheme.typography.titleSmall)
-
-        // 추세 신호등 + RSI 게이지
-        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            TrendSignal(r, price)
-            if (r.rsi14 != null) {
-                Box(modifier = Modifier.width(1.dp).height(44.dp).background(MaterialTheme.colorScheme.outlineVariant))
-                RsiGauge(r.rsi14!!, modifier = Modifier.weight(1f))
+    CollapsibleCard(title = "기술적 지표") {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // 추세 신호등 + RSI 게이지
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                TrendSignal(r, price)
+                if (r.rsi14 != null) {
+                    Box(modifier = Modifier.width(1.dp).height(44.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                    RsiGauge(r.rsi14!!, modifier = Modifier.weight(1f))
+                }
             }
-        }
 
-        r.volumeRatio?.let { VolumeBadge(it) }
+            r.volumeRatio?.let { VolumeBadge(it) }
 
-        // 접이식 설명
-        Column {
-            Row(
-                modifier = Modifier.clickable { onHelpToggle() }.padding(vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    if (helpExpanded) "ⓘ 설명 접기 ▲" else "ⓘ 이게 무슨 뜻이죠? ▼",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (helpExpanded) {
-                Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    HelpItem("추세 신호등", "최근 5·20·60일 평균값보다 지금 주가가 위에 있으면 빨강↑(오름세), 아래면 파랑↓(내림세)예요. 셋 다 빨강이면 단기·중기·장기 모두 상승 흐름.")
-                    r.rsi14?.let { v ->
-                        HelpItem("RSI ${"%.0f".format(v)}", "주가가 얼마나 달아올랐는지 0~100으로 보는 막대예요. 70 넘으면 좀 과열(🔴), 30 밑이면 너무 식음(🔵). 지금은 ${rsiPlainLabel(v)}.")
-                    }
-                    r.volumeRatio?.let { v ->
-                        HelpItem("거래량 ${"%.1f".format(v)}배", "최근 거래일 거래량을 최근 20일 평균과 비교한 거예요. 2배 넘으면 평소보다 사람이 확 몰린 것 — 큰 뉴스나 수급 변화 신호일 수 있어요.")
-                    }
-                    if (r.ma5 != null || r.ma20 != null || r.ma60 != null) {
-                        HorizontalDivider()
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            r.ma5?.let { MaValueChip("5일", it) }
-                            r.ma20?.let { MaValueChip("20일", it) }
-                            r.ma60?.let { MaValueChip("60일", it) }
+            // 접이식 설명
+            Column {
+                Row(
+                    modifier = Modifier.clickable { onHelpToggle() }.padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        if (helpExpanded) "ⓘ 설명 접기 ▲" else "ⓘ 이게 무슨 뜻이죠? ▼",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (helpExpanded) {
+                    Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        HelpItem("추세 신호등", "최근 5·20·60일 평균값보다 지금 주가가 위에 있으면 빨강↑(오름세), 아래면 파랑↓(내림세)예요. 셋 다 빨강이면 단기·중기·장기 모두 상승 흐름.")
+                        r.rsi14?.let { v ->
+                            HelpItem("RSI ${"%.0f".format(v)}", "주가가 얼마나 달아올랐는지 0~100으로 보는 막대예요. 70 넘으면 좀 과열(🔴), 30 밑이면 너무 식음(🔵). 지금은 ${rsiPlainLabel(v)}.")
+                        }
+                        r.volumeRatio?.let { v ->
+                            HelpItem("거래량 ${"%.1f".format(v)}배", "최근 거래일 거래량을 최근 20일 평균과 비교한 거예요. 2배 넘으면 평소보다 사람이 확 몰린 것 — 큰 뉴스나 수급 변화 신호일 수 있어요.")
+                        }
+                        if (r.ma5 != null || r.ma20 != null || r.ma60 != null) {
+                            HorizontalDivider()
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                r.ma5?.let { MaValueChip("5일", it) }
+                                r.ma20?.let { MaValueChip("20일", it) }
+                                r.ma60?.let { MaValueChip("60일", it) }
+                            }
                         }
                     }
                 }
@@ -1294,15 +1289,9 @@ private val FlowInstitution: Color // 기관 청록
 
 @Composable
 private fun FlowCard(flows: List<com.haky.edge.model.InvestorFlow>) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("수급 · 순매수", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+    CollapsibleCard(
+        title = "수급 · 순매수",
+        trailing = {
             Text(
                 "전일 확정",
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
@@ -1311,22 +1300,25 @@ private fun FlowCard(flows: List<com.haky.edge.model.InvestorFlow>) {
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             )
-        }
-        // 범례
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FlowLegendDot("외인", FlowForeign)
-            FlowLegendDot("기관", FlowInstitution)
-        }
-        FlowBars(flows, modifier = Modifier.fillMaxWidth().height(110.dp))
-        HorizontalDivider()
-        // 정확 수치표
-        FlowTableHeader()
-        flows.forEach { f ->
-            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(mmdd(f.date), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1.2f))
-                FlowCell(f.foreign, Modifier.weight(1f))
-                FlowCell(f.institution, Modifier.weight(1f))
-                FlowCell(f.individual, Modifier.weight(1f))
+        },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 범례
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FlowLegendDot("외인", FlowForeign)
+                FlowLegendDot("기관", FlowInstitution)
+            }
+            FlowBars(flows, modifier = Modifier.fillMaxWidth().height(110.dp))
+            HorizontalDivider()
+            // 정확 수치표
+            FlowTableHeader()
+            flows.forEach { f ->
+                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(mmdd(f.date), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1.2f))
+                    FlowCell(f.foreign, Modifier.weight(1f))
+                    FlowCell(f.institution, Modifier.weight(1f))
+                    FlowCell(f.individual, Modifier.weight(1f))
+                }
             }
         }
     }
@@ -1848,3 +1840,30 @@ private fun mmdd(d: String): String {
 // ─── 숫자 포맷 헬퍼 ──────────────────────────────────────
 
 internal fun Long.fmt(): String = String.format(Locale.US, "%,d", this)
+
+// R5 델타 스트립 — 전일 대비 달라진 항목 한 줄씩.
+@Composable
+private fun DeltaStrip(lines: List<String>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        lines.forEach { line ->
+            Row(
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 5.dp)
+                        .size(5.dp)
+                        .background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape),
+                )
+                Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}

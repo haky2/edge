@@ -53,6 +53,8 @@ struct StockDetailView: View {
     @State private var backtestExpanded = false      // 검증된 신호 (기본 접힘)
     @State private var analogExpanded = false        // 유사 국면 통계 (기본 접힘)
     @State private var flowSensExpanded = false      // 수급-가격 민감도 (기본 접힘)
+    @State private var technicalExpanded = false     // 기술적 지표 (기본 접힘)
+    @State private var flowExpanded = false          // 수급 (기본 접힘)
     @State private var shortSellingExpanded = false  // 공매도 동향 (기본 접힘)
     @State private var chartPeriod: ChartPeriod = .m3   // 가격 차트 기간 토글
     @State private var trendLineHelpExpanded = false     // 20일 추세선 설명 토글
@@ -100,12 +102,13 @@ struct StockDetailView: View {
                     if !warnings.isEmpty { warningChips() }
                     priceLimitView(q)
                     priceChartCard(q)
+                    if let lines = analysis?.deltaLines, !lines.isEmpty { deltaStrip(lines) }
                     positionCard(q)
                     // ── 종합 판단 ──
                     aiCommentCard()
                     // ── AI 근거 ──
-                    if let tr = technicalResult { technicalCard(tr, price: Double(q.price)) }
-                    if !flows.isEmpty { flowCard() }
+                    if let tr = technicalResult { technicalCardCollapsible(tr, price: Double(q.price)) }
+                    if !flows.isEmpty { flowCardCollapsible() }
                     // 뉴스·공시는 판정 카드 하나로 일원화(원문 뉴스/공시 섹션 제거). 링크는 카드 안에서 원문으로.
                     catalystCard()
                     // ── 심화 분석 (기본 접힘) ──
@@ -696,6 +699,72 @@ struct StockDetailView: View {
             Text(value).fontWeight(.semibold).foregroundColor(up ? .red : .blue)
         }
         .padding(.vertical, 8)
+    }
+
+    // R5 델타 스트립 — 전일 대비 달라진 항목 한 줄씩.
+    private func deltaStrip(_ lines: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(lines, id: \.self) { line in
+                HStack(alignment: .top, spacing: 6) {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: 5, height: 5)
+                        .padding(.top, 5)
+                    Text(line).font(.caption).foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(UIColor.secondarySystemGroupedBackground))
+        .cornerRadius(10)
+    }
+
+    // R5 기술적 지표 — 기본 접힘 래퍼
+    private func technicalCardCollapsible(_ r: TechnicalResult, price: Double) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("기술적 지표").font(.subheadline.weight(.semibold))
+                Spacer()
+                Image(systemName: technicalExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { technicalExpanded.toggle() } }
+            if technicalExpanded {
+                Divider()
+                technicalCard(r, price: price)
+                    .padding(.top, 4)
+            }
+        }
+        .padding(.horizontal, 12)
+        .background(Color(UIColor.secondarySystemGroupedBackground))
+        .cornerRadius(10)
+    }
+
+    // R5 수급 — 기본 접힘 래퍼
+    private func flowCardCollapsible() -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("수급 · 순매수").font(.subheadline.weight(.semibold))
+                Spacer()
+                Image(systemName: flowExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { flowExpanded.toggle() } }
+            if flowExpanded {
+                Divider()
+                flowCard()
+                    .padding(.top, 4)
+            }
+        }
+        .padding(.horizontal, 12)
+        .background(Color(UIColor.secondarySystemGroupedBackground))
+        .cornerRadius(10)
     }
 
     // 지표 해석 ① 계산 기반(LLM 없음). 이미 받은 시세·수급으로 즉시 계산한 "위치/흐름" 요약.

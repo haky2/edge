@@ -45,4 +45,6 @@ data class Analysis(
     val stance: String? = null,
     val prevStance: String? = null,
     val prevStanceDate: String? = null,
+    // R5 델타 스트립: 전일 대비 달라진 항목 한 줄씩. 없으면 빈 리스트 — 앱은 비면 미표시.
+    val deltaLines: List<String> = emptyList(),
 )

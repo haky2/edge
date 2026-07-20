@@ -243,10 +243,13 @@ fun Application.module() {
     val backtest = BacktestService(kis)
     // F6: 스탠스 로그는 기록(AnalysisService)과 채점(StanceStatsService)이 같은 파일을 봐야 해서 공유.
     val stanceLog = com.haky.edge.ai.StanceLog()
+    // N3-a 신호 발화 로그 — AnalysisService(deltaLines 재료)와 SignalService가 공유.
+    val signalFiredLog = com.haky.edge.slack.SignalFiredLog()
     val analysis = AnalysisService(kis, toss, naver, master, claude, dart, naverTargetPrice, targetPriceLog, macroImpact, krxShortSelling, valuationBand, peerValuation, backtest, eventSync, modelRouter, slack, aiCommentChannel, this,
         // Q&A 일일 상한 — 자유 질문은 캐시가 없어 호출당 풀 LLM 비용. env로 재조정 가능.
         askDailyLimit = System.getenv("ASK_DAILY_LIMIT")?.toIntOrNull() ?: 200,
-        stanceLog = stanceLog)
+        stanceLog = stanceLog,
+        signalFiredLog = signalFiredLog)
     // O4 해외 간단 코멘트 — 시세(15분 지연)+뉴스만 근거. (code,날짜) 당일 공유 캐시, 기본 Opus.
     val overseasAnalysis = com.haky.edge.ai.OverseasAnalysisService(kis, naver, overseasMaster, claude, modelRouter)
     val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand, modelRouter)
@@ -320,7 +323,6 @@ fun Application.module() {
     // S3a/b+F4+F3+F5+R2 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가·수급 전환점·실적 리뷰·프리모템 발동·비중 점검 → #알림-신호 채널.
     // 수급 아카이브 — signals-scan이 매일 확정 일별 수급을 jsonl로 영속(F4 사후 검증의 데이터 기반).
     val investorHistory = com.haky.edge.kis.InvestorHistoryLog()
-    val signalFiredLog = com.haky.edge.slack.SignalFiredLog()
     val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes, backtest, earningsPreview, premortem, rebalance, investorHistory, signalFiredLog, guidanceService)
     // S7·S8 슬래시 명령 + 라운지 명령어. 서명검증 + 멀티 커맨드 라우팅.
     val slackVerifier = SlackSignatureVerifier(System.getenv("SLACK_SIGNING_SECRET").orEmpty())

@@ -73,6 +73,12 @@ class SignalFiredLog(dataDir: String = System.getenv("DATA_DIR") ?: ".data") {
         }
     }
 
+    /** 특정 날짜·종목의 발화 목록(deltaLines 재료용). 뮤텍스 불필요 — 읽기 전용. */
+    fun todayFor(code: String, date: String): List<SignalFired> {
+        if (!file.exists()) return emptyList()
+        return readLines().filter { it.date == date && it.code == code }
+    }
+
     private fun loadKeys(): MutableSet<String> =
         readLines().mapTo(mutableSetOf()) { keyOf(it) }
 }
