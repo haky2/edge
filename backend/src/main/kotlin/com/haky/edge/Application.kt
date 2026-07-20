@@ -87,6 +87,7 @@ import com.haky.edge.routes.weeklyReviewRoutes
 import com.haky.edge.routes.eventReminderRoutes
 import com.haky.edge.routes.costSummaryRoutes
 import com.haky.edge.routes.signalFiredRoutes
+import com.haky.edge.routes.commentSmokeRoutes
 import com.haky.edge.routes.signalRoutes
 import com.haky.edge.routes.overseasRoutes
 import com.haky.edge.routes.prewarmRoutes
@@ -281,6 +282,8 @@ fun Application.module() {
     // N2 실적 가이던스 — 실적 리뷰 발화 시 "회사가 말한 것" 웹 수집→구조화. (code,rceptNo) 캐시+일일 한도.
     val guidanceService = com.haky.edge.ai.GuidanceService(master, claude, modelRouter,
         dailyLimit = System.getenv("GUIDANCE_DAILY_LIMIT")?.toIntOrNull() ?: 5)
+    // R4 코멘트 금지 패턴 스모크 — 당일 캐시 코멘트 정규식 검사(LLM 0). 발견 시에만 운영오류 채널 발송.
+    val commentSmoke = com.haky.edge.ai.CommentSmokeService(slack, opsChannel)
     // D1 SENSITIVITY 실증 — 1회성 검증 라우트(운영 기능 아님). 지표 이력 × 바스켓 수익률 실측.
     val sensitivityValidation = com.haky.edge.macro.SensitivityValidationService(
         dailyHistory, ecosApiKey = System.getenv("ECOS_API_KEY").orEmpty())
@@ -403,6 +406,7 @@ fun Application.module() {
             costSummaryRoutes(costSummary)
             signalRoutes(signalService)
             signalFiredRoutes(signalFiredLog)
+            commentSmokeRoutes(commentSmoke)
             slackCommandRoutes(slackVerifier, slackCommand, cloudTasks)
         }
     }

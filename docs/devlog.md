@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-07-20 (2) — R4 산출물 금지 패턴 스모크 (Fable)
+
+**한 일**
+- **R4 (Fable)**: `CommentSmokeService` — 당일 캐시 코멘트를 정규식 grep하는 자동 스모크(LLM 0). 프롬프트 위반 감시를 수동 감사에서 상설 방어선으로.
+  - 검사 대상: 코멘트 FileCache 10종(analysis·overseas_analysis·portfolio-review·market_mood·sector_briefing·macro_impact·comparison·deep_research·trade_review·weekly-review-personal)의 당일 키 파일. JSON에서 **comment/summary 필드만** 추출 — caveat 등 코드 고정 문구는 검사 제외(면책 패턴 오탐 방지).
+  - 금지 패턴 4종(정본=스펙 R4): ① 이평 지지/저항 단정(C14) ② 규칙 번호 누출 — 조항 참조+단독 `(C17)` 괄호 표기(계좌 슬라이스 실사고 형태) ③ 소표본 과신 — 같은 문장에 n=1~14와 과신 표현 공존(C9, 문장 단위 검사) ④ 면책 고지 중복(UI footer 존재).
+  - NumberGuard는 신규 검사 대신 **기존 발동 카운터 병기**: AnalysisService 재생성 지점에 AtomicInteger(기동 이후 누적) 추가.
+  - 라우트: `GET /comment-smoke`(수동, 발송 없음)·`POST /comment-smoke`(발견 시에만 #알림-운영오류 발송, **0건 침묵**). deploy.sh에 comment-smoke 잡(토 10:00 KST — 주간회고 09:00 생성분 포함 시점) 추가.
+- 검증: `CommentSmokeTest` 11건(패턴별 양성/음성 각 2+ — "C-130 수송기"·"n=140"·문장 분리 등 오탐 케이스 포함, JSON 추출 caveat 제외, 당일 파일만 스캔, 클린 0건) + 전체 512 통과. **로컬 실검사**: 실제 Opus 코멘트(005930) 생성 후 스캔 → 위반 0건(프롬프트 규율 준수 확인), 위반 주입 파일로 4패턴 전부 정확 검출·발췌 확인, POST 0건 침묵 확인.
+
+**막힌 점·배운 것**
+- FileCache 키는 파일명으로 정규화될 때 날짜의 대시가 보존됨(`[^a-zA-Z0-9_\-]`만 치환) → 파일명 date-contains 필터가 그대로 성립.
+- caveat·백테스트 노트 같은 코드 생성 고정 문구가 "참고" 계열 패턴에 걸릴 수 있어 필드 화이트리스트(comment/summary)가 오탐 방어의 핵심.
+
+**다음 할 일**
+- N2+R4 묶음 push+배포(N2는 8/14 반기 시즌 전 필수) → 오탐 관찰 2주(스펙) → N3-b(신호 실사용률, 8월 중순 N3-a 데이터 1개월 후).
+
+---
+
 ## 2026-07-20 — N2 실적 가이던스 추출 (Fable)
 
 **한 일**

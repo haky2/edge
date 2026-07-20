@@ -203,6 +203,7 @@ class AnalysisService(
         // 화이트리스트가 되어 새 요약으로 새는 것을 막는다(직전 수치 인용은 C13이 금지).
         val suspicious = suspiciousSummaryPrices(cf.facts, summary)
         if (suspicious.isNotEmpty()) {
+            numberGuardFired.incrementAndGet()   // R4 스모크 리포트 병기용(기동 이후 누적)
             println("[NumberGuard] $code: 요약에 facts 외 가격류 ${suspicious.joinToString()} → 1회 재생성")
             rawComment = claude.complete(prompt, facts, maxTokens = 3500, modelOverride = model)
             val regen = parseStanceTag(rawComment)
@@ -465,6 +466,9 @@ class AnalysisService(
         private const val STALE_PRICE_THRESHOLD = 0.03  // 3% 가격 괴리 시 stale
         private const val COOLDOWN_MINUTES = 30L         // 급변 자동 재생성 최소 간격(분)
         private const val FORCE_COOLDOWN_MINUTES = 5L    // 수동 새로고침(force) 연타 가드(분)
+
+        /** NumberGuard 발동 카운터(프로세스 기동 이후) — R4 스모크 리포트가 병기(신규 검사 아님). */
+        val numberGuardFired = java.util.concurrent.atomic.AtomicInteger(0)
 
         /**
          * 연환산(포워드) PER 한 줄. 최근 분기 누적 순이익을 단순 연환산(1분기×4, 반기×2, 3분기×4/3)해

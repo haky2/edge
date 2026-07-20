@@ -136,6 +136,16 @@ scheduler_upsert slack-weekly-review \
   --attempt-deadline=300s \
   --description="매주 토요일 오전 9시 KST Slack #아침브리핑 주간 회고 발송"
 
+# comment-smoke: 매주 토요일 오전 10:00 KST — 당일 캐시 코멘트 금지 패턴 스모크(R4, LLM 0)
+# 발견 시에만 #알림-운영오류 발송(0건 침묵). 패턴 정본은 docs/reeval-backlog-spec-2026-07.md R4.
+scheduler_upsert comment-smoke \
+  --schedule="0 10 * * 6" --time-zone="Asia/Seoul" \
+  --uri="$URL/comment-smoke" --http-method=POST \
+  --headers="X-Edge-Token=${EDGE_TOKEN},Content-Type=application/json" \
+  --message-body="{}" \
+  --attempt-deadline=120s \
+  --description="매주 토요일 오전 10시 KST 코멘트 금지 패턴 스모크(발견 시에만 발송)"
+
 # signals-scan: 매주 월~금 오후 6:00 KST — 관심종목 연속 순매수 신호 스캔(장 마감 후 수급 확정 시점)
 # 디듀프(streak 시작일)로 같은 신호 반복 발화를 막으므로 매일 돌려도 도배 없음.
 scheduler_upsert signals-scan \
