@@ -116,10 +116,10 @@ struct StockDetailView: View {
                     if let band = valuationBand { valuationBandCard(band) }
                     if let pv = peerValuation { peerValuationCard(pv) }
                     if let bt = backtest { backtestCard(bt) }
-                    if let an = analog, an.n > 0 { analogCard(an) }
                     if let fs = flowSensitivity { flowSensitivityCard(fs) }
                     if let ss = shortSelling { shortSellingCard(ss) }
                     if let div = dividendCard { dividendCardView(div) }
+                    if let an = analog, an.n > 0 { analogCard(an) }
                 } else if loading {
                     ProgressView().padding(.top, 40)
                 }
@@ -2026,16 +2026,12 @@ struct StockDetailView: View {
     }
 
     private func analogHorizonRow(_ h: AnalogHorizon) -> some View {
-        let up = h.median >= 0
-        let accent: Color = up ? .red : .blue
-        return VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Text("\(h.days)일 후").font(.caption.weight(.semibold))
                 Spacer()
                 Text("중앙값 \(String(format: "%+.1f", h.median))%")
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(accent.opacity(0.15)).foregroundColor(accent).cornerRadius(8)
+                    .font(.caption2).foregroundColor(.secondary)
             }
             Text("범위 \(String(format: "%.1f", h.min))~\(String(format: "%+.1f", h.max))%")
                 .font(.caption2).foregroundColor(.secondary)

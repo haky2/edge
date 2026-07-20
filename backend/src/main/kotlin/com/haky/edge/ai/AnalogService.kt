@@ -76,8 +76,8 @@ class AnalogService(
         const val MIN_HISTORY = 252       // 52주 위치 계산에 필요한 최소 이력
         val HORIZONS = listOf(5, 20, 60)
         // ②-2a 실측(2026-07, 관심 11종목 885회 walk-forward replay): 예측 승률 버킷과 실현 양수율 무관
-        // (단조성 없음·Spearman 0.06·부호 일치율 51%=나이브 동률) — 승률 수치의 예측력 없음을 caveat에 명시.
-        const val CAVEAT_BASE = "과거 분포일 뿐 미래를 보장하지 않습니다. 실측(11종목 885회 재현, 2026-07)에서 승률 수치의 예측력은 확인되지 않았습니다 — 범위(최소~최대) 참고용."
+        // (단조성 없음·Spearman 0.06·부호 일치율 51%=나이브 동률) — 중앙값도 같은 기각 대상(X2: 배지 무채색).
+        const val CAVEAT_BASE = "과거 분포일 뿐 미래를 보장하지 않습니다. 실측(11종목 885회 재현, 2026-07)에서 예측 통계(승률·중앙값)의 예측력은 확인되지 않았습니다 — 범위(최소~최대) 참고용."
 
         /** bars: 최신이 앞(KIS 응답 그대로). 순수 함수 — 테스트 대상. */
         fun compute(code: String, name: String, today: String, bars: List<DailyBar>): AnalogReport {

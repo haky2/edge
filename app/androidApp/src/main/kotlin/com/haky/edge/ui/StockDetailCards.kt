@@ -688,12 +688,10 @@ internal fun AnalogCard(an: AnalogReport) {
 
 @Composable
 private fun AnalogHorizonRow(h: AnalogHorizon) {
-    val up = h.median >= 0
-    val accent = if (up) ChangeUp else ChangeDown
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("${h.days}일 후", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f))
-            BadgePill("중앙값 %+.1f%%".format(h.median), accent)
+            Text("중앙값 %+.1f%%".format(h.median), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text("범위 %.1f~%+.1f%%".format(h.min, h.max), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

@@ -426,10 +426,10 @@ fun StockDetailScreen(
             valuationBand?.let { ValuationBandCard(it) }
             peerValuation?.let { PeerValuationCard(it) }
             backtest?.let { BacktestCard(it) }
-            analog?.let { AnalogCard(it) }
             flowSensitivity?.let { FlowSensitivityCard(it) }
             shortSelling?.let { ShortSellingCard(it) }
             dividendCard?.let { DividendCard(it) }
+            analog?.let { AnalogCard(it) }
             earnings?.let { EarningsCard(it) }
             stockSignal?.let { MacroSignalCard(it) }
             premortem?.let { PremortemCard(it) }
