@@ -15,6 +15,9 @@ data class Invalidation(
     @SerialName("description") val desc: String,
     val active: Boolean = true,
     val firedAt: String? = null,
+    // T2: signals-scan이 실제로 자동 평가하는 타입 여부(price_below/above/flow_exit=true).
+    // false면 저장은 되지만 자동 감시 안 됨(target_cut·event_before 등) — UI에서 "기록만" 표시.
+    val evaluable: Boolean = false,
 )
 
 /** 매수 프리모템(F5) — 매수 가설이 깨지는 조건 목록. 종목당 최신 1건. */

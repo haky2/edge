@@ -30,6 +30,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.Composable
@@ -525,10 +526,18 @@ private fun ProbabilityBar(winFraction: Float, baselineFraction: Float, color: C
 
 @Composable
 internal fun PremortemCard(pm: com.haky.edge.model.Premortem) {
-    val activeCount = pm.invalidations.count { it.active }
+    // T2: evaluable+active만 "감시 중". !evaluable+active는 "기록"으로 분리 표시.
+    val watchCount  = pm.invalidations.count { it.active && it.evaluable }
+    val recordCount = pm.invalidations.count { it.active && !it.evaluable }
+    val headerLabel = buildString {
+        if (watchCount  > 0) append("감시 중 ${watchCount}개")
+        if (recordCount > 0) { if (isNotEmpty()) append(" · "); append("기록 ${recordCount}개") }
+    }.ifEmpty { null }
     CollapsibleCard(
         title = "매수 가설 점검",
-        trailing = { Text("감시 중 ${activeCount}개", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        trailing = {
+            if (headerLabel != null) Text(headerLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (pm.reason.isNotBlank()) {
@@ -540,11 +549,28 @@ internal fun PremortemCard(pm: com.haky.edge.model.Premortem) {
                 HorizontalDivider()
                 Text("무효화 조건", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
                 pm.invalidations.forEach { inv ->
+                    val isRecordOnly = inv.active && !inv.evaluable
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(if (inv.active) "👁" else "⚠️", style = MaterialTheme.typography.labelSmall)
+                        // T2: 기록만인 active 조건은 눈 대신 메모 아이콘.
+                        Text(if (!inv.active) "⚠️" else if (isRecordOnly) "📝" else "👁",
+                            style = MaterialTheme.typography.labelSmall)
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                            Text(inv.desc, style = MaterialTheme.typography.bodySmall,
-                                color = if (inv.active) MaterialTheme.colorScheme.onSurface else OrangeAccent)
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(inv.desc, style = MaterialTheme.typography.bodySmall,
+                                    color = if (inv.active) MaterialTheme.colorScheme.onSurface else OrangeAccent)
+                                if (isRecordOnly) {
+                                    Surface(
+                                        shape = MaterialTheme.shapes.small,
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                    ) {
+                                        Text("기록만",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                        )
+                                    }
+                                }
+                            }
                             inv.anchor?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                             inv.firedAt?.let { Text("발동됨 · ${it.take(10)}", style = MaterialTheme.typography.labelSmall, color = OrangeAccent) }
                         }

@@ -1831,8 +1831,16 @@ struct StockDetailView: View {
             HStack {
                 Text("매수 가설 점검").font(.subheadline.weight(.semibold))
                 Spacer()
-                let activeCount = pm.invalidations.filter { $0.active }.count
-                Text("감시 중 \(activeCount)개").font(.caption2).foregroundColor(.secondary)
+                // T2: evaluable+active만 "감시 중". !evaluable+active는 "기록"으로 분리.
+                let watchCount  = pm.invalidations.filter { $0.active && $0.evaluable }.count
+                let recordCount = pm.invalidations.filter { $0.active && !$0.evaluable }.count
+                if watchCount > 0 || recordCount > 0 {
+                    let label = [
+                        watchCount  > 0 ? "감시 중 \(watchCount)개"  : nil,
+                        recordCount > 0 ? "기록 \(recordCount)개"   : nil,
+                    ].compactMap { $0 }.joined(separator: " · ")
+                    Text(label).font(.caption2).foregroundColor(.secondary)
+                }
                 Image(systemName: premortemExpanded ? "chevron.up" : "chevron.down")
                     .font(.caption).foregroundColor(.secondary)
             }
@@ -1856,12 +1864,26 @@ struct StockDetailView: View {
                         Text("무효화 조건").font(.caption.weight(.semibold))
                         ForEach(Array(pm.invalidations.enumerated()), id: \.offset) { _, inv in
                             HStack(alignment: .top, spacing: 6) {
-                                Image(systemName: inv.active ? "eye" : "exclamationmark.triangle.fill")
+                                // T2: evaluable=false(기록만)인 active 조건은 눈 아이콘 대신 메모 아이콘.
+                                let isRecordOnly = inv.active && !inv.evaluable
+                                Image(systemName: inv.active
+                                    ? (isRecordOnly ? "note.text" : "eye")
+                                    : "exclamationmark.triangle.fill")
                                     .font(.caption2)
                                     .foregroundColor(inv.active ? .secondary : .orange)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(inv.desc).font(.caption)
-                                        .foregroundColor(inv.active ? .primary : .orange)
+                                    HStack(spacing: 4) {
+                                        Text(inv.desc).font(.caption)
+                                            .foregroundColor(inv.active ? .primary : .orange)
+                                        if isRecordOnly {
+                                            Text("기록만")
+                                                .font(.system(size: 9, weight: .medium))
+                                                .foregroundColor(.secondary)
+                                                .padding(.horizontal, 4).padding(.vertical, 1)
+                                                .background(Color(.systemFill))
+                                                .clipShape(Capsule())
+                                        }
+                                    }
                                     if let anchor = inv.anchor {
                                         Text(anchor).font(.caption2).foregroundColor(.secondary)
                                     }

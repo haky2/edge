@@ -27,6 +27,9 @@ data class Invalidation(
     val description: String,
     val active: Boolean = true,
     val firedAt: String? = null, // 발동 시각(1회성 — 발동 후 비활성)
+    // T2: signals-scan이 실제로 평가하는 타입 여부. 클라이언트는 이 값으로 "감시 중 N" vs "기록 M" 분리.
+    // 기존 저장 JSON에는 없음 → ignoreUnknownKeys=true + default false, 로드 후 재계산(ensureLoaded).
+    val evaluable: Boolean = false,
 )
 
 /** 매수 프리모템 1건(종목당 최신 1개 — 새 매수 기록이 교체). */
@@ -123,7 +126,10 @@ class PremortemService(
         mutex.withLock {
             if (loaded) return
             runCatching {
-                if (file.exists()) json.decodeFromString(mapSer, file.readText()).forEach { (k, v) -> store[k] = v }
+                if (file.exists()) json.decodeFromString(mapSer, file.readText()).forEach { (k, v) ->
+                    // 기존 저장 JSON에는 evaluable 필드가 없어 default false — type에서 재계산.
+                    store[k] = v.copy(invalidations = withEvaluable(v.invalidations))
+                }
             }
             loaded = true
         }
@@ -176,17 +182,21 @@ class PremortemService(
                 when (inv.type) {
                     "price_below", "price_above" -> {
                         val t = inv.threshold
-                        if (t == null || t !in factsNumbers) null else inv
+                        if (t == null || t !in factsNumbers) null else inv.copy(evaluable = true)
                     }
                     "flow_exit" -> {
                         val t = inv.threshold?.toInt()?.coerceIn(1, 30) ?: return@mapNotNull null
-                        inv.copy(threshold = t.toDouble())
+                        inv.copy(threshold = t.toDouble(), evaluable = true)
                     }
-                    in KNOWN_TYPES -> inv          // target_cut·event_before — 표시용
-                    else -> inv                     // 미지 타입 — 표시용(평가 안 됨)
+                    in KNOWN_TYPES -> inv.copy(evaluable = false) // target_cut·event_before — 기록만
+                    else -> inv.copy(evaluable = false)            // 미지 타입 — 기록만
                 }
             }
         }
+
+        /** 저장된 조건에 evaluable 재계산(기존 JSON은 필드 없음 → 로드 후 적용). */
+        internal fun withEvaluable(invs: List<Invalidation>): List<Invalidation> =
+            invs.map { it.copy(evaluable = it.type in EVALUABLE_TYPES) }
 
         /**
          * 일일 평가(순수 함수): 현재가·외국인 연속 순매도 일수로 활성 조건 발동 여부.
