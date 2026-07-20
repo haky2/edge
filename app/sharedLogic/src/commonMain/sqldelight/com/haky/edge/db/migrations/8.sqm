@@ -1,0 +1,4 @@
+-- v8 → v9: action_log에 매매 시점 손절/목표 스냅샷 컬럼 추가(T1 규율 채점 오염 해소).
+-- 기존 행은 NULL → 규율 집계에서 "설정 기록 없음"으로 제외(현재값 폴백 금지 = 오염 경로).
+ALTER TABLE action_log ADD COLUMN stop_price INTEGER;
+ALTER TABLE action_log ADD COLUMN target_price INTEGER;

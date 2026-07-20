@@ -9,29 +9,40 @@ class ActionLogRepository(driverFactory: DriverFactory) {
 
     /**
      * 로그 저장. price = 기록 시점 현재가(원). 0 이하이면 null로 저장(미기록).
+     * stopPrice/targetPrice = 기록 시점 holding 손절/목표 스냅샷(원). 0 이하이면 null(미설정) — T1.
      * Swift: Long(비nullable)으로 받아 0을 "없음" 센티널로 사용 → boxing 불필요.
      */
-    fun insert(code: String, name: String? = null, action: String, reason: String?, price: Long = 0L) {
+    fun insert(
+        code: String,
+        name: String? = null,
+        action: String,
+        reason: String?,
+        price: Long = 0L,
+        stopPrice: Long = 0L,
+        targetPrice: Long = 0L,
+    ) {
         queries.insert(
             code = code,
             name = name.takeIf { !it.isNullOrBlank() },
             action = action,
             reason = reason.takeIf { !it.isNullOrBlank() },
             price = price.takeIf { it > 0L },
+            stop_price = stopPrice.takeIf { it > 0L },
+            target_price = targetPrice.takeIf { it > 0L },
             created_at = nowMillis(),
         )
     }
 
     /** 해당 종목의 최근 기록(최신 순, 최대 limit 건). */
     fun getByCode(code: String, limit: Int = 10): List<ActionLogEntry> =
-        queries.selectByCode(code) { id, c, name, action, reason, price, createdAt ->
-            ActionLogEntry(id, c, name, action, reason, price, createdAt)
+        queries.selectByCode(code) { id, c, name, action, reason, price, stopPrice, targetPrice, createdAt ->
+            ActionLogEntry(id, c, name, action, reason, price, stopPrice, targetPrice, createdAt)
         }.executeAsList().take(limit)
 
     /** 전체 로그(최신 순). 통계·패턴 분석용. */
     fun getAll(): List<ActionLogEntry> =
-        queries.selectAll { id, c, name, action, reason, price, createdAt ->
-            ActionLogEntry(id, c, name, action, reason, price, createdAt)
+        queries.selectAll { id, c, name, action, reason, price, stopPrice, targetPrice, createdAt ->
+            ActionLogEntry(id, c, name, action, reason, price, stopPrice, targetPrice, createdAt)
         }.executeAsList()
 
     fun delete(id: Long) {

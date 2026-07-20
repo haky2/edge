@@ -53,7 +53,6 @@ import com.haky.edge.db.ActionLogRepository
 import com.haky.edge.db.HoldingRepository
 import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.model.ActionLogEntry
-import com.haky.edge.model.Holding
 import com.haky.edge.model.HoldingMove
 import com.haky.edge.model.JudgmentComparison
 import com.haky.edge.model.JudgmentTradeEntry
@@ -92,7 +91,14 @@ private data class HoldPair(
     val buyPrice: Long?,
     val sellPrice: Long?,
     val buyReason: String?,
+    // T1: 매매 당시 손절/목표 스냅샷. 규율 판정은 매수 시 계획 우선, 없으면 매도 시 계획.
+    val buyStop: Long? = null,
+    val buyTarget: Long? = null,
+    val sellStop: Long? = null,
+    val sellTarget: Long? = null,
 ) {
+    val stop: Long? get() = buyStop ?: sellStop
+    val target: Long? get() = buyTarget ?: sellTarget
     val days: Int get() = ((sellAt - buyAt) / (1000 * 60 * 60 * 24)).toInt()
     val isWin: Boolean? get() {
         val b = buyPrice?.toDouble() ?: return null
@@ -164,7 +170,6 @@ fun StatsScreen(
     val ctx = LocalContext.current
     var entries by remember { mutableStateOf<List<ActionLogEntry>>(emptyList()) }
     var nameMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var positionMap by remember { mutableStateOf<Map<String, Holding>>(emptyMap()) }  // G1: holding 정본
     var missedRows by remember { mutableStateOf<List<MissedRow>>(emptyList()) }
     var missedLoading by remember { mutableStateOf(false) }
     var stanceStats by remember { mutableStateOf<com.haky.edge.model.StanceStats?>(null) } // 종목 코멘트 적중률(F6)
@@ -185,7 +190,7 @@ fun StatsScreen(
     // 집계 계산
     val pairRows = remember(entries) { computePairs(entries) }
     val winRateRows = remember(pairRows) { computeWinRates(pairRows) }
-    val disciplineRows = remember(pairRows, positionMap) { computeDiscipline(pairRows, positionMap) }  // positionMap: Map<String, Holding>
+    val disciplineRows = remember(pairRows) { computeDiscipline(pairRows) }  // T1: 매매 시점 스냅샷 기반
     val reasonRows = remember(entries) { computeReasons(entries) }
     val codeRows = remember(entries) { computeCodeRows(entries) }
     val avgHoldDays = remember(pairRows) { if (pairRows.isEmpty()) null else pairRows.sumOf { it.days }.toDouble() / pairRows.size }
@@ -214,11 +219,7 @@ fun StatsScreen(
             }
         }
         nameMap = resolved
-        // G1: stop/target 은 holding 이 정본. code 중복(다계좌)은 associateBy가 last-wins라
-        // 임의 계좌가 잡힌다 — 규율 판정에 쓰는 목표/손절이 설정된 행을 우선해 병합(iOS와 동일 정책).
-        positionMap = holdingRepo.all()
-            .groupBy { it.code }
-            .mapValues { (_, rows) -> rows.firstOrNull { it.targetPrice != null || it.stopPrice != null } ?: rows.first() }
+        // T1: 규율 판정은 action_log의 매매 시점 스냅샷(pairRows)만 참조 — 현재 holding을 읽지 않는다.
 
         // 종목 코멘트 적중률(서버 집계, 행동 로그와 무관)
         try { stanceStats = api.getStanceStats() } catch (_: Exception) {}
@@ -1111,6 +1112,8 @@ private fun computePairs(entries: List<ActionLogEntry>): List<HoldPair> {
                 buyAt = buy.createdAt, sellAt = sell.createdAt,
                 buyPrice = buy.price, sellPrice = sell.price,
                 buyReason = buy.reason,
+                buyStop = buy.stopPrice, buyTarget = buy.targetPrice,
+                sellStop = sell.stopPrice, sellTarget = sell.targetPrice,
             ))
             si++
         }
@@ -1130,13 +1133,14 @@ private fun computeWinRates(pairs: List<HoldPair>): List<WinRateRow> {
         .sortedByDescending { it.total }
 }
 
-private fun computeDiscipline(pairs: List<HoldPair>, positionMap: Map<String, Holding>): List<DisciplineRow> =
+// T1: 매매 당시 스냅샷(매수 계획 우선)만 사용. 현재 holding 폴백 금지 — 사후 변경·청산으로
+// 과거 규율 성적이 바뀌는 오염을 차단한다. 스냅샷 없는 과거 로그는 집계 제외.
+private fun computeDiscipline(pairs: List<HoldPair>): List<DisciplineRow> =
     pairs.mapNotNull { pair ->
         val bp = pair.buyPrice ?: return@mapNotNull null
         val sp = pair.sellPrice ?: return@mapNotNull null
-        val item = positionMap[pair.code]
-        val stop   = item?.stopPrice?.toLong()
-        val target = item?.targetPrice?.toLong()
+        val stop   = pair.stop
+        val target = pair.target
         if (stop == null && target == null) return@mapNotNull null
         DisciplineRow(pair.id, pair.code, pair.buyAt, pair.sellAt, bp, sp, stop, target)
     }

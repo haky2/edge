@@ -2,34 +2,39 @@
 -- action: 'interest' | 'buy' | 'sell' | 'view' 등(문자열로 느슨하게, 나중에 enum 매핑).
 -- reason: 매수/매도/관심 시 한 줄 사유 태그. 마찰 없이 남기게 하는 게 핵심이라 NULL 허용.
 -- price: 기록 시점 현재가(원). v3 추가(2.sqm). 기존 행 NULL.
+-- stop_price/target_price: 기록 시점 holding 손절/목표 스냅샷(원). v9 추가(8.sqm). 기존 행 NULL.
+--   규율 채점(StatsView disciplineRows)이 매매 당시 계획을 조작 불가능하게 참조하기 위함 —
+--   현재 holding 값(사후 변경·청산 시 소멸)을 쓰면 과거 규율 성적이 오염된다(T1).
 CREATE TABLE action_log (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    code        TEXT NOT NULL,
-    name        TEXT,                  -- 종목명. 구버전 DB 행은 NULL → nameMap 폴백.
-    action      TEXT NOT NULL,
-    reason      TEXT,
-    price       INTEGER,               -- 기록 시점 현재가 (원). 없으면 NULL.
-    created_at  INTEGER NOT NULL       -- epoch millis
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    code         TEXT NOT NULL,
+    name         TEXT,                  -- 종목명. 구버전 DB 행은 NULL → nameMap 폴백.
+    action       TEXT NOT NULL,
+    reason       TEXT,
+    price        INTEGER,               -- 기록 시점 현재가 (원). 없으면 NULL.
+    stop_price   INTEGER,               -- 기록 시점 holding 손절가 스냅샷 (원). 없으면 NULL.
+    target_price INTEGER,               -- 기록 시점 holding 목표가 스냅샷 (원). 없으면 NULL.
+    created_at   INTEGER NOT NULL       -- epoch millis
 );
 
 insert:
-INSERT INTO action_log(code, name, action, reason, price, created_at)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO action_log(code, name, action, reason, price, stop_price, target_price, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 selectByCode:
-SELECT id, code, name, action, reason, price, created_at
+SELECT id, code, name, action, reason, price, stop_price, target_price, created_at
 FROM action_log
 WHERE code = ?
 ORDER BY created_at DESC;
 
 selectRecent:
-SELECT id, code, name, action, reason, price, created_at
+SELECT id, code, name, action, reason, price, stop_price, target_price, created_at
 FROM action_log
 ORDER BY created_at DESC
 LIMIT ?;
 
 selectAll:
-SELECT id, code, name, action, reason, price, created_at
+SELECT id, code, name, action, reason, price, stop_price, target_price, created_at
 FROM action_log
 ORDER BY created_at DESC;
 

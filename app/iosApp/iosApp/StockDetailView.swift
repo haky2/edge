@@ -3243,12 +3243,16 @@ struct ActionLogSheetView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("저장") {
+                        // T1: 매매 당시 손절/목표를 스냅샷 저장 → 규율 채점이 현재 holding(사후 변경·청산 시
+                        // 소멸)이 아니라 이 시점 계획을 참조하게 한다. 미설정(0)은 리포지토리에서 null 처리.
                         logRepo.insert(
                             code: code,
                             name: name,
                             action: selectedAction,
                             reason: reason.isEmpty ? nil : reason,
-                            price: currentPrice
+                            price: currentPrice,
+                            stopPrice: Int64(item?.stopPrice?.doubleValue ?? 0),
+                            targetPrice: Int64(item?.targetPrice?.doubleValue ?? 0)
                         )
                         // F5: 매수 + 토글 on → 프리모템 생성(백그라운드, 실패해도 기록엔 영향 없음)
                         if selectedAction == "buy", makePremortem, let api {

@@ -477,6 +477,8 @@ fun StockDetailScreen(
             name = watchItem.name,
             currentPrice = quote?.price ?: 0L,
             logRepo = actionLogRepo,
+            stopPrice = (watchItem.stopPrice ?: 0.0).toLong(),
+            targetPrice = (watchItem.targetPrice ?: 0.0).toLong(),
             onDismiss = { showLogSheet = false },
             onSaved = {
                 showLogSheet = false
@@ -1518,6 +1520,8 @@ private fun ActionLogSheet(
     logRepo: ActionLogRepository,
     onDismiss: () -> Unit,
     onSaved: () -> Unit,
+    stopPrice: Long = 0L,                       // T1: 매매 당시 holding 손절가 스냅샷(0=미설정)
+    targetPrice: Long = 0L,                     // T1: 매매 당시 holding 목표가 스냅샷(0=미설정)
     premortemEnabled: Boolean = false,          // F5/B2 토글 노출 여부(api 있을 때만)
     onBuyWithPremortem: (reason: String) -> Unit = {},  // 매수+토글 on 시 부모가 프리모템 생성
     onSellWithTradeReview: (reason: String) -> Unit = {},  // 매도+토글 on 시 부모가 복기 생성(B2)
@@ -1598,12 +1602,16 @@ private fun ActionLogSheet(
             ) {
                 TextButton(onClick = onDismiss) { Text("취소") }
                 Button(onClick = {
+                    // T1: 매매 당시 손절/목표를 스냅샷 저장 → 규율 채점이 현재 holding(사후 변경·청산 시
+                    // 소멸)이 아니라 이 시점 계획을 참조하게 한다. 미설정(0)은 리포지토리에서 null 처리.
                     logRepo.insert(
                         code = code,
                         name = name,
                         action = selectedAction,
                         reason = reason.ifBlank { null },
                         price = currentPrice,
+                        stopPrice = stopPrice,
+                        targetPrice = targetPrice,
                     )
                     // F5: 매수 + 토글 on → 부모(생존 스코프)가 프리모템 생성·상태 갱신.
                     if (selectedAction == "buy" && makePremortem && premortemEnabled) onBuyWithPremortem(reason)

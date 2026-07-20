@@ -11,7 +11,6 @@ struct StatsView: View {
 
     @State private var entries: [ActionLogEntry] = []
     @State private var nameMap: [String: String] = [:]    // code → 종목명
-    @State private var positionMap: [String: Holding_] = [:]  // code → stop/target (G1: holding 정본)
     @State private var missedRows: [MissedRow] = []
     @State private var missedLoading = false
     @State private var stanceStats: StanceStats?   // 종목 코멘트 적중률(F6, 시장 방향 예측과 별도)
@@ -616,6 +615,13 @@ struct StatsView: View {
         let buyPrice: Int64?
         let sellPrice: Int64?
         let buyReason: String?
+        // T1: 매매 당시 손절/목표 스냅샷. 규율 판정은 매수 시 계획 우선, 없으면 매도 시 계획.
+        let buyStop: Int64?
+        let buyTarget: Int64?
+        let sellStop: Int64?
+        let sellTarget: Int64?
+        var stop: Int64? { buyStop ?? sellStop }
+        var target: Int64? { buyTarget ?? sellTarget }
         var days: Int { Int((sellAt - buyAt) / (1000 * 60 * 60 * 24)) }
         var isWin: Bool? {
             guard let b = buyPrice.map(Double.init),
@@ -689,7 +695,11 @@ struct StatsView: View {
                     sellAt: sell.createdAt,
                     buyPrice: buy.price.map { $0.int64Value },
                     sellPrice: sell.price.map { $0.int64Value },
-                    buyReason: buy.reason
+                    buyReason: buy.reason,
+                    buyStop: buy.stopPrice.map { $0.int64Value },
+                    buyTarget: buy.targetPrice.map { $0.int64Value },
+                    sellStop: sell.stopPrice.map { $0.int64Value },
+                    sellTarget: sell.targetPrice.map { $0.int64Value }
                 ))
                 si += 1
             }
@@ -719,9 +729,10 @@ struct StatsView: View {
     private var disciplineRows: [DisciplineRow] {
         pairRows.compactMap { pair -> DisciplineRow? in
             guard let bp = pair.buyPrice, let sp = pair.sellPrice else { return nil }
-            let item = positionMap[pair.code]
-            let stop:   Int64? = item.flatMap { h -> Int64? in h.stopPrice.map   { Int64($0.doubleValue) } }
-            let target: Int64? = item.flatMap { h -> Int64? in h.targetPrice.map { Int64($0.doubleValue) } }
+            // T1: 매매 당시 스냅샷(매수 계획 우선)만 사용. 현재 holding 폴백 금지 — 사후 변경·청산으로
+            // 과거 규율 성적이 바뀌는 오염을 차단한다. 스냅샷 없는 과거 로그는 집계 제외.
+            let stop   = pair.stop
+            let target = pair.target
             guard stop != nil || target != nil else { return nil }
             return DisciplineRow(
                 id: pair.id, code: pair.code,
@@ -821,13 +832,7 @@ struct StatsView: View {
             if let n = e.name, resolved[e.code] == nil { resolved[e.code] = n }
         }
         nameMap = resolved
-        // G1 이후 holding은 계좌별 행이라 같은 code가 여러 개 — uniqueKeysWithValues는 중복 키에서
-        // 즉시 크래시한다(실기기 재현: 다계좌 + 같은 종목 → 내 패턴 탭 튕김). 규율 판정에는
-        // target/stop만 쓰므로 목표/손절이 설정된 계좌 행을 우선해 병합한다.
-        let holdings = holdingRepo.all()
-        positionMap = Dictionary(holdings.map { ($0.code, $0) }, uniquingKeysWith: { a, b in
-            (a.targetPrice != nil || a.stopPrice != nil) ? a : b
-        })
+        // T1: 규율 판정은 action_log의 매매 시점 스냅샷(pairRows)만 참조 — 현재 holding을 읽지 않는다.
         Task { await loadMissed() }
         Task {
             let ss = try? await api.getStanceStats()
