@@ -1404,10 +1404,17 @@ private fun MoodSignalCard(report: MoodAccuracyReport?) {
                 if (todayPending) MoodTodayCard(today.direction)
                 if (report.total > 0) {
                     val rate = (report.correct.toDouble() / report.total * 100).toInt()
-                    val color = if (rate >= 60) ChangeUp else if (rate >= 40) OrangeAccent else ChangeDown
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("${report.correct}/${report.total}회 적중 · $rate%", style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.weight(1f))
-                        if (report.pending > 0) Text("대기 ${report.pending}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // X1: 색상은 기저율 상대. 무정보 벤치마크(매일 다수 방향 찍기)를 +2%p 넘겨야
+                    // 정보력 있음(초록), 못 넘으면 회색 — 절대 %가 높아도 우연 이상이 아님을 표시.
+                    val beatsBaseline = rate >= report.baselineRate + 2
+                    val color = if (beatsBaseline) EdgeTheme.colors.success else MaterialTheme.colorScheme.onSurfaceVariant
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("${report.correct}/${report.total}회 적중 · $rate%", style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.weight(1f))
+                            if (report.pending > 0) Text("대기 ${report.pending}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text("같은 기간 매일 ${moodDirectionLabel(report.baselineDirection)} 찍기: ${report.baselineRate}%",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 val history = if (todayPending) report.recentEntries.drop(1).take(5) else report.recentEntries.take(5)
@@ -1420,6 +1427,14 @@ private fun MoodSignalCard(report: MoodAccuracyReport?) {
             Text("미장 마감(오전 5시) 이후 확인 적기. 장 마감(오후 3:30) 후 자동 채점돼요.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+// X1: 기저율 병기용 방향 라벨(다수 클래스 표기).
+private fun moodDirectionLabel(direction: String?): String = when (direction) {
+    "BULLISH" -> "강세"
+    "BEARISH" -> "약세"
+    "NEUTRAL" -> "보합"
+    else -> "다수 방향"
 }
 
 @Composable

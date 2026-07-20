@@ -2,8 +2,10 @@ package com.haky.edge
 
 import com.haky.edge.kis.MacroIndicator
 import com.haky.edge.macro.MarketMoodLogService
+import com.haky.edge.macro.MoodLogEntry
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class MarketMoodLogTest {
 
@@ -11,6 +13,9 @@ class MarketMoodLogTest {
 
     private fun ind(key: String, changeRate: Double) =
         MacroIndicator(key = key, label = key, value = 0.0, change = 0.0, changeRate = changeRate)
+
+    private fun scored(date: String, actual: String) =
+        MoodLogEntry(date = date, direction = "BULLISH", actualDirection = actual, isCorrect = true, kospiChange = 0.0)
 
     // ── 단일 지표 방향 ──────────────────────────────────────────────────────
 
@@ -104,5 +109,31 @@ class MarketMoodLogTest {
     @Test fun `임계값 0_5 초과하면 BULLISH`() {
         val r = service.inferDirection(listOf(ind("nasdaq", +0.6)))
         assertEquals("BULLISH", r)
+    }
+
+    // ── X1 기저율(무정보 벤치마크) ───────────────────────────────────────────
+
+    @Test fun `기저율 - 다수 클래스 비율과 방향 계산`() {
+        // 실제 방향 BULLISH 6 / BEARISH 3 / NEUTRAL 1 = 10건 → 다수 BULLISH 60%
+        val scored = List(6) { scored("2026-01-0$it", "BULLISH") } +
+            List(3) { scored("2026-02-0$it", "BEARISH") } +
+            listOf(scored("2026-03-01", "NEUTRAL"))
+        val (rate, dir) = MarketMoodLogService.computeBaseline(scored)
+        assertEquals(60, rate)
+        assertEquals("BULLISH", dir)
+    }
+
+    @Test fun `기저율 - truncate 내림(클라 rate 규칙과 일치)`() {
+        // BULLISH 1 / BEARISH 2 = 3건 → 다수 BEARISH 2/3 = 66.67% → 내림 66
+        val scored = listOf(scored("d1", "BULLISH")) + List(2) { scored("d2$it", "BEARISH") }
+        val (rate, dir) = MarketMoodLogService.computeBaseline(scored)
+        assertEquals(66, rate)
+        assertEquals("BEARISH", dir)
+    }
+
+    @Test fun `기저율 - 채점 데이터 없으면 0과 null`() {
+        val (rate, dir) = MarketMoodLogService.computeBaseline(emptyList())
+        assertEquals(0, rate)
+        assertNull(dir)
     }
 }

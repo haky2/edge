@@ -280,14 +280,21 @@ struct BriefingView: View {
                     }
                     if acc.total > 0 {
                         let rate = Int(Double(acc.correct) / Double(acc.total) * 100)
-                        HStack {
-                            Text("\(acc.correct)/\(acc.total)회 적중 · \(rate)%")
-                                .font(.subheadline)
-                                .foregroundColor(rate >= 60 ? .red : rate >= 40 ? .orange : .blue)
-                            Spacer()
-                            if acc.pending > 0 {
-                                Text("대기 \(acc.pending)").font(.caption).foregroundColor(.secondary)
+                        // X1: 색상은 기저율 상대. 무정보 벤치마크(매일 다수 방향 찍기)를 +2%p 넘겨야
+                        // 정보력 있음(초록), 못 넘으면 회색 — 절대 %가 높아도 우연 이상이 아님을 표시.
+                        let beatsBaseline = rate >= acc.baselineRate + 2
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text("\(acc.correct)/\(acc.total)회 적중 · \(rate)%")
+                                    .font(.subheadline)
+                                    .foregroundColor(beatsBaseline ? .green : .secondary)
+                                Spacer()
+                                if acc.pending > 0 {
+                                    Text("대기 \(acc.pending)").font(.caption).foregroundColor(.secondary)
+                                }
                             }
+                            Text("같은 기간 매일 \(moodDirectionLabel(acc.baselineDirection)) 찍기: \(acc.baselineRate)%")
+                                .font(.caption2).foregroundColor(.secondary)
                         }
                     }
                     let historyEntries = todayPending
@@ -361,6 +368,16 @@ struct BriefingView: View {
             }
         }
         .padding(.vertical, 1)
+    }
+
+    // X1: 기저율 병기용 방향 라벨(다수 클래스 표기).
+    private func moodDirectionLabel(_ direction: String?) -> String {
+        switch direction {
+        case "BULLISH": return "강세"
+        case "BEARISH": return "약세"
+        case "NEUTRAL": return "보합"
+        default:        return "다수 방향"
+        }
     }
 
     private func moodDirectionBadge(_ direction: String, isActual: Bool) -> some View {

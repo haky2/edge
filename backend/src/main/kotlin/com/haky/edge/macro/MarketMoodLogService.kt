@@ -26,6 +26,10 @@ data class MoodAccuracyReport(
     val correct: Int,
     val pending: Int,
     val recentEntries: List<MoodLogEntry>,
+    // X1: 무정보 벤치마크 — 같은 기간 실제 방향의 다수 클래스를 매일 찍었을 때의 적중률(%).
+    // 예측기가 이 값을 못 넘으면 정보력 없음(항상 강세 찍기만도 못함). baselineDirection=다수 클래스.
+    val baselineRate: Int = 0,
+    val baselineDirection: String? = null,
 )
 
 /**
@@ -125,11 +129,14 @@ class MarketMoodLogService {
     fun getAccuracyReport(): MoodAccuracyReport {
         val log = loadLog()
         val scored = log.filter { it.isCorrect != null }
+        val (baselineRate, baselineDirection) = computeBaseline(scored)
         return MoodAccuracyReport(
             total = scored.size,
             correct = scored.count { it.isCorrect == true },
             pending = log.count { it.isCorrect == null },
             recentEntries = log.take(30),
+            baselineRate = baselineRate,
+            baselineDirection = baselineDirection,
         )
     }
 
@@ -162,6 +169,17 @@ class MarketMoodLogService {
                 composite < -COMPOSITE_THRESHOLD -> "BEARISH"
                 else                             -> "NEUTRAL"
             }
+        }
+
+        /**
+         * X1 무정보 벤치마크: 채점 엔트리의 실제 방향 다수 클래스 비율(%)과 방향.
+         * "같은 기간 그 방향을 매일 찍었을 때 적중률" — 예측기가 이를 못 넘으면 정보력 없음.
+         * truncate 정수 나눗셈으로 클라의 rate(내림)와 같은 규칙 → 색상 임계 비교 일관.
+         */
+        internal fun computeBaseline(scored: List<MoodLogEntry>): Pair<Int, String?> {
+            val majority = scored.mapNotNull { it.actualDirection }.groupingBy { it }.eachCount()
+                .maxByOrNull { it.value } ?: return 0 to null
+            return (majority.value * 100 / scored.size) to majority.key
         }
 
         /** 실제 코스피 등락 3분류(±0.3% 중립 밴드) — 채점·검증 공용. */
