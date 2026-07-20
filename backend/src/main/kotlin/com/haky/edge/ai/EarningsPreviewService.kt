@@ -31,6 +31,9 @@ data class EarningsPreview(
     val runRateLabel: String? = null,   // 근거 라벨("2026년 1분기 누적 연환산 vs 2025년 연간")
     val pastReactions: PastReactions? = null,
     val caveat: String,
+    // N2: 회사가 직접 밝힌 가이던스(있을 때만). 캐시에 굽지 않고 라우트가 조회 시점에 붙인다
+    // (수집은 18:00 스캔 — 당일 캐시에 구우면 이후 수집분이 다음 날까지 안 보임).
+    val guidance: Guidance? = null,
 )
 
 /**

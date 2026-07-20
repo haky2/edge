@@ -278,6 +278,9 @@ fun Application.module() {
     // C 딥리서치 — 웹검색(과금) 결합 2단계 리포트. 일일 상한 + (code,날짜) 캐시 + force 불허.
     val deepResearch = com.haky.edge.ai.DeepResearchService(analysis, master, claude, modelRouter,
         dailyLimit = System.getenv("DEEP_RESEARCH_DAILY_LIMIT")?.toIntOrNull() ?: 5)
+    // N2 실적 가이던스 — 실적 리뷰 발화 시 "회사가 말한 것" 웹 수집→구조화. (code,rceptNo) 캐시+일일 한도.
+    val guidanceService = com.haky.edge.ai.GuidanceService(master, claude, modelRouter,
+        dailyLimit = System.getenv("GUIDANCE_DAILY_LIMIT")?.toIntOrNull() ?: 5)
     // D1 SENSITIVITY 실증 — 1회성 검증 라우트(운영 기능 아님). 지표 이력 × 바스켓 수익률 실측.
     val sensitivityValidation = com.haky.edge.macro.SensitivityValidationService(
         dailyHistory, ecosApiKey = System.getenv("ECOS_API_KEY").orEmpty())
@@ -315,7 +318,7 @@ fun Application.module() {
     // 수급 아카이브 — signals-scan이 매일 확정 일별 수급을 jsonl로 영속(F4 사후 검증의 데이터 기반).
     val investorHistory = com.haky.edge.kis.InvestorHistoryLog()
     val signalFiredLog = com.haky.edge.slack.SignalFiredLog()
-    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes, backtest, earningsPreview, premortem, rebalance, investorHistory, signalFiredLog)
+    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes, backtest, earningsPreview, premortem, rebalance, investorHistory, signalFiredLog, guidanceService)
     // S7·S8 슬래시 명령 + 라운지 명령어. 서명검증 + 멀티 커맨드 라우팅.
     val slackVerifier = SlackSignatureVerifier(System.getenv("SLACK_SIGNING_SECRET").orEmpty())
     val slackCommand = SlackCommandService(analysis, master, slack, kis, marketMood, eventSync, comparison)
@@ -361,7 +364,7 @@ fun Application.module() {
             stanceStatsRoutes(stanceStats)
             dartRoutes(dart)
             earningsRoutes(dart)
-            earningsPreviewRoutes(earningsPreview)
+            earningsPreviewRoutes(earningsPreview, guidanceService)
             premortemRoutes(premortem)
             tradeReviewRoutes(tradeReview)
             deepResearchRoutes(deepResearch)

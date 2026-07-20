@@ -12,16 +12,22 @@ import kotlinx.coroutines.coroutineScope
 private fun String?.toCodeList(): List<String> =
     this?.split(",")?.map { it.trim() }?.filter { it.matches(Regex("""[0-9A-Z]{6}""")) }?.distinct() ?: emptyList()
 
-fun Route.earningsPreviewRoutes(previewSvc: com.haky.edge.ai.EarningsPreviewService) {
+fun Route.earningsPreviewRoutes(
+    previewSvc: com.haky.edge.ai.EarningsPreviewService,
+    guidanceSvc: com.haky.edge.ai.GuidanceService? = null,
+) {
     // GET /earnings-preview/{code}
     //   실적 발표 프리뷰(F3): run-rate 유지 시 YoY + 과거 발표일 반응 통계. LLM 0, 당일 캐시.
+    //   N2: 가이던스는 캐시 밖에서 조회 시점에 병기(스캔이 당일 수집한 것도 즉시 보임).
     get("/earnings-preview/{code}") {
         val code = call.parameters["code"].orEmpty()
         if (!code.matches(Regex("""[0-9A-Z]{6}"""))) {
             call.respond(io.ktor.http.HttpStatusCode.BadRequest, com.haky.edge.ErrorResponse("종목코드는 6자리 영숫자여야 합니다: '$code'"))
             return@get
         }
-        call.respond(previewSvc.preview(code))
+        val preview = previewSvc.preview(code)
+        val guidance = guidanceSvc?.let { runCatching { it.latest(code) }.getOrNull() }
+        call.respond(if (guidance != null) preview.copy(guidance = guidance) else preview)
     }
 }
 

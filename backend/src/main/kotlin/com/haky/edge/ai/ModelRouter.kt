@@ -44,6 +44,7 @@ class ModelRouter(
         const val TRADE_REVIEW = "trade_review" // 매매 복기 — 완결 매매당 수동 1회(당일 캐시)·고판단 지점
         const val DEEP_RESEARCH = "deep_research" // C 딥리서치 2단계(합성 리포트) — 일일 상한+당일 캐시, 최고 판단 지점
         const val WEEKLY_REVIEW = "weekly_review" // B 주간 회고 — 주 1회 스케줄(자연 상한 최강), 한 주 패턴 해석
+        const val GUIDANCE = "guidance" // N2 가이던스 구조화 — 분기당 종목 1회(자연 상한)·발언/추정 구분이 고판단
 
         /**
          * 기본 Opus 대상 = 사용자에게 보이는 해석 코멘트 전부(2026-07-08 사용자 결정).
@@ -55,7 +56,7 @@ class ModelRouter(
             BRIEFING, ANALYSIS_INITIAL, ANALYSIS_AUTO_REFRESH, ANALYSIS_MANUAL,
             ASK, PORTFOLIO, PREMORTEM, OVERSEAS,
             MACRO_IMPACT, SECTOR_BRIEFING, COMPARISON, TRADE_REVIEW, DEEP_RESEARCH,
-            WEEKLY_REVIEW,
+            WEEKLY_REVIEW, GUIDANCE,
         )
 
         /**

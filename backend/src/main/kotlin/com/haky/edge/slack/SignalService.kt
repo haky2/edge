@@ -47,6 +47,7 @@ class SignalService(
     private val rebalance: com.haky.edge.ai.RebalanceService? = null, // R2 비중 점검 신호(없으면 skip)
     private val investorHistory: com.haky.edge.kis.InvestorHistoryLog? = null, // 수급 아카이브(없으면 skip)
     private val signalFiredLog: SignalFiredLog? = null, // N3-a 발화 로그(없으면 skip)
+    private val guidance: com.haky.edge.ai.GuidanceService? = null, // N2 가이던스 수집(없으면 skip)
 ) {
     private val dataDir = File(System.getenv("DATA_DIR") ?: ".data").also { it.mkdirs() }
     private val stateFile = File(dataDir, "signal_state.json")
@@ -65,7 +66,11 @@ class SignalService(
     private data class DisclosureSignal(val code: String, val name: String, val title: String, val url: String, val rceptNo: String)
     private data class ValuationSignal(val code: String, val name: String, val perCurrent: Double, val percentile: Int)
     private data class ReversalSignal(val code: String, val name: String, val type: FlowType, val toBuy: Boolean, val prevStreak: Int, val todayQty: Long, val backtestNote: String?)
-    private data class EarningsReviewSignal(val code: String, val name: String, val review: com.haky.edge.ai.EarningsPreviewService.EarningsReview)
+    private data class EarningsReviewSignal(
+        val code: String, val name: String,
+        val review: com.haky.edge.ai.EarningsPreviewService.EarningsReview,
+        val guidance: com.haky.edge.ai.Guidance? = null, // N2 — "회사가 말한 것"(수집 실패·한도 초과면 null)
+    )
     private data class PremortemSignal(val code: String, val name: String, val reason: String, val descriptions: List<String>)
     private data class RebalanceSignal(val text: String)
 
@@ -161,7 +166,12 @@ class SignalService(
                     }
                     runCatching { ep.review(code, d.reportName) }.getOrNull()?.let { rv ->
                         seen += rceptNo
-                        reviewSignals += EarningsReviewSignal(code, name, rv)
+                        // N2: 리뷰 발화 시 가이던스 수집(웹검색 1회, (code,rceptNo) 캐시·일일 한도).
+                        // 실패해도 리뷰 신호는 그대로 — 가이던스는 병기 정보일 뿐.
+                        val g = runCatching {
+                            guidance?.collectForReview(code, d.reportName, rceptNo, rv.periodLabel)
+                        }.getOrNull()
+                        reviewSignals += EarningsReviewSignal(code, name, rv, g)
                     }
                 }
                 if (seen.isNotEmpty()) state[key] = seen.sortedDescending().take(10).joinToString(",")
@@ -379,8 +389,13 @@ class SignalService(
             reviews.forEach { s ->
                 val rv = s.review
                 appendLine("• *${s.name}* (${s.code}) — ${rv.periodLabel} 누적 순이익 *${"%,d".format(rv.actualEok)}억*, 직전 속도 예상(${"%,d".format(rv.expectedEok)}억) 대비 *${"%+.1f".format(rv.diffPct)}% ${rv.verdict}*")
+                // N2: 회사가 직접 밝힌 가이던스 병기(있을 때만, 최대 4건).
+                s.guidance?.items?.take(GUIDANCE_MAX_LINES)?.forEach { g ->
+                    val at = g.saidAt.ifBlank { "시점 미상" }
+                    appendLine("  🗣 ${g.topic}: ${g.statement} ($at)")
+                }
             }
-            appendLine("  _단순 연환산 예상 대비이며 컨센서스가 아닙니다_")
+            appendLine("  _단순 연환산 예상 대비이며 컨센서스가 아닙니다. 가이던스는 웹 수집 회사 발언(검증되지 않음)_")
             appendLine()
         }
         if (premortems.isNotEmpty()) {
@@ -420,6 +435,7 @@ class SignalService(
         internal const val REVERSAL_COOLDOWN_DAYS = 7 // 같은 방향 전환 재알림 금지 기간
         internal const val REVERSAL_MIN_CORR = 0.3  // flow-sensitivity r 하한(수급이 가격을 움직이는 종목만)
         internal const val REBALANCE_COOLDOWN_DAYS = 14 // 리밸런싱 룰별 재알림 금지 기간
+        private const val GUIDANCE_MAX_LINES = 4    // N2 실적 리뷰당 가이던스 표시 상한(도배 방지)
 
         /**
          * 수급 전환점 감지(F4, 순수 함수). netByDay = 한 주체의 일별 순매수량, 최신이 앞(확정 일별값).
