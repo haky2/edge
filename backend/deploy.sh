@@ -191,8 +191,9 @@ scheduler_upsert slack-cost-summary \
 # 배포 완료 Slack 알림 (#ops-배포, 공개 채널).
 DEPLOY_TIME=$(TZ=Asia/Seoul date "+%m/%d %H:%M KST")
 # DEPLOY_NOTES 줄바꿈 → 불릿 리스트. 비면 "내부 개선" 기본값.
+# %b: 셸이 리터럴로 넘긴 "\n"도 실제 개행으로 해석 (실개행·리터럴 둘 다 허용)
 if [ -n "$DEPLOY_NOTES" ]; then
-  BULLETS=$(printf '%s' "$DEPLOY_NOTES" | sed 's/^/• /')
+  BULLETS=$(printf '%b' "$DEPLOY_NOTES" | sed 's/^/• /')
 else
   BULLETS="• 내부 개선"
 fi
