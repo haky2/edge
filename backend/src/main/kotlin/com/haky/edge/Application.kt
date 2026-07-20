@@ -81,6 +81,7 @@ import com.haky.edge.routes.morningBriefRoutes
 import com.haky.edge.routes.personalWeeklyReviewRoutes
 import com.haky.edge.routes.judgmentComparisonRoutes
 import com.haky.edge.routes.portfolioRiskRoutes
+import com.haky.edge.routes.portfolioStressRoutes
 import com.haky.edge.routes.positionSizingRoutes
 import com.haky.edge.routes.signalLabRoutes
 import com.haky.edge.routes.weeklyReviewRoutes
@@ -312,6 +313,8 @@ fun Application.module() {
     val judgmentComparison = com.haky.edge.ai.JudgmentComparisonService(kis, stanceLog, dailyHistory)
     // 포트폴리오 리스크 엔진 — 실측 상관·변동성·리스크 기여도·클러스터(LLM 0).
     val portfolioRisk = com.haky.edge.ai.PortfolioRiskService(kis, master, dailyHistory)
+    // N4 시나리오 스트레스(축소판) — 코스피 충격 × 실측 베타만(무근거 매크로 샥 제외). risk 재사용.
+    val portfolioStress = com.haky.edge.ai.PortfolioStressService(portfolioRisk)
     // 포지션 사이징 보조 — 리스크 기여 상한 역산(LLM 0, PortfolioRisk 수식 재사용).
     val positionSizing = com.haky.edge.ai.PositionSizingService(master, dailyHistory)
     // 전략 실험실 — 선언적 신호 수트 → 유니버스 리플레이 + 대조군 + 초과수익 채점(LLM 0).
@@ -402,6 +405,7 @@ fun Application.module() {
             personalWeeklyReviewRoutes(personalWeeklyReview)
             judgmentComparisonRoutes(judgmentComparison)
             portfolioRiskRoutes(portfolioRisk)
+            portfolioStressRoutes(portfolioStress)
             positionSizingRoutes(positionSizing)
             signalLabRoutes(signalLab)
             eventReminderRoutes(eventReminder)

@@ -47,6 +47,7 @@ import com.haky.edge.model.JudgmentTradeEntry
 import com.haky.edge.model.PortfolioRisk
 import com.haky.edge.model.PortfolioRiskEntry
 import com.haky.edge.model.PortfolioRiskRequest
+import com.haky.edge.model.PortfolioStress
 import com.haky.edge.model.PositionSizing
 import com.haky.edge.model.PositionSizingEntry
 import com.haky.edge.model.PositionSizingRequest
@@ -644,6 +645,14 @@ class EdgeApi(
     @Throws(Exception::class)
     suspend fun postPortfolioRisk(positions: List<PortfolioRiskEntry>): PortfolioRisk =
         client.post("$baseUrl/portfolio-risk") {
+            contentType(ContentType.Application.Json)
+            setBody(PortfolioRiskRequest(positions))
+        }.body()
+
+    /** POST /portfolio-stress — 코스피 등락 시나리오 조건부 손익(LLM 0). 리스크와 같은 바디. */
+    @Throws(Exception::class)
+    suspend fun postPortfolioStress(positions: List<PortfolioRiskEntry>): PortfolioStress =
+        client.post("$baseUrl/portfolio-stress") {
             contentType(ContentType.Application.Json)
             setBody(PortfolioRiskRequest(positions))
         }.body()

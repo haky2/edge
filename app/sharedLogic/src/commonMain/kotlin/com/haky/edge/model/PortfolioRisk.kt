@@ -10,6 +10,7 @@ data class RiskStock(
     val volPct: Double,
     val beta: Double? = null,
     val riskContribPct: Double,
+    val value: Long = 0,
 )
 
 @Serializable

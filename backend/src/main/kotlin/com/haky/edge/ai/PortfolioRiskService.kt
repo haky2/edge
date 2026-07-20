@@ -31,6 +31,7 @@ data class RiskStock(
     val volPct: Double,           // 연환산 변동성(%, 60거래일 실측)
     val beta: Double? = null,     // vs KOSPI(같은 창). 관측 부족 시 null
     val riskContribPct: Double,   // 포트폴리오 분산 기여(%) — 합계 100
+    val value: Long = 0,          // 평가금액(최근 확정 종가 × 수량) — 스트레스 KRW 손익 계산용
 )
 
 /** 높은 상관 쌍 1개(r ≥ 0.7). */
@@ -271,6 +272,7 @@ class PortfolioRiskService(
                     volPct = round2(annualizePct(sigma[i])),
                     beta = betas[i]?.let { round2(it) },
                     riskContribPct = round2(contrib[i]),
+                    value = series[i].value,
                 )
             }.sortedByDescending { it.riskContribPct }
 

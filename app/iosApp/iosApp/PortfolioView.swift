@@ -13,6 +13,8 @@ struct PortfolioView: View {
     @State private var baselineResetting = false
     @State private var portfolioRisk: PortfolioRisk? = nil
     @State private var riskLoading = false
+    @State private var portfolioStress: PortfolioStress? = nil
+    @State private var stressExpanded = false
     @State private var reviewLoading = false
     @State private var reviewExpanded = true
     @State private var reviewCommentExpanded = false
@@ -177,6 +179,10 @@ struct PortfolioView: View {
             if portfolioRisk != nil || riskLoading {
                 Section {
                     portfolioRiskCard
+                    if let st = portfolioStress, !st.scenarios.isEmpty {
+                        Divider()
+                        stressCard(st)
+                    }
                 }
             }
 
@@ -593,6 +599,83 @@ struct PortfolioView: View {
         .padding(.vertical, 6)
     }
 
+    // MARK: - 시나리오 스트레스 카드 (N4, 접이식)
+
+    private func stressCard(_ st: PortfolioStress) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.down.forward.circle").font(.caption).foregroundColor(.teal)
+                Text("스트레스 시나리오").font(.subheadline.weight(.semibold))
+                Spacer()
+                if let b = st.portfolioBeta?.doubleValue {
+                    Text("베타 \(String(format: "%.2f", b))").font(.caption2).foregroundColor(.secondary)
+                }
+                Image(systemName: stressExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { stressExpanded.toggle() } }
+
+            if stressExpanded {
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("코스피가 이만큼 움직이면 (실측 베타 기준 조건부 산수)")
+                        .font(.caption2).foregroundColor(.secondary)
+                    ForEach(st.scenarios, id: \.kospiMovePct) { sc in
+                        HStack {
+                            Text(sc.label).font(.caption).frame(width: 92, alignment: .leading)
+                            Spacer()
+                            Text(signedWon(sc.portfolioPnlAmount))
+                                .font(.caption.monospacedDigit().weight(.semibold))
+                                .foregroundColor(pnlColor(sc.portfolioPnlAmount))
+                            Text("(\(signedPct(sc.portfolioPnlPct)))")
+                                .font(.caption2.monospacedDigit()).foregroundColor(.secondary)
+                                .frame(width: 62, alignment: .trailing)
+                        }
+                    }
+
+                    let cls = st.clusters
+                    if !cls.isEmpty {
+                        Divider()
+                        Text("같이 무너지는 조합 (코스피 −10% 시)").font(.caption2).foregroundColor(.secondary)
+                        ForEach(Array(cls.prefix(3).enumerated()), id: \.offset) { _, cl in
+                            HStack(spacing: 6) {
+                                Image(systemName: "link").font(.caption2).foregroundColor(.orange)
+                                Text(cl.names.joined(separator: "·")).font(.caption2).lineLimit(1)
+                                Spacer()
+                                Text(signedWon(cl.combinedDropAmount))
+                                    .font(.caption2.monospacedDigit()).foregroundColor(.blue)
+                                Text("(\(signedPct(cl.combinedDropPct)))")
+                                    .font(.caption2.monospacedDigit()).foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    if !st.caveat.isEmpty {
+                        Text(st.caveat).font(.caption2).foregroundColor(Color(.tertiaryLabel))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.top, 8).padding(.bottom, 4)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func signedWon(_ v: Int64) -> String {
+        let sign = v > 0 ? "+" : v < 0 ? "−" : ""
+        return "\(sign)\(Int(abs(v)).formatted())원"
+    }
+
+    private func signedPct(_ v: Double) -> String {
+        "\(v > 0 ? "+" : v < 0 ? "−" : "")\(String(format: "%.1f", abs(v)))%"
+    }
+
+    private func pnlColor(_ v: Int64) -> Color {
+        v > 0 ? .red : v < 0 ? .blue : .secondary
+    }
+
     // MARK: - 포트폴리오 종합 진단 카드
 
     @ViewBuilder
@@ -984,6 +1067,13 @@ struct PortfolioView: View {
         }
         let result = try? await api.postPortfolioRisk(positions: positions)
         await MainActor.run { portfolioRisk = result }
+        // 스트레스는 리스크 캐시를 재사용(서버 fileCache) — 리스크 성공 뒤에만 조회.
+        if result != nil {
+            let stress = try? await api.postPortfolioStress(positions: positions)
+            await MainActor.run { portfolioStress = stress }
+        } else {
+            await MainActor.run { portfolioStress = nil }
+        }
     }
 
     private func loadPortfolioReview(force: Bool) async {

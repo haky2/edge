@@ -170,6 +170,7 @@ fun PortfolioScreen(
     var portfolioReview by remember { mutableStateOf<PortfolioReview?>(null) }
     var rebalanceCheck by remember { mutableStateOf<RebalanceCheck?>(null) }
     var portfolioRisk by remember { mutableStateOf<PortfolioRisk?>(null) }
+    var portfolioStress by remember { mutableStateOf<com.haky.edge.model.PortfolioStress?>(null) }
     var riskLoading by remember { mutableStateOf(false) }
     var reviewLoading by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
@@ -182,10 +183,11 @@ fun PortfolioScreen(
         val scopeRows = if (scopeId == null) mergedByCode(rows) else rows.filter { it.accountId == scopeId }
         if (scopeRows.isEmpty()) return
         riskLoading = true
-        portfolioRisk = runCatching {
-            val positions = scopeRows.map { r -> PortfolioRiskEntry(r.item.code, r.qty.toLong()) }
-            api.postPortfolioRisk(positions)
-        }.getOrNull()
+        val positions = scopeRows.map { r -> PortfolioRiskEntry(r.item.code, r.qty.toLong()) }
+        portfolioRisk = runCatching { api.postPortfolioRisk(positions) }.getOrNull()
+        // 스트레스는 리스크 캐시 재사용(서버 fileCache) — 리스크 성공 뒤에만.
+        portfolioStress = if (portfolioRisk != null)
+            runCatching { api.postPortfolioStress(positions) }.getOrNull() else null
         riskLoading = false
     }
 
@@ -354,6 +356,7 @@ fun PortfolioScreen(
                         afterTaxSummary = afterTaxSummary,
                         afterTaxAccLabels = afterTaxAccLabels,
                         risk = portfolioRisk,
+                        stress = portfolioStress,
                         riskLoading = riskLoading,
                         review = portfolioReview,
                         rebalanceCheck = rebalanceCheck,
@@ -417,6 +420,7 @@ private fun HoldingsList(
     afterTaxSummary: AfterTaxSummary?,
     afterTaxAccLabels: List<Pair<String, String>>,
     risk: PortfolioRisk?,
+    stress: com.haky.edge.model.PortfolioStress?,
     riskLoading: Boolean,
     review: PortfolioReview?,
     rebalanceCheck: RebalanceCheck?,
@@ -465,6 +469,12 @@ private fun HoldingsList(
         if (risk != null || riskLoading) {
             item {
                 PortfolioRiskCard(risk = risk, loading = riskLoading)
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+        if (stress != null && stress.scenarios.isNotEmpty()) {
+            item {
+                PortfolioStressCard(stress = stress)
                 Spacer(Modifier.height(8.dp))
             }
         }
@@ -1409,5 +1419,106 @@ private fun RiskStatCell(label: String, value: String, modifier: Modifier = Modi
         Text(label, style = MaterialTheme.typography.labelSmall,
              color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
+    }
+}
+
+// ── 시나리오 스트레스 카드 (N4, 접이식) ──────────────────────────────────────
+
+@Composable
+private fun PortfolioStressCard(stress: com.haky.edge.model.PortfolioStress) {
+    val fmt = NumberFormat.getNumberInstance(Locale.KOREA)
+    val upColor = ChangeUp
+    val downColor = ChangeDown
+    fun signedWon(v: Long): String {
+        val sign = if (v > 0) "+" else if (v < 0) "−" else ""
+        return "$sign${fmt.format(kotlin.math.abs(v))}원"
+    }
+    fun signedPct(v: Double): String {
+        val sign = if (v > 0) "+" else if (v < 0) "−" else ""
+        return "$sign${String.format("%.1f", kotlin.math.abs(v))}%"
+    }
+    fun pnlColor(v: Long) = if (v > 0) upColor else if (v < 0) downColor else Color.Unspecified
+
+    var expanded by remember { mutableStateOf(false) }
+    Surface(
+        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+            // 헤더
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text("스트레스 시나리오",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    modifier = Modifier.weight(1f))
+                stress.portfolioBeta?.let {
+                    Text("베타 ${String.format("%.2f", it)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(
+                    if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            if (expanded) {
+                HorizontalDivider()
+                Column(modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
+                       verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("코스피가 이만큼 움직이면 (실측 베타 기준 조건부 산수)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    stress.scenarios.forEach { sc ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(sc.label, style = MaterialTheme.typography.bodySmall,
+                                 modifier = Modifier.width(96.dp))
+                            Spacer(Modifier.weight(1f))
+                            Text(signedWon(sc.portfolioPnlAmount),
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = pnlColor(sc.portfolioPnlAmount))
+                            Text("(${signedPct(sc.portfolioPnlPct)})",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.width(64.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                        }
+                    }
+
+                    if (stress.clusters.isNotEmpty()) {
+                        HorizontalDivider()
+                        Text("같이 무너지는 조합 (코스피 −10% 시)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        stress.clusters.take(3).forEach { cl ->
+                            Row(verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("🔗", style = MaterialTheme.typography.labelSmall)
+                                Text(cl.names.joinToString("·"),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1, modifier = Modifier.weight(1f))
+                                Text(signedWon(cl.combinedDropAmount),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = downColor)
+                                Text("(${signedPct(cl.combinedDropPct)})",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+
+                    if (stress.caveat.isNotEmpty()) {
+                        Text(stress.caveat,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                    }
+                }
+            }
+        }
     }
 }
