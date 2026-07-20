@@ -48,6 +48,7 @@ struct ComparisonView: View {
             }
         }
         .task { await load() }
+        .onAppear { Usage.shared.view("comparison") }
     }
 
     // ── 핵심 지표 나란히 테이블 ──

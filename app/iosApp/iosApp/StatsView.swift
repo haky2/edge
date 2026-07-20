@@ -54,7 +54,7 @@ struct StatsView: View {
             .contentMargins(.top, 0, for: .scrollContent)
             .navigationTitle("내 패턴")
             .navigationBarTitleDisplayMode(.inline)
-            .onAppear { reload() }
+            .onAppear { reload(); Usage.shared.view("stats") }
         }
     }
 

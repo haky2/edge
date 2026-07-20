@@ -147,6 +147,7 @@ struct BriefingView: View {
                 }
             }
             .task { await load() }
+            .onAppear { Usage.shared.view("briefing") }
             .refreshable { await load() }
             // 설정에서 모드를 바꾸면 시장 분위기 + 내 종목 영향 재호출(두 섹션이 모드 영향).
             .onChange(of: modeRaw) {

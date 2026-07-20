@@ -96,6 +96,7 @@ struct PortfolioView: View {
             }
         }
         .task { await load() }
+        .onAppear { Usage.shared.view("portfolio") }
         .refreshable { await load() }
         .onChange(of: modeRaw) {
             portfolioReview = nil

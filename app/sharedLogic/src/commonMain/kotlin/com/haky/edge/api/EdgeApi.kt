@@ -1,6 +1,9 @@
 package com.haky.edge.api
 
 import com.haky.edge.model.AnalogReport
+import com.haky.edge.model.UsageAck
+import com.haky.edge.model.UsageEvent
+import com.haky.edge.model.UsageEventBatch
 import com.haky.edge.model.Analysis
 import com.haky.edge.model.EarningsPreview
 import com.haky.edge.model.Premortem
@@ -713,6 +716,17 @@ class EdgeApi(
     suspend fun syncEvents() {
         client.post("$baseUrl/events/sync")
     }
+
+    /**
+     * M1 카드 사용량 배치 flush(포그라운드 진입 시). 멱등: 서버가 (screen,card,action,at)로 디듀프.
+     * 과금·LLM 없음. 반환 = 서버가 새로 적재한 건수.
+     */
+    @Throws(Exception::class)
+    suspend fun postUsageEvents(events: List<UsageEvent>): UsageAck =
+        client.post("$baseUrl/usage-events") {
+            contentType(ContentType.Application.Json)
+            setBody(UsageEventBatch(events))
+        }.body()
 
     /**
      * 두 종목 비교 코멘트. 핵심 지표(현재가·52주위치·PER·수급·밸류에이션)를 나란히 수집하고

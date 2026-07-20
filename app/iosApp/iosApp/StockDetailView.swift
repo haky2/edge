@@ -185,9 +185,11 @@ struct StockDetailView: View {
         .onAppear {
             loadAccountContext()
             loadLogs()
+            Usage.shared.view("detail")
         }
         .sheet(isPresented: $showAskSheet) {
             StockAskSheetView(item: item, api: api, mode: analysisMode, horizon: contextHorizon)
+                .onAppear { Usage.shared.view("ask") }
         }
         .sheet(isPresented: $showEdit) {
             PositionEditView(item: item, initialAccountId: accountContext ?? initialAccountId) { updated in
@@ -732,7 +734,7 @@ struct StockDetailView: View {
             }
             .padding(.vertical, 10)
             .contentShape(Rectangle())
-            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { technicalExpanded.toggle() } }
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { technicalExpanded.toggle() }; if technicalExpanded { Usage.shared.expand("detail", "기술적 지표") } }
             if technicalExpanded {
                 Divider()
                 technicalCard(r, price: price)
@@ -755,7 +757,7 @@ struct StockDetailView: View {
             }
             .padding(.vertical, 10)
             .contentShape(Rectangle())
-            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { flowExpanded.toggle() } }
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { flowExpanded.toggle() }; if flowExpanded { Usage.shared.expand("detail", "수급 · 순매수") } }
             if flowExpanded {
                 Divider()
                 flowCard()
@@ -783,7 +785,7 @@ struct StockDetailView: View {
             }
             .padding(.vertical, 10)
             .contentShape(Rectangle())
-            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { analysisExpanded.toggle() } }
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { analysisExpanded.toggle() }; if analysisExpanded { Usage.shared.expand("detail", "지표 해석") } }
             if analysisExpanded {
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
@@ -1566,7 +1568,7 @@ struct StockDetailView: View {
                 }
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { valuationExpanded.toggle() } }
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { valuationExpanded.toggle() }; if valuationExpanded { Usage.shared.expand("detail", "밸류에이션 히스토리") } }
                 if valuationExpanded {
                     Divider()
                     VStack(alignment: .leading, spacing: 12) {
@@ -1666,7 +1668,7 @@ struct StockDetailView: View {
                 }
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { peerExpanded.toggle() } }
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { peerExpanded.toggle() }; if peerExpanded { Usage.shared.expand("detail", "동종 상대 밸류") } }
                 if peerExpanded {
                     Divider()
                     VStack(alignment: .leading, spacing: 12) {
@@ -1757,7 +1759,7 @@ struct StockDetailView: View {
                 }
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { backtestExpanded.toggle() } }
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { backtestExpanded.toggle() }; if backtestExpanded { Usage.shared.expand("detail", "검증된 신호") } }
                 if backtestExpanded {
                     Divider()
                     VStack(alignment: .leading, spacing: 12) {
@@ -1846,7 +1848,7 @@ struct StockDetailView: View {
             }
             .padding(.vertical, 10)
             .contentShape(Rectangle())
-            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { premortemExpanded.toggle() } }
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { premortemExpanded.toggle() }; if premortemExpanded { Usage.shared.expand("detail", "매수 가설 점검") } }
             if premortemExpanded {
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
@@ -1917,7 +1919,7 @@ struct StockDetailView: View {
             }
             .padding(.vertical, 10)
             .contentShape(Rectangle())
-            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { tradeReviewExpanded.toggle() } }
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { tradeReviewExpanded.toggle() }; if tradeReviewExpanded { Usage.shared.expand("detail", "매매 복기") } }
             if tradeReviewExpanded {
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
@@ -2004,7 +2006,7 @@ struct StockDetailView: View {
             }
             .padding(.vertical, 10)
             .contentShape(Rectangle())
-            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { analogExpanded.toggle() } }
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { analogExpanded.toggle() }; if analogExpanded { Usage.shared.expand("detail", "유사 국면 통계") } }
             if analogExpanded {
                 Divider()
                 VStack(alignment: .leading, spacing: 12) {
@@ -2054,7 +2056,7 @@ struct StockDetailView: View {
                 }
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { flowSensExpanded.toggle() } }
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { flowSensExpanded.toggle() }; if flowSensExpanded { Usage.shared.expand("detail", "수급-가격 민감도") } }
                 if flowSensExpanded {
                     Divider()
                     VStack(alignment: .leading, spacing: 12) {
@@ -2144,7 +2146,7 @@ struct StockDetailView: View {
             }
             .padding(.vertical, 10)
             .contentShape(Rectangle())
-            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { shortSellingExpanded.toggle() } }
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { shortSellingExpanded.toggle() }; if shortSellingExpanded { Usage.shared.expand("detail", "공매도 동향") } }
             if shortSellingExpanded {
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
@@ -2238,7 +2240,7 @@ struct StockDetailView: View {
             }
             .padding(.vertical, 10)
             .contentShape(Rectangle())
-            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { dividendExpanded.toggle() } }
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { dividendExpanded.toggle() }; if dividendExpanded { Usage.shared.expand("detail", "배당") } }
             if dividendExpanded {
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
@@ -2314,7 +2316,7 @@ struct StockDetailView: View {
                 }
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { catalystExpanded.toggle() } }
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { catalystExpanded.toggle() }; if catalystExpanded { Usage.shared.expand("detail", "뉴스·공시 영향") } }
 
                 if catalystExpanded {
                     if let rep = catalysts {
@@ -2529,7 +2531,7 @@ struct StockDetailView: View {
                 }
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { earningsExpanded.toggle() } }
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { earningsExpanded.toggle() }; if earningsExpanded { Usage.shared.expand("detail", "실적 일정") } }
                 if earningsExpanded {
                     Divider()
                     HStack {
@@ -2582,7 +2584,7 @@ struct StockDetailView: View {
                 }
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { signalExpanded.toggle() } }
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { signalExpanded.toggle() }; if signalExpanded { Usage.shared.expand("detail", "지표 영향") } }
                 if signalExpanded {
                     Divider()
                     VStack(alignment: .leading, spacing: 6) {
@@ -2920,7 +2922,7 @@ struct StockDetailView: View {
             }
             .padding(.vertical, 10)
             .contentShape(Rectangle())
-            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { deepResearchExpanded.toggle() } }
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { deepResearchExpanded.toggle() }; if deepResearchExpanded { Usage.shared.expand("detail", "딥리서치") } }
 
             if deepResearchExpanded {
                 Divider()

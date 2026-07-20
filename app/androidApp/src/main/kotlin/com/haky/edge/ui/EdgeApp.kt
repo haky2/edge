@@ -21,6 +21,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -121,6 +122,17 @@ fun EdgeApp(
                 transitionSpec = { fadeIn() togetherWith fadeOut() },
                 label = "screen",
             ) { dest ->
+                // M1: 화면 진입 계측. dest 인스턴스가 바뀔 때마다(매 진입) 1회 view.
+                LaunchedEffect(dest) {
+                    when (dest) {
+                        is AppDestination.StockDetail -> Usage.view("detail")
+                        is AppDestination.Briefing -> Usage.view("briefing")
+                        is AppDestination.Stats -> Usage.view("stats")
+                        is AppDestination.Portfolio -> Usage.view("portfolio")
+                        is AppDestination.Comparison -> Usage.view("comparison")
+                        else -> {}
+                    }
+                }
                 when (dest) {
                     is AppDestination.Watchlist -> WatchlistScreen(
                         watchlistRepo = watchlistRepo,

@@ -96,6 +96,7 @@ internal fun CollapsibleCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     var expanded by remember { mutableStateOf(initiallyExpanded) }
+    val usageScreen = LocalUsageScreen.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -105,7 +106,10 @@ internal fun CollapsibleCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = !expanded }
+                .clickable {
+                    expanded = !expanded
+                    if (expanded) Usage.expand(usageScreen, title)  // M1: 펼침만 계측(접기 제외)
+                }
                 .padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),

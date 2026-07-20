@@ -341,6 +341,7 @@ let themeModeKey = "themeMode"
 
 struct ContentView: View {
     @AppStorage(themeModeKey) private var themeModeRaw = ThemeMode.system.rawValue
+    @Environment(\.scenePhase) private var scenePhase
     private var themeMode: ThemeMode { ThemeMode(rawValue: themeModeRaw) ?? .system }
 
     var body: some View {
@@ -357,6 +358,11 @@ struct ContentView: View {
                 .tabItem { Label("설정", systemImage: "gearshape") }
         }
         .preferredColorScheme(themeMode.colorScheme)
+        .onAppear { Usage.shared.configure(api: Db.api); Usage.shared.flush() }
+        // M1: 포그라운드/백그라운드 전환마다 모아둔 카드 사용량 배치를 flush(개인 도구라 즉시 전송 불요).
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active || phase == .background { Usage.shared.flush() }
+        }
     }
 }
 

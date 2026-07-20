@@ -53,6 +53,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.Lifecycle
@@ -438,6 +439,8 @@ fun BriefingScreen(
         }
     }
 
+    // M1: 이 화면 안의 CollapsibleCard 펼침은 screen="briefing"으로 계측(기본 detail 대신).
+    CompositionLocalProvider(LocalUsageScreen provides "briefing") {
     Scaffold(
         topBar = {
             CompactHeader(title = "브리핑") {
@@ -695,6 +698,7 @@ fun BriefingScreen(
                 }
             }
         }
+    }
     }
 }
 

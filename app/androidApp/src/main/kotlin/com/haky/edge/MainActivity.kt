@@ -58,6 +58,8 @@ class MainActivity : ComponentActivity() {
         val prodUrl = BuildConfig.EDGE_BASE_URL.ifEmpty { "http://10.0.2.2:8080" }
         val baseUrl = if (BuildConfig.DEBUG && isEmulator) "http://10.0.2.2:8080" else prodUrl
         val api = EdgeApi(baseUrl = baseUrl, apiToken = BuildConfig.EDGE_API_TOKEN)
+        // M1: 카드 사용량 트래커 초기화(단일 사용자 전제). onResume마다 모아둔 배치를 flush.
+        com.haky.edge.ui.Usage.configure(api, this)
 
         setContent {
             var themeMode by remember { mutableStateOf(AppPrefs.getTheme(this@MainActivity)) }
@@ -95,5 +97,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        com.haky.edge.ui.Usage.flush()
     }
 }

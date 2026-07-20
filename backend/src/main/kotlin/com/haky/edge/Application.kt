@@ -87,6 +87,7 @@ import com.haky.edge.routes.weeklyReviewRoutes
 import com.haky.edge.routes.eventReminderRoutes
 import com.haky.edge.routes.costSummaryRoutes
 import com.haky.edge.routes.signalFiredRoutes
+import com.haky.edge.routes.usageEventRoutes
 import com.haky.edge.routes.commentSmokeRoutes
 import com.haky.edge.routes.signalRoutes
 import com.haky.edge.routes.overseasRoutes
@@ -246,6 +247,8 @@ fun Application.module() {
     val stanceLog = com.haky.edge.ai.StanceLog()
     // N3-a 신호 발화 로그 — AnalysisService(deltaLines 재료)와 SignalService가 공유.
     val signalFiredLog = com.haky.edge.slack.SignalFiredLog()
+    // M1 카드 사용량 로그(단일 사용자 전제) — 30일 후 펼침 0 카드로 K2~K4 제거·강등 결정.
+    val usageEventLog = com.haky.edge.usage.UsageEventLog()
     val analysis = AnalysisService(kis, toss, naver, master, claude, dart, naverTargetPrice, targetPriceLog, macroImpact, krxShortSelling, valuationBand, peerValuation, backtest, eventSync, modelRouter, slack, aiCommentChannel, this,
         // Q&A 일일 상한 — 자유 질문은 캐시가 없어 호출당 풀 LLM 비용. env로 재조정 가능.
         askDailyLimit = System.getenv("ASK_DAILY_LIMIT")?.toIntOrNull() ?: 200,
@@ -413,6 +416,7 @@ fun Application.module() {
             costSummaryRoutes(costSummary)
             signalRoutes(signalService)
             signalFiredRoutes(signalFiredLog)
+            usageEventRoutes(usageEventLog)
             commentSmokeRoutes(commentSmoke)
             slackCommandRoutes(slackVerifier, slackCommand, cloudTasks)
         }
