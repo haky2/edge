@@ -70,8 +70,8 @@ data class JudgmentComparison(
  * - 채점은 **초과수익(종목−코스피)** — 상승장에선 아무 매수나 맞아 보이는 기저율 함정 통제
  *   (catalyst-validation·MoodLog 기저율 교훈). 원수익률은 참고 병기.
  * - 매수 적중 = 초과수익 > 0, 매도 적중 = 초과수익 < 0.
- * - AI 스탠스도 **같은 잣대로 재채점**해서 비교(StanceStats의 원수익률·중립밴드 채점과 기준이
- *   다름 — 여기서는 비교 공정성이 우선). 중립 스탠스는 방향이 없어 대조에서 제외.
+ * - AI 스탠스도 **같은 잣대로 재채점**해서 비교(X4부터 StanceStats도 동일한 초과수익 채점 —
+ *   집계 범위만 다름). 중립 스탠스는 방향이 없어 대조에서 제외.
  * - 스탠스 매칭: 행동일 D 기준 [D-7일, D] 안 같은 종목 마지막 유효 스탠스(미상 제외, 모드 무관).
  *   스탠스 로그가 2026-07 시작이라 그 전 매매는 전부 "무참조" 버킷 — 결측이지 불일치가 아니다.
  * - 같은 (code, date, action)은 1건으로 접는다(분할 매수는 판단 1회).
@@ -105,21 +105,7 @@ class JudgmentComparisonService(
         return result
     }
 
-    /** 코스피 일별 종가(오래된 순) — CatalystValidationService와 동일한 90일 청크 병합. */
-    private suspend fun fetchKospiAsc(minYmd: String): List<IndexPoint> {
-        val fmt = DateTimeFormatter.BASIC_ISO_DATE
-        var start = runCatching { LocalDate.parse(minYmd, fmt) }.getOrElse { LocalDate.now(KST) }.minusDays(30)
-        val end = LocalDate.now(KST)
-        val merged = mutableMapOf<String, IndexPoint>()
-        while (start <= end) {
-            val chunkEnd = minOf(start.plusDays(89), end)
-            runCatching {
-                kis.getSectorIndexChartRange("0001", start.format(fmt), chunkEnd.format(fmt))
-            }.getOrElse { emptyList() }.forEach { merged[it.date] = it }
-            start = chunkEnd.plusDays(1)
-        }
-        return merged.values.sortedBy { it.date }
-    }
+    private suspend fun fetchKospiAsc(minYmd: String): List<IndexPoint> = fetchKospiCloseAsc(kis, minYmd)
 
     companion object {
         private val KST = ZoneId.of("Asia/Seoul")
@@ -248,8 +234,8 @@ class JudgmentComparisonService(
                     aiPositiveN = aiPosN, aiPositiveRoseN = aiPosRoseN,
                 ) else null,
                 pendingTrades = pending,
-                caveat = "20거래일 초과수익(종목−코스피) 기준. AI 스탠스도 같은 잣대로 재채점해 " +
-                    "스탠스 통계 화면(원수익률 기준)과 수치가 다를 수 있음. n<15 버킷은 참고 수준 — " +
+                caveat = "20거래일 초과수익(종목−코스피) 기준 — 스탠스 통계 화면과 동일 잣대(X4 통일, " +
+                    "여기는 방향 대조라 중립 스탠스만 제외). n<15 버킷은 참고 수준 — " +
                     "매매·스탠스 모두 관심종목 유니버스라 상대 비교만 유효. " +
                     "스탠스 기록 시작(2026-07) 이전 매매는 무참조로 분류(결측이지 불일치 아님).",
             )
@@ -258,4 +244,24 @@ class JudgmentComparisonService(
         internal fun round1(v: Double) = kotlin.math.round(v * 10) / 10.0
         internal fun round2(v: Double) = kotlin.math.round(v * 100) / 100.0
     }
+}
+
+/**
+ * 코스피(0001) 일별 종가(오래된 순) — 90일 청크 병합. minYmd 30일 전부터 오늘까지.
+ * JudgmentComparison·StanceStats가 공유(초과수익 채점의 대조군 소스 단일화).
+ */
+internal suspend fun fetchKospiCloseAsc(kis: KisClient, minYmd: String): List<IndexPoint> {
+    val kst = ZoneId.of("Asia/Seoul")
+    val fmt = DateTimeFormatter.BASIC_ISO_DATE
+    var start = runCatching { LocalDate.parse(minYmd, fmt) }.getOrElse { LocalDate.now(kst) }.minusDays(30)
+    val end = LocalDate.now(kst)
+    val merged = mutableMapOf<String, IndexPoint>()
+    while (start <= end) {
+        val chunkEnd = minOf(start.plusDays(89), end)
+        runCatching {
+            kis.getSectorIndexChartRange("0001", start.format(fmt), chunkEnd.format(fmt))
+        }.getOrElse { emptyList() }.forEach { merged[it.date] = it }
+        start = chunkEnd.plusDays(1)
+    }
+    return merged.values.sortedBy { it.date }
 }

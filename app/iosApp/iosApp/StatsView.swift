@@ -157,32 +157,47 @@ struct StatsView: View {
     private func stanceSection(_ ss: StanceStats) -> some View {
         Section {
             if let overall = ss.overall {
-                HStack {
-                    Text("전체").font(.subheadline)
-                    Spacer()
-                    Text("\(Int(overall.accuracyPct))%")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundColor(overall.accuracyPct >= 50 ? .red : .blue)
-                    Text("(\(overall.correct)/\(overall.n))")
-                        .font(.caption).foregroundColor(.secondary)
-                }
+                stanceBucketRow(overall, refN: Int(ss.refN), prominent: true)
                 ForEach(Array(ss.byStance.enumerated()), id: \.offset) { _, b in
-                    HStack {
-                        Text(b.label).font(.caption)
-                        Spacer()
-                        Text("\(Int(b.accuracyPct))% (\(b.correct)/\(Int(b.n)))")
-                            .font(.caption).foregroundColor(.secondary)
-                    }
+                    stanceBucketRow(b, refN: Int(ss.refN), prominent: false)
                 }
             }
             if ss.pending > 0 {
                 Text("채점 대기 \(ss.pending)건 (생성 후 \(ss.horizonDays)거래일 경과 시 채점)")
                     .font(.caption2).foregroundColor(.secondary)
             }
-            Text("종목 분석 코멘트의 시각(긍정/중립/부정)이 \(ss.horizonDays)거래일 뒤 실제 수익률과 맞았는지예요. 브리핑의 시장 방향 적중률과는 다른 지표예요.")
-                .font(.caption2).foregroundColor(.secondary)
         } header: {
             Text("종목 코멘트 적중률")
+        } footer: {
+            // 백엔드 caveat(X4: 초과수익 잣대·기저율·중립 밴드 구조 불리)이 단일 소스. 구버전 응답 폴백만 로컬 문구.
+            Text(ss.caveat.isEmpty
+                 ? "종목 분석 코멘트의 시각(긍정/중립/부정)이 \(ss.horizonDays)거래일 뒤 실제 수익률과 맞았는지예요."
+                 : ss.caveat)
+                .font(.caption2)
+        }
+    }
+
+    /// 버킷 1행 — 색은 기저율 상대(n≥refN일 때만): 기저율 이상 = 정보 있음(빨강), 미만 = 파랑. n<refN은 회색 '참고'.
+    private func stanceBucketRow(_ b: StanceBucket, refN: Int, prominent: Bool) -> some View {
+        let n = Int(b.n)
+        let base = b.baseRatePct?.doubleValue
+        let isRef = n < refN
+        let color: Color = isRef ? .secondary
+            : (base.map { b.accuracyPct >= $0 } ?? (b.accuracyPct >= 50) ? .red : .blue)
+        return HStack(spacing: 4) {
+            Text(b.label).font(prominent ? .subheadline : .caption)
+            if isRef {
+                Text("참고 n<\(refN)").font(.caption2).foregroundColor(Color(.tertiaryLabel))
+            }
+            Spacer()
+            Text("\(Int(b.accuracyPct))%")
+                .font(prominent ? .subheadline.weight(.bold) : .caption.weight(.semibold))
+                .foregroundColor(color)
+            Text("(\(b.correct)/\(n))")
+                .font(.caption).foregroundColor(.secondary)
+            if let base = base {
+                Text("· 기저 \(Int(base))%").font(.caption2).foregroundColor(.secondary)
+            }
         }
     }
 

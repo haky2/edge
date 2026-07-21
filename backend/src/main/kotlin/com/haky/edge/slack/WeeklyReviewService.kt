@@ -170,7 +170,7 @@ class WeeklyReviewService(
 
         // ── Claude 회고(해석만) ────────────────────────────────────────────
         val facts = buildFacts(monday, friday, kospiWeekPct, weekMoods, moodEntries.total, moodEntries.correct,
-            weekly, weekStances, transitions, stats?.overall?.let { Triple(it.n, it.correct, it.accuracyPct) }, targetChanges, upcoming, nameOf)
+            weekly, weekStances, transitions, stats?.overall, targetChanges, upcoming, nameOf)
         val model = modelRouter.modelFor(ModelRouter.WEEKLY_REVIEW)
         val comment = runCatching { claude.complete(WEEKLY_PROMPT, facts, maxTokens = 1500, modelOverride = model) }
             .getOrElse { "" }
@@ -192,7 +192,7 @@ class WeeklyReviewService(
         kospiWeekPct: Double?, weekMoods: List<MoodLogEntry>, moodTotal: Int, moodCorrect: Int,
         weekly: List<Triple<String, String, Double?>>,
         weekStances: List<StanceEntry>, transitions: List<StanceTransition>,
-        stanceOverall: Triple<Int, Int, Double>?,
+        stanceOverall: com.haky.edge.ai.StanceBucket?,
         targetChanges: List<Triple<String, Long, Long>>,
         upcoming: List<com.haky.edge.macro.MarketEvent>,
         nameOf: Map<String, String>,
@@ -227,8 +227,9 @@ class WeeklyReviewService(
                     appendLine("  · ${nameOf[t.code] ?: t.code}(${modeKo(t.mode)}): ${t.from} → ${t.to} (${koreanDate(t.date)})")
                 }
             }
-            stanceOverall?.let { (n, correct, pct) ->
-                appendLine("- 스탠스 누적 채점(20거래일 후 수익률 대조): $correct/$n 적중(${"%.0f".format(pct)}%)")
+            stanceOverall?.let { b ->
+                val base = b.baseRatePct?.let { " · 기저율(항상 같은 스탠스 가정) ${"%.0f".format(it)}% — 이보다 높아야 정보 있음" } ?: ""
+                appendLine("- 스탠스 누적 채점(20거래일 코스피 대비 초과수익 대조): ${b.correct}/${b.n} 적중(${"%.0f".format(b.accuracyPct)}%)$base")
             }
             appendLine()
         }

@@ -275,8 +275,8 @@ fun Application.module() {
     // F2 수주 공시 임팩트 통계 — 백필(2-1) + forward return 통계(2-2). LLM 0.
     val catalystImpact = com.haky.edge.ai.CatalystImpactService(dart, dailyHistory, master, catalystEventLog)
     val analog = com.haky.edge.ai.AnalogService(dailyHistory, master)
-    // F6 채점 — 스탠스 로그 × 일봉 이력(F1 캐시 재사용) 20거래일 후 수익률 대조.
-    val stanceStats = com.haky.edge.ai.StanceStatsService(stanceLog, dailyHistory)
+    // F6 채점(X4 개정) — 스탠스 로그 × 일봉 이력(F1 캐시) × 코스피, 20거래일 초과수익 대조(판단대조와 동일 잣대).
+    val stanceStats = com.haky.edge.ai.StanceStatsService(stanceLog, dailyHistory, kis)
     // F3 실적 프리뷰 — run-rate YoY + 과거 발표 반응 통계(DART 접수일 × F1 일봉 캐시).
     val earningsPreview = com.haky.edge.ai.EarningsPreviewService(dart, dailyHistory, master)
     // F5 프리모템 — 매수 사유 → 무효화 조건 구조화(Claude 1회/기록). 감시는 signals-scan이 담당.
