@@ -5,14 +5,17 @@ import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -125,7 +128,7 @@ class ClaudeClient(
                 })
             }
 
-            val resp = http.post("https://api.anthropic.com/v1/messages") {
+            val resp = postWithRetry {
                 header("x-api-key", apiKey)
                 header("anthropic-version", "2023-06-01")
                 contentType(ContentType.Application.Json)
@@ -134,6 +137,7 @@ class ClaudeClient(
             if (!resp.status.isSuccess()) {
                 throw ClaudeException("Claude web_search ${resp.status}: ${resp.bodyAsText().take(300)}")
             }
+            runCatching { usageTracker?.recordWebSearch() }
 
             val body = wsJson.parseToJsonElement(resp.bodyAsText()).let { it as? JsonObject }
                 ?: throw ClaudeException("Claude web_search 응답이 JSON 객체가 아닙니다")
@@ -197,6 +201,16 @@ class ClaudeClient(
         return WebSearchResult(allText.toString().trim(), sources)
     }
 
+    /** 429/529 일 때 고정 딜레이 후 1회 재시도. 나머지 오류는 그대로 반환. */
+    private suspend fun postWithRetry(block: HttpRequestBuilder.() -> Unit): HttpResponse {
+        val resp = http.post("https://api.anthropic.com/v1/messages", block)
+        if (resp.status.value in RETRY_STATUS_CODES) {
+            delay(RETRY_DELAY_MS)
+            return http.post("https://api.anthropic.com/v1/messages", block)
+        }
+        return resp
+    }
+
     /** Messages API 1회 호출 → (텍스트, stop_reason). */
     private suspend fun callOnce(
         system: List<ClaudeSystemBlock>,
@@ -205,7 +219,7 @@ class ClaudeClient(
         modelOverride: String? = null,
     ): Pair<String, String?> {
         val req = ClaudeRequest(model = modelOverride ?: model, maxTokens = maxTokens, system = system, messages = messages)
-        val resp = http.post("https://api.anthropic.com/v1/messages") {
+        val resp = postWithRetry {
             header("x-api-key", apiKey)
             header("anthropic-version", "2023-06-01")
             contentType(ContentType.Application.Json)
@@ -233,6 +247,9 @@ class ClaudeClient(
         const val MAX_CONTINUATIONS = 3
         // web search multi-turn 상한. 검색 1~2회면 충분하나 여유 있게.
         const val MAX_SEARCH_TURNS = 5
+        // 429=Rate Limit, 529=Overloaded. 고정 5초 1회 재시도 (스케줄 잡 attempt-deadline 120~300s 안에서 충분).
+        val RETRY_STATUS_CODES = setOf(429, 529)
+        const val RETRY_DELAY_MS = 5_000L
     }
 }
 

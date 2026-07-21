@@ -31,16 +31,20 @@ class CostSummaryService(
                        usage.cacheReadTokens    * 0.30) / 1_000_000.0
         val costKrw = (costUsd * 1_400).toLong()
 
+        val totalTokens = usage.inputTokens + usage.cacheCreatedTokens + usage.cacheReadTokens
+        val cacheHitPct = if (totalTokens > 0) usage.cacheReadTokens * 100.0 / totalTokens else 0.0
         val text = buildString {
             appendLine("💰 *Claude 일일 사용량 — ${today.monthValue}/${today.dayOfMonth}*")
             appendLine()
             appendLine("요청 *${usage.requests}건*")
+            if (usage.webSearches > 0)
+                appendLine("웹검색 *${usage.webSearches}건* (별도 과금)")
             appendLine("입력 ${"%,d".format(usage.inputTokens)} tok")
             appendLine("출력 ${"%,d".format(usage.outputTokens)} tok")
             if (usage.cacheCreatedTokens > 0)
                 appendLine("캐시 생성 ${"%,d".format(usage.cacheCreatedTokens)} tok")
             if (usage.cacheReadTokens > 0)
-                appendLine("캐시 읽기 ${"%,d".format(usage.cacheReadTokens)} tok")
+                appendLine("캐시 읽기 ${"%,d".format(usage.cacheReadTokens)} tok (적중률 ${"%.0f".format(cacheHitPct)}%)")
             appendLine()
             appendLine("추정 비용 *\$${String.format("%.4f", costUsd)}* (~${"%,d".format(costKrw)}원)")
         }.trim()

@@ -165,6 +165,7 @@ fun Application.module() {
         opsChannel = opsChannel,
         scope = this,
     )
+    com.haky.edge.ai.FileCache.opsAlerter = opsAlerter
 
     install(StatusPages) {
         // 예외를 한 곳에서 잡아 일관된 에러 JSON으로 변환한다(각 라우트에서 try/catch 반복 안 함).

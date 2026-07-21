@@ -88,7 +88,7 @@ scheduler_upsert() {
   # 같은 인자를 양쪽에 넘기면 update가 깨진다 → 항상 create 문법만 쓰도록 delete+create.
   # 잡은 스케줄대로만 발화하므로 재배포 중 잠깐 없어도 무방하다.
   gcloud scheduler jobs delete "$JOB" --project="$PROJECT" --location="$REGION" --quiet 2>/dev/null || true
-  gcloud scheduler jobs create http "$JOB" "$@" --project="$PROJECT" --location="$REGION"
+  gcloud scheduler jobs create http "$JOB" "$@" --project="$PROJECT" --location="$REGION" --max-retry-attempts=2
 }
 
 # mood-log-morning: 매주 월~금 오전 5:00 KST — 코스피 방향 예측 기록

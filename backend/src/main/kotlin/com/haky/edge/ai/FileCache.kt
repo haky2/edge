@@ -1,5 +1,6 @@
 package com.haky.edge.ai
 
+import com.haky.edge.slack.OpsAlerter
 import com.haky.edge.util.writeTextAtomic
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
@@ -7,6 +8,7 @@ import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.concurrent.ConcurrentHashMap
 
 /** 거래일 기준 타임존. 서버는 UTC로 도므로 반드시 KST로 날짜를 계산해야 한국 오전(09시 이전)에 전날로 안 밀린다. */
 private val SEOUL_ZONE = ZoneId.of("Asia/Seoul")
@@ -54,6 +56,12 @@ class FileCache<T>(
     fun put(key: String, value: T) {
         runCatching {
             fileFor(key).writeTextAtomic(json.encodeToString(serializer, value))
+        }.onFailure { e ->
+            // GCS FUSE ATOMIC_MOVE 실패 등 — 프로세스당 최초 1회만 알림(알림 폭주 방지).
+            val oa = Companion.opsAlerter ?: return@onFailure
+            if (Companion.alertedPrefixes.add(prefix)) {
+                oa.alertCustom("filecache-put:$prefix", "FileCache.put 실패($prefix): ${e.message?.take(200)}")
+            }
         }
     }
 
@@ -61,5 +69,12 @@ class FileCache<T>(
         // 파일명에 쓸 수 없는 문자 치환
         val safe = key.replace(Regex("[^a-zA-Z0-9_\\-]"), "_")
         return File(dir, "$safe.json")
+    }
+
+    companion object {
+        /** Application.kt 에서 OpsAlerter 생성 직후 1회 설정. */
+        var opsAlerter: OpsAlerter? = null
+        /** prefix 단위 "최초 1회" 알림 추적 — 프로세스 재시작 시 리셋. */
+        internal val alertedPrefixes: MutableSet<String> = ConcurrentHashMap.newKeySet()
     }
 }

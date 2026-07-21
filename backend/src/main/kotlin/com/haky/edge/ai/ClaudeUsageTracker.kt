@@ -15,6 +15,7 @@ data class DailyUsage(
     val outputTokens: Long = 0,
     val cacheReadTokens: Long = 0,
     val cacheCreatedTokens: Long = 0,
+    val webSearches: Int = 0,
 )
 
 /**
@@ -49,6 +50,17 @@ class ClaudeUsageTracker(dataDir: String) {
             cacheCreatedTokens = current.cacheCreatedTokens + cacheCreated,
         )
         f.writeTextAtomic(json.encodeToString(DailyUsage.serializer(), updated))
+    }
+
+    @Synchronized
+    fun recordWebSearch() {
+        val date = LocalDate.now(KST).toString()
+        val f = file(date)
+        val current = if (f.exists()) {
+            runCatching { json.decodeFromString(DailyUsage.serializer(), f.readText()) }
+                .getOrDefault(DailyUsage(date))
+        } else DailyUsage(date)
+        f.writeTextAtomic(json.encodeToString(DailyUsage.serializer(), current.copy(webSearches = current.webSearches + 1)))
     }
 
     private fun file(date: String = LocalDate.now(KST).toString()) = File(dir, "$date.json")
