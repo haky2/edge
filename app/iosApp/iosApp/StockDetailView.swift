@@ -25,12 +25,10 @@ struct StockDetailView: View {
     @State private var logEntries: [ActionLogEntry] = []  // 이 종목 행동 로그
     @State private var swipedLogId: Int64? = nil
     @State private var earningsEntry: EarningsEntry?
-    @State private var stockSignal: StockImpact?
     @State private var shortSelling: ShortSellingSummary?
     @State private var shortSellingHelpExpanded = false
     @State private var valuationBand: ValuationBand?
-    @State private var peerValuation: PeerValuation?  // 동종 상대 밸류(밸류-C)
-    @State private var peerExpanded = false
+    @State private var peerValuation: PeerValuation?  // 동종 상대 밸류 → U2에서 밸류에이션 카드로 통합
     @State private var backtest: Backtest?          // 신호별 익일 적중률(검증된 신호)
     @State private var flowSensitivity: FlowSensitivity?  // 수급-가격 민감도
     @State private var dividendCard: DividendCard?   // DART 배당 카드(E2)
@@ -45,14 +43,12 @@ struct StockDetailView: View {
     @State private var deepResearchError = false     // 실패·일일 한도 안내(무피드백 방지)
     @State private var deepResearchExpanded = false
     @State private var earningsExpanded = false
-    @State private var signalExpanded = false
     @State private var indicatorHelpExpanded = false
     @State private var valuationHelpExpanded = false
     @State private var analysisExpanded = false      // 지표 해석 (기본 접힘)
-    @State private var valuationExpanded = false     // 밸류에이션 히스토리 (기본 접힘)
+    @State private var valuationExpanded = false     // 밸류에이션 (역사밴드+동종, 기본 접힘)
     @State private var backtestExpanded = false      // 검증된 신호 (기본 접힘)
     @State private var analogExpanded = false        // 유사 국면 통계 (기본 접힘)
-    @State private var flowSensExpanded = false      // 수급-가격 민감도 (기본 접힘)
     @State private var technicalExpanded = false     // 기술적 지표 (기본 접힘)
     @State private var flowExpanded = false          // 수급 (기본 접힘)
     @State private var shortSellingExpanded = false  // 공매도 동향 (기본 접힘)
@@ -117,10 +113,10 @@ struct StockDetailView: View {
                     // ── 심화 분석 (기본 접힘) ──
                     zoneHeader("심화 분석")
                     analysisCard(q)
-                    if let band = valuationBand { valuationBandCard(band) }
-                    if let pv = peerValuation { peerValuationCard(pv) }
+                    // U2: 밸류에이션 히스토리 + 동종 상대 밸류를 한 카드로 통합.
+                    if valuationBand != nil || peerValuation != nil { valuationCard(valuationBand, peerValuation) }
                     if let bt = backtest { backtestCard(bt) }
-                    if let fs = flowSensitivity { flowSensitivityCard(fs) }
+                    // U2: 수급-가격 민감도는 '수급' 카드 하단으로 흡수(독립 카드 제거).
                     if let ss = shortSelling { shortSellingCard(ss) }
                     if let div = dividendCard { dividendCardView(div) }
                     if let an = analog, an.n > 0 { analogCard(an) }
@@ -128,9 +124,9 @@ struct StockDetailView: View {
                     ProgressView().padding(.top, 40)
                 }
                 // ── 외부 환경 (기본 접힘) ──
+                // U2: '지표 영향' 카드 제거 — 브리핑 '내 종목 영향'과 중복, 매크로발 변화는 델타 스트립이 커버.
                 zoneHeader("외부 환경")
                 earningsDueDateSection()
-                macroSignalSection()
                 // ── 내 기록 ──
                 zoneHeader("내 기록")
                 if let pm = premortem { premortemCard(pm) }
@@ -1457,9 +1453,38 @@ struct StockDetailView: View {
                 }
             }
             .padding(.bottom, 6)
+            // U2: 수급-가격 민감도 흡수 — "외인·기관이 살수록 이 종목이 같이 올랐나" 상관을 수급 카드 안에서.
+            flowSensSection()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardStyle()
+    }
+
+    // U2 수급-가격 민감도 서브섹션(구 독립 카드 → '수급' 카드 하단으로 흡수). 데이터 없으면 렌더 안 함.
+    @ViewBuilder
+    private func flowSensSection() -> some View {
+        if let fs = flowSensitivity {
+            let shown = fs.items.filter { $0.n > 0 }
+            if !shown.isEmpty {
+                let days = Int(shown.first?.n ?? 0)
+                Divider().padding(.vertical, 2)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("수급-가격 민감도").font(.caption.weight(.semibold)).foregroundColor(.secondary)
+                        Spacer()
+                        Text("최근 \(days)거래일").font(.caption2).foregroundColor(.secondary)
+                    }
+                    Text("외인·기관이 많이 살수록 이 종목 주가가 그날 같이 올랐나요?")
+                        .font(.caption2).foregroundColor(.secondary)
+                    ForEach(Array(shown.enumerated()), id: \.offset) { idx, fc in
+                        if idx > 0 { Divider() }
+                        flowCorrRow(fc)
+                    }
+                    Text("수급은 전일까지 장후 확정값 기준이에요. 과거 통계라 미래를 보장하지 않아요.")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+            }
+        }
     }
 
     private var flowChartData: [FlowEntry] {
@@ -1580,48 +1605,78 @@ struct StockDetailView: View {
     }
 
     // 밸류에이션 히스토리 밴드 카드 — PER/PBR 현재값을 과거 N년 밴드 위에 표시
-    private func valuationBandCard(_ band: ValuationBand) -> some View {
-        let showPer = band.perCurrent > 0 && band.perMax > band.perMin
-        let showPbr = band.pbrCurrent > 0 && band.pbrMax > band.pbrMin
-        guard showPer || showPbr else { return AnyView(EmptyView()) }
-        return AnyView(
+    // U2 통합 밸류에이션 카드 — 역사 밴드(밸류에이션 히스토리) + 동종 상대 밸류를 한 헤더 아래 세그먼트로.
+    @ViewBuilder
+    private func valuationCard(_ band: ValuationBand?, _ pv: PeerValuation?) -> some View {
+        let showBandPer = (band?.perCurrent ?? 0) > 0 && (band?.perMax ?? 0) > (band?.perMin ?? 0)
+        let showBandPbr = (band?.pbrCurrent ?? 0) > 0 && (band?.pbrMax ?? 0) > (band?.pbrMin ?? 0)
+        let hasBand = showBandPer || showBandPbr
+        let hasPeer = (pv?.per != nil) || (pv?.pbr != nil)
+        if hasBand || hasPeer {
+            // 접힘 상태 결론 배지 — 역사 밴드 위치(상단권/하단권)를 우선, 없으면 동종 대비 라벨.
+            let bandBadge: String? = showBandPer ? band?.perLabel : (showBandPbr ? band?.pbrLabel : nil)
+            let peerBadge: String? = pv?.per?.label ?? pv?.pbr?.label
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Text("밸류에이션 히스토리").font(.subheadline.weight(.semibold))
+                    Text("밸류에이션").font(.subheadline.weight(.semibold))
                     Spacer()
-                    Text("\(band.yearsUsed)년 밴드").font(.caption2).foregroundColor(.secondary)
+                    if let bl = bandBadge {
+                        Text(bl).font(.caption2)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(valuationBandColor(bl).opacity(0.15))
+                            .foregroundColor(valuationBandColor(bl)).cornerRadius(8)
+                    } else if let pl = peerBadge {
+                        Text(pl).font(.caption2)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(peerValuationColor(pl).opacity(0.15))
+                            .foregroundColor(peerValuationColor(pl)).cornerRadius(8)
+                    }
                     Image(systemName: valuationExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption).foregroundColor(.secondary)
                 }
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { valuationExpanded.toggle() }; if valuationExpanded { Usage.shared.expand("detail", "밸류에이션 히스토리") } }
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { valuationExpanded.toggle() }; if valuationExpanded { Usage.shared.expand("detail", "밸류에이션") } }
                 if valuationExpanded {
                     Divider()
                     VStack(alignment: .leading, spacing: 12) {
-                        if showPer {
-                            valuationBandRow(
-                                name: "PER", current: band.perCurrent,
-                                bandMin: band.perMin, bandMax: band.perMax, median: band.perMedian,
-                                percentile: Int(band.perPercentile), label: band.perLabel
-                            )
+                        if hasBand, let b = band {
+                            Text("역사 밴드 · \(b.yearsUsed)년").font(.caption.weight(.semibold)).foregroundColor(.secondary)
+                            if showBandPer {
+                                valuationBandRow(
+                                    name: "PER", current: b.perCurrent,
+                                    bandMin: b.perMin, bandMax: b.perMax, median: b.perMedian,
+                                    percentile: Int(b.perPercentile), label: b.perLabel
+                                )
+                            }
+                            if showBandPbr {
+                                if showBandPer { Divider() }
+                                valuationBandRow(
+                                    name: "PBR", current: b.pbrCurrent,
+                                    bandMin: b.pbrMin, bandMax: b.pbrMax, median: b.pbrMedian,
+                                    percentile: Int(b.pbrPercentile), label: b.pbrLabel
+                                )
+                            }
+                            Text("연도말 종가 기준, 상장주식수 근사치 — 분할·증자 시 오차 가능")
+                                .font(.caption2).foregroundColor(.secondary)
                         }
-                        if showPbr {
-                            if showPer { Divider() }
-                            valuationBandRow(
-                                name: "PBR", current: band.pbrCurrent,
-                                bandMin: band.pbrMin, bandMax: band.pbrMax, median: band.pbrMedian,
-                                percentile: Int(band.pbrPercentile), label: band.pbrLabel
-                            )
+                        if hasPeer, let p = pv {
+                            if hasBand { Divider() }
+                            Text("동종 대비 · \(p.clusterLabel) 경쟁사 \(p.peerCount)곳").font(.caption.weight(.semibold)).foregroundColor(.secondary)
+                            if let m = p.per { peerMetricRow(name: "PER", m: m) }
+                            if let m = p.pbr {
+                                if p.per != nil { Divider() }
+                                peerMetricRow(name: "PBR", m: m)
+                            }
+                            Text("같은 사업 경쟁사 중앙값과 비교 — KIS 기준값, 상대 위치 참고용")
+                                .font(.caption2).foregroundColor(.secondary)
                         }
-                        Text("연도말 종가 기준, 상장주식수 근사치 — 분할·증자 시 오차 가능")
-                            .font(.caption2).foregroundColor(.secondary)
                     }
                     .padding(.top, 8).padding(.bottom, 4)
                 }
             }
             .cardStyle()
-        )
+        }
     }
 
     private func valuationBandRow(name: String, current: Double, bandMin: Double, bandMax: Double, median: Double, percentile: Int, label: String) -> some View {
@@ -1679,39 +1734,6 @@ struct StockDetailView: View {
         case "역사적 상단권":   return .red
         default:               return .orange   // 중간권·계산 불가
         }
-    }
-
-    // 동종(peer) 상대 밸류 카드 — 같은 사업 경쟁사 중앙값 대비 PER/PBR 위치(밸류-C)
-    private func peerValuationCard(_ pv: PeerValuation) -> some View {
-        guard pv.per != nil || pv.pbr != nil else { return AnyView(EmptyView()) }
-        return AnyView(
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("동종 상대 밸류").font(.subheadline.weight(.semibold))
-                    Spacer()
-                    Text("\(pv.clusterLabel) · 경쟁사 \(pv.peerCount)곳").font(.caption2).foregroundColor(.secondary)
-                    Image(systemName: peerExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption).foregroundColor(.secondary)
-                }
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { peerExpanded.toggle() }; if peerExpanded { Usage.shared.expand("detail", "동종 상대 밸류") } }
-                if peerExpanded {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 12) {
-                        if let m = pv.per { peerMetricRow(name: "PER", m: m) }
-                        if let m = pv.pbr {
-                            if pv.per != nil { Divider() }
-                            peerMetricRow(name: "PBR", m: m)
-                        }
-                        Text("같은 사업 경쟁사 중앙값과 비교 — KIS 기준값, 상대 위치 참고용")
-                            .font(.caption2).foregroundColor(.secondary)
-                    }
-                    .padding(.top, 8).padding(.bottom, 4)
-                }
-            }
-            .cardStyle()
-        )
     }
 
     private func peerMetricRow(name: String, m: PeerMetric) -> some View {
@@ -2068,41 +2090,6 @@ struct StockDetailView: View {
     }
 
     // 수급-가격 민감도 카드 — 외인/기관 순매수량 vs 당일 등락률 순위 상관(Spearman — 아웃라이어 강건)
-    private func flowSensitivityCard(_ fs: FlowSensitivity) -> some View {
-        let shown = fs.items.filter { $0.n > 0 }
-        guard !shown.isEmpty else { return AnyView(EmptyView()) }
-        let days = Int(shown.first?.n ?? 0)
-        return AnyView(
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("수급-가격 민감도").font(.subheadline.weight(.semibold))
-                    Spacer()
-                    Text("최근 \(days)거래일 기준").font(.caption2).foregroundColor(.secondary)
-                    Image(systemName: flowSensExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption).foregroundColor(.secondary)
-                }
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { flowSensExpanded.toggle() }; if flowSensExpanded { Usage.shared.expand("detail", "수급-가격 민감도") } }
-                if flowSensExpanded {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("외인·기관이 많이 살수록 이 종목 주가가 그날 같이 올랐나요?")
-                            .font(.caption2).foregroundColor(.secondary)
-                        ForEach(Array(shown.enumerated()), id: \.offset) { idx, fc in
-                            if idx > 0 { Divider() }
-                            flowCorrRow(fc)
-                        }
-                        Text("수급은 전일까지 장후 확정값 기준이에요. 과거 통계라 미래를 보장하지 않아요.")
-                            .font(.caption2).foregroundColor(.secondary)
-                    }
-                    .padding(.top, 8).padding(.bottom, 4)
-                }
-            }
-            .cardStyle()
-        )
-    }
-
     private func flowCorrRow(_ fc: FlowCorrelation) -> some View {
         let r = fc.r
         let confident = fc.confident
@@ -2598,71 +2585,6 @@ struct StockDetailView: View {
 
     // 지표 영향 — 접기 섹션 (섹터 + 지표별 우호/부담)
     @ViewBuilder
-    private func macroSignalSection() -> some View {
-        if let sig = stockSignal {
-            VStack(spacing: 0) {
-                HStack(spacing: 6) {
-                    Image(systemName: "chart.line.uptrend.xyaxis").foregroundColor(.teal)
-                    Text("지표 영향").font(.subheadline.weight(.semibold))
-                    Spacer()
-                    if sig.net != "-" { netBadgeDetail(sig.net) }
-                    Image(systemName: signalExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption).foregroundColor(.secondary)
-                }
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { signalExpanded.toggle() }; if signalExpanded { Usage.shared.expand("detail", "지표 영향") } }
-                if signalExpanded {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("섹터: \(sig.sectorLabel)").font(.caption).foregroundColor(.secondary)
-                            Spacer()
-                            netBadgeDetail(sig.net)
-                        }
-                        .padding(.top, 4)
-                        if sig.signals.isEmpty {
-                            Text("아직 지원하지 않는 종목이에요").font(.caption2).foregroundColor(.secondary)
-                        } else {
-                            ForEach(sig.signals, id: \.indicator) { s in
-                                let dir = Int(s.direction)
-                                HStack(alignment: .top, spacing: 6) {
-                                    Text(signalArrow(dir)).font(.caption2).foregroundColor(directionColor(dir))
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text("\(s.indicator) \(signedPct(s.changeRate))%").font(.caption2.weight(.medium))
-                                        Text(s.note).font(.caption2).foregroundColor(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding(.bottom, 8)
-                }
-            }
-            .cardStyle()
-        }
-    }
-
-    private func netBadgeDetail(_ net: String) -> some View {
-        let color: Color = net == "우호적" ? .red : (net == "부담" ? .blue : .secondary)
-        return Text(net)
-            .font(.caption2.weight(.semibold))
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(color.opacity(0.15))
-            .foregroundColor(color)
-            .clipShape(Capsule())
-    }
-
-    private func signalArrow(_ d: Int) -> String {
-        d > 0 ? "↑" : (d < 0 ? "↓" : "→")
-    }
-    private func directionColor(_ d: Int) -> Color {
-        d > 0 ? .red : (d < 0 ? .blue : .secondary)
-    }
-    private func signedPct(_ v: Double) -> String {
-        (v >= 0 ? "+" : "") + String(format: "%.2f", v)
-    }
-
     private func formattedDate8(_ d: String) -> String {
         guard d.count == 8 else { return d }
         return "\(d.prefix(4)).\(d.dropFirst(4).prefix(2)).\(d.suffix(2))"
@@ -2822,9 +2744,9 @@ struct StockDetailView: View {
         targetPriceInfo = try? await api.getTargetPrice(code: item.code)
         loading = false
 
-        // 실적·지표영향·공매도·밸류에이션은 느린 네트워크 이후 병렬 로드 (접기 기본이라 늦어도 무방)
+        // 실적·공매도·밸류에이션은 느린 네트워크 이후 병렬 로드 (접기 기본이라 늦어도 무방)
+        // U2: '지표 영향' 카드 제거로 getStockSignals 호출 제외(브리핑 '내 종목 영향'이 정본).
         async let earnsTask         = api.getEarnings(codes: [item.code])
-        async let signalTask        = api.getStockSignals(code: item.code)
         async let shortSellingTask  = api.getShortSelling(code: item.code)
         async let valuationBandTask = api.getValuationBand(code: item.code)
         async let peerValuationTask = api.getPeerValuation(code: item.code)
@@ -2834,7 +2756,6 @@ struct StockDetailView: View {
         async let premortemTask         = api.getPremortem(code: item.code)
         async let dividendTask          = api.getDividend(code: item.code)
         earningsEntry   = (try? await earnsTask)?.first
-        stockSignal     = try? await signalTask
         shortSelling    = try? await shortSellingTask
         valuationBand   = try? await valuationBandTask
         peerValuation   = try? await peerValuationTask

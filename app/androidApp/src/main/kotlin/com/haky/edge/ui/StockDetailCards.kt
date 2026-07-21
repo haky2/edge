@@ -345,21 +345,45 @@ private fun shortDate(raw: String): String {
 // ─── 밸류에이션 히스토리 밴드 ────────────────────────────
 
 @Composable
-internal fun ValuationBandCard(band: ValuationBand) {
-    val showPer = band.perCurrent > 0 && band.perMax > band.perMin
-    val showPbr = band.pbrCurrent > 0 && band.pbrMax > band.pbrMin
-    if (!showPer && !showPbr) return
+// U2 통합 밸류에이션 카드 — 역사 밴드(밸류에이션 히스토리) + 동종 상대 밸류를 한 헤더 아래 세그먼트로.
+internal fun ValuationCard(band: ValuationBand?, pv: PeerValuation?) {
+    val showBandPer = band != null && band.perCurrent > 0 && band.perMax > band.perMin
+    val showBandPbr = band != null && band.pbrCurrent > 0 && band.pbrMax > band.pbrMin
+    val hasBand = showBandPer || showBandPbr
+    val hasPeer = pv != null && (pv.per != null || pv.pbr != null)
+    if (!hasBand && !hasPeer) return
+    // 접힘 상태 결론 배지 — 역사 밴드 위치(상단권/하단권) 우선, 없으면 동종 대비 라벨.
+    val bandBadge = if (showBandPer) band!!.perLabel else if (showBandPbr) band!!.pbrLabel else null
+    val peerBadge = pv?.per?.label ?: pv?.pbr?.label
     CollapsibleCard(
-        title = "밸류에이션 히스토리",
-        trailing = { Text("${band.yearsUsed}년 밴드", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        title = "밸류에이션",
+        trailing = {
+            when {
+                bandBadge != null -> BadgePill(bandBadge, valuationBandColor(bandBadge))
+                peerBadge != null -> BadgePill(peerBadge, peerValuationColor(peerBadge))
+            }
+        },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (showPer) ValuationBandRow("PER", band.perCurrent, band.perMin, band.perMax, band.perMedian, band.perLabel)
-            if (showPbr) {
-                if (showPer) HorizontalDivider()
-                ValuationBandRow("PBR", band.pbrCurrent, band.pbrMin, band.pbrMax, band.pbrMedian, band.pbrLabel)
+            if (hasBand && band != null) {
+                Text("역사 밴드 · ${band.yearsUsed}년", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (showBandPer) ValuationBandRow("PER", band.perCurrent, band.perMin, band.perMax, band.perMedian, band.perLabel)
+                if (showBandPbr) {
+                    if (showBandPer) HorizontalDivider()
+                    ValuationBandRow("PBR", band.pbrCurrent, band.pbrMin, band.pbrMax, band.pbrMedian, band.pbrLabel)
+                }
+                Text("연도말 종가 기준, 상장주식수 근사치 — 분할·증자 시 오차 가능", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text("연도말 종가 기준, 상장주식수 근사치 — 분할·증자 시 오차 가능", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (hasPeer && pv != null) {
+                if (hasBand) HorizontalDivider()
+                Text("동종 대비 · ${pv.clusterLabel} 경쟁사 ${pv.peerCount}곳", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                pv.per?.let { PeerMetricRow("PER", it) }
+                pv.pbr?.let {
+                    if (pv.per != null) HorizontalDivider()
+                    PeerMetricRow("PBR", it)
+                }
+                Text("같은 사업 경쟁사 중앙값과 비교 — KIS 기준값, 상대 위치 참고용", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -409,25 +433,7 @@ private fun RangeBar(fraction: Float, medianFraction: Float, markerColor: Color,
     }
 }
 
-// ─── 동종(peer) 상대 밸류 ────────────────────────────────
-
-@Composable
-internal fun PeerValuationCard(pv: PeerValuation) {
-    if (pv.per == null && pv.pbr == null) return
-    CollapsibleCard(
-        title = "동종 상대 밸류",
-        trailing = { Text("${pv.clusterLabel} · 경쟁사 ${pv.peerCount}곳", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            pv.per?.let { PeerMetricRow("PER", it) }
-            pv.pbr?.let {
-                if (pv.per != null) HorizontalDivider()
-                PeerMetricRow("PBR", it)
-            }
-            Text("같은 사업 경쟁사 중앙값과 비교 — KIS 기준값, 상대 위치 참고용", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
+// ─── 동종(peer) 상대 밸류 (U2: ValuationCard 세그먼트로 통합) ──────────────
 
 @Composable
 private fun peerValuationColor(label: String): Color = when (label) {
@@ -703,23 +709,23 @@ private fun AnalogHorizonRow(h: AnalogHorizon) {
 
 // ─── 수급-가격 민감도 ────────────────────────────────────
 
+// U2 수급-가격 민감도 서브섹션(구 독립 카드 → '수급' 카드 하단으로 흡수). 내용만 렌더(카드 래퍼 없음).
 @Composable
-internal fun FlowSensitivityCard(fs: FlowSensitivity) {
+internal fun FlowSensSection(fs: FlowSensitivity) {
     val shown = fs.items.filter { it.n > 0 }
     if (shown.isEmpty()) return
     val days = shown.first().n
-    CollapsibleCard(
-        title = "수급-가격 민감도",
-        trailing = { Text("최근 ${days}거래일 기준", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("외인·기관이 많이 살수록 이 종목 주가가 그날 같이 올랐나요?", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            shown.forEachIndexed { idx, fc ->
-                if (idx > 0) HorizontalDivider()
-                FlowCorrRow(fc)
-            }
-            Text("수급은 전일까지 장후 확정값 기준이에요. 과거 통계라 미래를 보장하지 않아요.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("수급-가격 민감도", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Text("최근 ${days}거래일", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Text("외인·기관이 많이 살수록 이 종목 주가가 그날 같이 올랐나요?", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        shown.forEachIndexed { idx, fc ->
+            if (idx > 0) HorizontalDivider()
+            FlowCorrRow(fc)
+        }
+        Text("수급은 전일까지 장후 확정값 기준이에요. 과거 통계라 미래를 보장하지 않아요.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -850,53 +856,7 @@ private fun ddayColor(days: Int): Color = when {
     else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
-// ─── 지표 영향 ───────────────────────────────────────────
-
-@Composable
-internal fun MacroSignalCard(sig: StockImpact) {
-    CollapsibleCard(
-        title = "지표 영향",
-        leadingIcon = Icons.Filled.TrendingUp,
-        trailing = { if (sig.net != "-") BadgePill(sig.net, netColor(sig.net)) },
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("섹터: ${sig.sectorLabel}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                BadgePill(sig.net, netColor(sig.net))
-            }
-            if (sig.signals.isEmpty()) {
-                Text("아직 지원하지 않는 종목이에요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                sig.signals.forEach { s ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Box(modifier = Modifier.padding(top = 3.dp)) {
-                            if (s.direction != 0) ArrowGlyph(s.direction > 0, directionColor(s.direction))
-                            else Text("→", style = MaterialTheme.typography.labelSmall, color = directionColor(s.direction))
-                        }
-                        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                            Text("${s.indicator} ${signedPct(s.changeRate)}%", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium))
-                            Text(s.note, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun netColor(net: String): Color = when (net) {
-    "우호적" -> ChangeUp
-    "부담" -> ChangeDown
-    else -> MaterialTheme.colorScheme.onSurfaceVariant
-}
-
-private fun signalArrow(d: Int): String = if (d > 0) "↑" else if (d < 0) "↓" else "→"
-
-@Composable
-private fun directionColor(d: Int): Color = if (d > 0) ChangeUp else if (d < 0) ChangeDown else MaterialTheme.colorScheme.onSurfaceVariant
-
-private fun signedPct(v: Double): String = (if (v >= 0) "+" else "") + "%.2f".format(v)
+// U2: '지표 영향' 카드(MacroSignalCard) 제거 — 브리핑 '내 종목 영향'과 중복, 델타 스트립이 매크로발 변화 커버.
 
 // "20260814" → "2026.08.14"
 private fun formattedDate8(d: String): String =

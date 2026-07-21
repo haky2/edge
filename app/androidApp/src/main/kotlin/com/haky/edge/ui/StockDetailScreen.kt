@@ -130,7 +130,6 @@ fun StockDetailScreen(
     var flowSensitivity by remember { mutableStateOf<com.haky.edge.model.FlowSensitivity?>(null) }
     var dividendCard by remember { mutableStateOf<com.haky.edge.model.DividendCard?>(null) }
     var earnings by remember { mutableStateOf<com.haky.edge.model.EarningsEntry?>(null) }
-    var stockSignal by remember { mutableStateOf<com.haky.edge.model.StockImpact?>(null) }
     var targetPrice by remember { mutableStateOf<com.haky.edge.model.TargetPriceInfo?>(null) }
     var analysis by remember { mutableStateOf<com.haky.edge.model.Analysis?>(null) }
     var analyzing by remember { mutableStateOf(false) }
@@ -266,7 +265,7 @@ fun StockDetailScreen(
         try { flowSensitivity = api.getFlowSensitivity(code) } catch (_: Exception) {}
         try { dividendCard = api.getDividend(code) } catch (_: Exception) {}
         try { earnings = api.getEarnings(listOf(code)).firstOrNull() } catch (_: Exception) {}
-        try { stockSignal = api.getStockSignals(code) } catch (_: Exception) {}
+        // U2: '지표 영향' 카드 제거로 getStockSignals 호출 제외(브리핑 '내 종목 영향'이 정본).
         try { targetPrice = api.getTargetPrice(code) } catch (_: Exception) {}
         try { premortem = api.getPremortem(code) } catch (_: Exception) {}
     }
@@ -416,7 +415,7 @@ fun StockDetailScreen(
                     onHelpToggle = { indicatorHelpExpanded = !indicatorHelpExpanded },
                 )
             }
-            if (flows.isNotEmpty()) FlowCard(flows)
+            if (flows.isNotEmpty()) FlowCard(flows, flowSensitivity)
             // 뉴스·공시는 판정 카드 하나로 일원화(원문 뉴스/공시 섹션 제거). 링크는 카드 안에서 원문으로.
             CatalystCard(
                 report = catalysts,
@@ -427,16 +426,16 @@ fun StockDetailScreen(
             )
             ZoneHeader("심화 분석")
             quote?.let { InterpretationCard(it, flows, targetPrice) }
-            valuationBand?.let { ValuationBandCard(it) }
-            peerValuation?.let { PeerValuationCard(it) }
+            // U2: 밸류에이션 히스토리 + 동종 상대 밸류를 한 카드로 통합.
+            if (valuationBand != null || peerValuation != null) ValuationCard(valuationBand, peerValuation)
             backtest?.let { BacktestCard(it) }
-            flowSensitivity?.let { FlowSensitivityCard(it) }
+            // U2: 수급-가격 민감도는 '수급' 카드로 흡수(독립 카드 제거).
             shortSelling?.let { ShortSellingCard(it) }
             dividendCard?.let { DividendCard(it) }
             analog?.let { AnalogCard(it) }
             ZoneHeader("외부 환경")
             earnings?.let { EarningsCard(it) }
-            stockSignal?.let { MacroSignalCard(it) }
+            // U2: '지표 영향' 카드 제거 — 브리핑 '내 종목 영향'과 중복.
             ZoneHeader("내 기록")
             premortem?.let { PremortemCard(it) }
             if (logEntries.isNotEmpty()) LogCard(
@@ -1296,7 +1295,7 @@ private val FlowInstitution: Color // 기관 청록
     @Composable @ReadOnlyComposable get() = EdgeTheme.colors.teal
 
 @Composable
-private fun FlowCard(flows: List<com.haky.edge.model.InvestorFlow>) {
+private fun FlowCard(flows: List<com.haky.edge.model.InvestorFlow>, flowSens: com.haky.edge.model.FlowSensitivity?) {
     CollapsibleCard(
         title = "수급 · 순매수",
         trailing = {
@@ -1327,6 +1326,11 @@ private fun FlowCard(flows: List<com.haky.edge.model.InvestorFlow>) {
                     FlowCell(f.institution, Modifier.weight(1f))
                     FlowCell(f.individual, Modifier.weight(1f))
                 }
+            }
+            // U2: 수급-가격 민감도 흡수 — 상관을 수급 카드 안에서.
+            if (flowSens != null && flowSens.items.any { it.n > 0 }) {
+                HorizontalDivider()
+                FlowSensSection(flowSens)
             }
         }
     }
