@@ -64,7 +64,6 @@ import androidx.compose.material3.TextButton
 import com.haky.edge.model.FactsRichness
 import com.haky.edge.model.EarningsEntry
 import com.haky.edge.model.FlowCorrelation
-import com.haky.edge.model.DividendCard
 import com.haky.edge.model.FlowSensitivity
 import com.haky.edge.model.ShortSellingSummary
 import com.haky.edge.model.PeerMetric
@@ -1378,53 +1377,3 @@ private fun headingOnlyDr(s: String): String? {
     return inner
 }
 
-// ─── 배당 카드 (E2) ───────────────────────────────────────────────────────────
-
-@Composable
-internal fun DividendCard(div: DividendCard) {
-    fun won(v: Long): String {
-        val f = java.text.NumberFormat.getInstance(java.util.Locale.KOREA)
-        return "${f.format(v)}원"
-    }
-    fun signed(p: Double) = "${if (p >= 0) "+" else ""}${"%.1f".format(p)}%"
-
-    val seriesItems = listOfNotNull(
-        div.dpsPrev2?.let { (div.fiscalYear - 2) to it },
-        div.dpsPrev?.let { (div.fiscalYear - 1) to it },
-        div.fiscalYear to div.dpsThis,
-    )
-    val seriesText = seriesItems.joinToString(" → ") { (y, v) -> "$y ${won(v)}" }
-    val yoyText = div.dpsYoyPct?.let { " (${signed(it)})" } ?: ""
-
-    CollapsibleCard(
-        title = "배당 (DART 배당사항)",
-        trailing = {
-            div.expectedYieldPct?.let { ey ->
-                Text("예상 ${"%.2f".format(ey)}%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        },
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("주당 현금배당금", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(seriesText + yoyText, style = MaterialTheme.typography.bodySmall)
-            }
-            div.expectedYieldPct?.let { ey ->
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("예상 배당수익률", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${"%.2f".format(ey)}%", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
-                    Text("최신 주당배당금 ÷ 현재가 · 차기 배당 미확정", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            val refs = listOfNotNull(
-                div.yieldPctAtRecord?.let { "배당 시점 시가배당률 ${"%.1f".format(it)}%" },
-                div.payoutPct?.let { "배당성향 ${"%.1f".format(it)}%" },
-                div.settleMonth?.let { "결산월 ${it}월" },
-            )
-            if (refs.isNotEmpty()) {
-                Text(refs.joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text("${div.fiscalYear} 사업연도 확정값 기준 · 참고용", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}

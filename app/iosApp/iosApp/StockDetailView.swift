@@ -31,8 +31,6 @@ struct StockDetailView: View {
     @State private var peerValuation: PeerValuation?  // 동종 상대 밸류 → U2에서 밸류에이션 카드로 통합
     @State private var backtest: Backtest?          // 신호별 익일 적중률(검증된 신호)
     @State private var flowSensitivity: FlowSensitivity?  // 수급-가격 민감도
-    @State private var dividendCard: DividendCard?   // DART 배당 카드(E2)
-    @State private var dividendExpanded = false
     @State private var analog: AnalogReport?        // 유사 국면 통계(F1)
     @State private var premortem: Premortem?        // 매수 프리모템(F5)
     @State private var premortemExpanded = false
@@ -114,7 +112,6 @@ struct StockDetailView: View {
                     if let bt = backtest { backtestCard(bt) }
                     // U2: 수급-가격 민감도는 '수급' 카드 하단으로 흡수(독립 카드 제거).
                     if let ss = shortSelling { shortSellingCard(ss) }
-                    if let div = dividendCard { dividendCardView(div) }
                     if let an = analog, an.n > 0 { analogCard(an) }
                 } else if loading {
                     ProgressView().padding(.top, 40)
@@ -2209,66 +2206,6 @@ struct StockDetailView: View {
         .cardStyle()
     }
 
-    private func dividendCardView(_ div: DividendCard) -> some View {
-        let wonfmt = NumberFormatter(); wonfmt.numberStyle = .decimal
-        let won: (Int64) -> String = { v in (wonfmt.string(from: NSNumber(value: v)) ?? "\(v)") + "원" }
-        let yr = Int(div.fiscalYear)
-        var series: [(Int, Int64)] = [(yr, div.dpsThis)]
-        if let p = div.dpsPrev?.int64Value   { series.insert((yr - 1, p), at: 0) }
-        if let p = div.dpsPrev2?.int64Value  { series.insert((yr - 2, p), at: 0) }
-        let seriesText = series.map { "\($0.0) \(won($0.1))" }.joined(separator: " → ")
-        let yoyText: String
-        if let pct = div.dpsYoyPct?.doubleValue {
-            yoyText = " (\(pct >= 0 ? "+" : "")\(String(format: "%.1f", pct))%)"
-        } else { yoyText = "" }
-        let eyPct = div.expectedYieldPct?.doubleValue
-        var refs: [String] = []
-        if let v = div.yieldPctAtRecord?.doubleValue { refs.append("배당 시점 시가배당률 \(String(format: "%.1f", v))%") }
-        if let v = div.payoutPct?.doubleValue         { refs.append("배당성향 \(String(format: "%.1f", v))%") }
-        if let v = div.settleMonth?.int32Value        { refs.append("결산월 \(v)월") }
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("배당 (DART 배당사항)").font(.subheadline.weight(.semibold))
-                    if let ey = eyPct {
-                        Text("예상 배당수익률 \(String(format: "%.2f", ey))%")
-                            .font(.caption).foregroundColor(.secondary)
-                    }
-                }
-                Spacer()
-                Image(systemName: dividendExpanded ? "chevron.up" : "chevron.down")
-                    .font(.caption).foregroundColor(.secondary)
-            }
-            .padding(.vertical, 10)
-            .contentShape(Rectangle())
-            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { dividendExpanded.toggle() }; if dividendExpanded { Usage.shared.expand("detail", "배당") } }
-            if dividendExpanded {
-                Divider()
-                VStack(alignment: .leading, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("주당 현금배당금").font(.caption).foregroundColor(.secondary)
-                        Text(seriesText + yoyText).font(.footnote)
-                    }
-                    if let ey = eyPct {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("예상 배당수익률").font(.caption).foregroundColor(.secondary)
-                            Text(String(format: "%.2f%%", ey)).font(.footnote.weight(.semibold))
-                            Text("최신 주당배당금 ÷ 현재가 · 차기 배당 미확정")
-                                .font(.caption2).foregroundColor(.secondary)
-                        }
-                    }
-                    if !refs.isEmpty {
-                        Text(refs.joined(separator: " · ")).font(.caption2).foregroundColor(.secondary)
-                    }
-                    Text("\(yr) 사업연도 확정값 기준 · 참고용")
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                .padding(.top, 8).padding(.bottom, 4)
-            }
-        }
-        .cardStyle()
-    }
-
     private func formatShortVol(_ vol: Int64) -> String {
         if vol >= 10_000 {
             return String(format: "%.1f만", Double(vol) / 10_000)
@@ -2741,7 +2678,6 @@ struct StockDetailView: View {
         async let flowSensitivityTask   = api.getFlowSensitivity(code: item.code)
         async let analogTask            = api.getAnalog(code: item.code)
         async let premortemTask         = api.getPremortem(code: item.code)
-        async let dividendTask          = api.getDividend(code: item.code)
         earningsEntry   = (try? await earnsTask)?.first
         shortSelling    = try? await shortSellingTask
         valuationBand   = try? await valuationBandTask
@@ -2750,7 +2686,6 @@ struct StockDetailView: View {
         flowSensitivity = try? await flowSensitivityTask
         analog          = try? await analogTask
         premortem       = try? await premortemTask
-        dividendCard    = try? await dividendTask
     }
 
     private func loadAnalysis(force: Bool = false) async {

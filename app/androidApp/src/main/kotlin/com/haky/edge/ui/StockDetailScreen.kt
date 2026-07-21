@@ -128,7 +128,6 @@ fun StockDetailScreen(
     var deepResearchError by remember { mutableStateOf(false) }  // 실패·일일 한도 안내(무피드백 방지)
     var overflowMenuExpanded by remember { mutableStateOf(false) }  // U4: ⋯ 오버플로 메뉴
     var flowSensitivity by remember { mutableStateOf<com.haky.edge.model.FlowSensitivity?>(null) }
-    var dividendCard by remember { mutableStateOf<com.haky.edge.model.DividendCard?>(null) }
     var earnings by remember { mutableStateOf<com.haky.edge.model.EarningsEntry?>(null) }
     var targetPrice by remember { mutableStateOf<com.haky.edge.model.TargetPriceInfo?>(null) }
     var analysis by remember { mutableStateOf<com.haky.edge.model.Analysis?>(null) }
@@ -262,7 +261,6 @@ fun StockDetailScreen(
         try { backtest = api.getBacktest(code) } catch (_: Exception) {}
         try { analog = api.getAnalog(code) } catch (_: Exception) {}
         try { flowSensitivity = api.getFlowSensitivity(code) } catch (_: Exception) {}
-        try { dividendCard = api.getDividend(code) } catch (_: Exception) {}
         try { earnings = api.getEarnings(listOf(code)).firstOrNull() } catch (_: Exception) {}
         // U2: '지표 영향' 카드 제거로 getStockSignals 호출 제외(브리핑 '내 종목 영향'이 정본).
         try { targetPrice = api.getTargetPrice(code) } catch (_: Exception) {}
@@ -437,7 +435,6 @@ fun StockDetailScreen(
             backtest?.let { BacktestCard(it) }
             // U2: 수급-가격 민감도는 '수급' 카드로 흡수(독립 카드 제거).
             shortSelling?.let { ShortSellingCard(it) }
-            dividendCard?.let { DividendCard(it) }
             analog?.let { AnalogCard(it) }
             ZoneHeader("외부 환경")
             earnings?.let { EarningsCard(it) }
