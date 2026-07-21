@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.Button
@@ -127,6 +128,7 @@ fun StockDetailScreen(
     var deepResearch by remember { mutableStateOf<com.haky.edge.model.DeepResearch?>(null) }
     var deepResearchLoading by remember { mutableStateOf(false) }
     var deepResearchError by remember { mutableStateOf(false) }  // 실패·일일 한도 안내(무피드백 방지)
+    var overflowMenuExpanded by remember { mutableStateOf(false) }  // U4: ⋯ 오버플로 메뉴
     var flowSensitivity by remember { mutableStateOf<com.haky.edge.model.FlowSensitivity?>(null) }
     var dividendCard by remember { mutableStateOf<com.haky.edge.model.DividendCard?>(null) }
     var earnings by remember { mutableStateOf<com.haky.edge.model.EarningsEntry?>(null) }
@@ -301,33 +303,47 @@ fun StockDetailScreen(
                         Icon(Icons.Filled.ArrowBack, contentDescription = "뒤로")
                     }
                 },
+                // U4: 저빈도·고비용(비교·딥리서치·질문) → ⋯ 오버플로 메뉴. 고빈도(매매기록·평단·새로고침)는 아이콘 유지.
                 actions = {
-                    if (onCompare != null) {
-                        IconButton(onClick = { showComparePicker = true }) {
-                            Icon(Icons.AutoMirrored.Filled.CompareArrows, contentDescription = "종목 비교")
+                    Box {
+                        IconButton(onClick = { overflowMenuExpanded = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "더 보기")
                         }
-                    }
-                    IconButton(
-                        onClick = {
-                            if (!deepResearchLoading) {
-                                scope.launch {
-                                    deepResearchLoading = true
-                                    deepResearchError = false
-                                    deepResearch = runCatching { api.getDeepResearch(watchItem.code) }.getOrNull()
-                                    deepResearchError = (deepResearch == null)
-                                    deepResearchLoading = false
-                                }
+                        DropdownMenu(
+                            expanded = overflowMenuExpanded,
+                            onDismissRequest = { overflowMenuExpanded = false },
+                        ) {
+                            if (onCompare != null) {
+                                DropdownMenuItem(
+                                    text = { Text("비교") },
+                                    onClick = { showComparePicker = true; overflowMenuExpanded = false },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.CompareArrows, contentDescription = null) },
+                                )
                             }
-                        },
-                    ) {
-                        if (deepResearchLoading) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Filled.Search, contentDescription = "딥리서치")
+                            DropdownMenuItem(
+                                text = { Text("딥리서치") },
+                                onClick = {
+                                    overflowMenuExpanded = false
+                                    if (!deepResearchLoading) scope.launch {
+                                        deepResearchLoading = true
+                                        deepResearchError = false
+                                        deepResearch = runCatching { api.getDeepResearch(watchItem.code) }.getOrNull()
+                                        deepResearchError = (deepResearch == null)
+                                        deepResearchLoading = false
+                                    }
+                                },
+                                leadingIcon = {
+                                    if (deepResearchLoading) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    else Icon(Icons.Filled.Search, contentDescription = null)
+                                },
+                                enabled = !deepResearchLoading,
+                            )
+                            DropdownMenuItem(
+                                text = { Text("질문하기") },
+                                onClick = { showAskSheet = true; overflowMenuExpanded = false },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) },
+                            )
                         }
-                    }
-                    IconButton(onClick = { showAskSheet = true }) {
-                        Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "질문하기")
                     }
                     IconButton(onClick = { showLogSheet = true }) {
                         Icon(Icons.Filled.Flag, contentDescription = "매매 기록")

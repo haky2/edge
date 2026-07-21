@@ -139,23 +139,24 @@ struct StockDetailView: View {
         .navigationTitle(item.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // U4: 저빈도·고비용(비교·딥리서치·질문) → ⋯ 오버플로 메뉴. 고빈도(매매기록·평단·새로고침)는 아이콘 유지.
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showComparePicker = true } label: { Image(systemName: "arrow.left.arrow.right") }
-                    .help("다른 종목과 비교")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                if deepResearchLoading {
-                    ProgressView().scaleEffect(0.8)
-                } else {
+                Menu {
+                    Button { showComparePicker = true } label: {
+                        Label("비교", systemImage: "arrow.left.arrow.right")
+                    }
                     Button {
-                        Task { await loadDeepResearch() }
-                    } label: { Image(systemName: "doc.text.magnifyingglass") }
-                        .help("딥리서치 — 웹검색 결합 심층 리포트 (수십 초)")
+                        if !deepResearchLoading { Task { await loadDeepResearch() } }
+                    } label: {
+                        Label("딥리서치", systemImage: "doc.text.magnifyingglass")
+                    }
+                    .disabled(deepResearchLoading)
+                    Button { showAskSheet = true } label: {
+                        Label("질문하기", systemImage: "questionmark.bubble")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showAskSheet = true } label: { Image(systemName: "questionmark.bubble") }
-                    .help("이 종목에 질문하기")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showLogSheet = true } label: { Image(systemName: "flag") }
