@@ -98,6 +98,7 @@ struct StockDetailView: View {
 
                 if let q = quote {
                     // ── 현재 상황 ──
+                    zoneHeader("현재 상황")
                     priceHeader(q)
                     if !warnings.isEmpty { warningChips() }
                     priceLimitView(q)
@@ -105,13 +106,16 @@ struct StockDetailView: View {
                     if let lines = analysis?.deltaLines, !lines.isEmpty { deltaStrip(lines) }
                     positionCard(q)
                     // ── 종합 판단 ──
+                    zoneHeader("종합 판단")
                     aiCommentCard()
                     // ── AI 근거 ──
+                    zoneHeader("AI 근거")
                     if let tr = technicalResult { technicalCardCollapsible(tr, price: Double(q.price)) }
                     if !flows.isEmpty { flowCardCollapsible() }
                     // 뉴스·공시는 판정 카드 하나로 일원화(원문 뉴스/공시 섹션 제거). 링크는 카드 안에서 원문으로.
                     catalystCard()
                     // ── 심화 분석 (기본 접힘) ──
+                    zoneHeader("심화 분석")
                     analysisCard(q)
                     if let band = valuationBand { valuationBandCard(band) }
                     if let pv = peerValuation { peerValuationCard(pv) }
@@ -124,9 +128,11 @@ struct StockDetailView: View {
                     ProgressView().padding(.top, 40)
                 }
                 // ── 외부 환경 (기본 접힘) ──
+                zoneHeader("외부 환경")
                 earningsDueDateSection()
                 macroSignalSection()
                 // ── 내 기록 ──
+                zoneHeader("내 기록")
                 if let pm = premortem { premortemCard(pm) }
                 if !logEntries.isEmpty { logCard() }
                 if let tr = tradeReview { tradeReviewCard(tr) }
@@ -703,16 +709,37 @@ struct StockDetailView: View {
         .padding(.vertical, 8)
     }
 
-    // R5 델타 스트립 — 전일 대비 달라진 항목 한 줄씩.
+    // U1 존 그룹 헤더 — 상세 화면 6개 존(현재상황·종합판단·AI근거·심화분석·외부환경·내기록)을
+    // 화면에 실제 위계로 드러낸다. 작은 캡션 스타일(영문은 대문자, 한글은 그대로).
+    private func zoneHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundColor(.secondary)
+            .textCase(.uppercase)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    // R5 델타 스트립 — 전일 대비 달라진 항목 한 줄씩. U1: 제목 한 줄로 정체를 밝힘.
     private func deltaStrip(_ lines: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(lines, id: \.self) { line in
-                HStack(alignment: .top, spacing: 6) {
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 5, height: 5)
-                        .padding(.top, 5)
-                    Text(line).font(.caption).foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.caption2.weight(.semibold))
+                Text("어제와 달라진 점")
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(lines, id: \.self) { line in
+                    HStack(alignment: .top, spacing: 6) {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 5, height: 5)
+                            .padding(.top, 5)
+                        Text(line).font(.caption).foregroundColor(.secondary)
+                    }
                 }
             }
         }

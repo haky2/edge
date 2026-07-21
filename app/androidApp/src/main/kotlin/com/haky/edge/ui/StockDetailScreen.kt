@@ -355,6 +355,7 @@ fun StockDetailScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            ZoneHeader("현재 상황")
             PriceHeader(code = watchItem.code, quote = quote)
             WarningChips(warnings)
             quote?.let { q -> priceLimits?.let { PriceLimitsLine(it, q.price) } }
@@ -396,6 +397,7 @@ fun StockDetailScreen(
                         modifier = androidx.compose.ui.Modifier.clickable { analysisThesisChanged = false; loadAnalysis(true) })
                 }
             }
+            ZoneHeader("종합 판단")
             AICommentCard(
                 analysis = analysis,
                 analyzing = analyzing,
@@ -404,6 +406,7 @@ fun StockDetailScreen(
                 accountLabel = if (accountHoldings.size >= 2) accountContext?.let { accountNames[it] } else null,
                 onRegenerate = { loadAnalysis(true) },
             )
+            ZoneHeader("AI 근거")
             val q = quote
             if (technical != null && q != null) {
                 TechnicalCard(
@@ -422,6 +425,7 @@ fun StockDetailScreen(
                 impact = catalystImpact,
                 onRetry = { loadCatalysts(true) },
             )
+            ZoneHeader("심화 분석")
             quote?.let { InterpretationCard(it, flows, targetPrice) }
             valuationBand?.let { ValuationBandCard(it) }
             peerValuation?.let { PeerValuationCard(it) }
@@ -430,8 +434,10 @@ fun StockDetailScreen(
             shortSelling?.let { ShortSellingCard(it) }
             dividendCard?.let { DividendCard(it) }
             analog?.let { AnalogCard(it) }
+            ZoneHeader("외부 환경")
             earnings?.let { EarningsCard(it) }
             stockSignal?.let { MacroSignalCard(it) }
+            ZoneHeader("내 기록")
             premortem?.let { PremortemCard(it) }
             if (logEntries.isNotEmpty()) LogCard(
                 entries = logEntries,
@@ -1849,7 +1855,23 @@ private fun mmdd(d: String): String {
 
 internal fun Long.fmt(): String = String.format(Locale.US, "%,d", this)
 
-// R5 델타 스트립 — 전일 대비 달라진 항목 한 줄씩.
+// U1 존 그룹 헤더 — 상세 화면 6개 존(현재상황·종합판단·AI근거·심화분석·외부환경·내기록)을
+// 화면에 실제 위계로 드러낸다. 작은 캡션 스타일(대문자·자간). iOS zoneHeader와 대응.
+@Composable
+private fun ZoneHeader(title: String) {
+    Text(
+        title.uppercase(),
+        style = MaterialTheme.typography.labelMedium.copy(
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.8.sp,
+        ),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+    )
+}
+
 @Composable
 private fun DeltaStrip(lines: List<String>) {
     Column(
@@ -1857,8 +1879,25 @@ private fun DeltaStrip(lines: List<String>) {
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        // U1: 델타 스트립 정체를 밝히는 제목.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Icon(
+                Icons.Filled.Refresh,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "어제와 달라진 점",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         lines.forEach { line ->
             Row(
                 verticalAlignment = Alignment.Top,
