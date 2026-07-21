@@ -794,11 +794,27 @@ struct StatsView: View {
 
         guard !positions.isEmpty || !weekTrades.isEmpty || !thesisChanges.isEmpty else { return }
 
+        // L1: 행동 데이터 — 전체 행동 로그(판단대조 서버 재채점, judgmentSection과 동일 매핑) + 규율 요약(T1)
+        let allTrades = localEntries.compactMap { e -> JudgmentTradeEntry? in
+            guard ["buy", "sell", "interest"].contains(e.action) else { return nil }
+            return JudgmentTradeEntry(code: e.code, action: e.action, date: epochToIso(e.createdAt))
+        }
+        let dRows = await MainActor.run { disciplineRows }
+        let discipline: DisciplineSummaryEntry? = dRows.isEmpty ? nil : DisciplineSummaryEntry(
+            pairs: Int32(dRows.count),
+            targetReached: Int32(dRows.filter { $0.status == .targetReached }.count),
+            profitExit: Int32(dRows.filter { $0.status == .profitExit }.count),
+            stopRespected: Int32(dRows.filter { $0.status == .stopRespected }.count),
+            stopViolated: Int32(dRows.filter { $0.status == .stopViolated }.count)
+        )
+
         let review = try? await api.postPersonalWeeklyReview(
             positions: positions,
             trades: weekTrades,
             thesisChanges: thesisChanges,
-            refresh: refresh
+            refresh: refresh,
+            allTrades: allTrades,
+            discipline: discipline
         )
         await MainActor.run { weeklyReview = review }
     }

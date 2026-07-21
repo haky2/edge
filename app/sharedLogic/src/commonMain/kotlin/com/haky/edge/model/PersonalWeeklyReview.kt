@@ -45,6 +45,19 @@ data class PersonalWeeklyReviewRequest(
     val trades: List<WeeklyTradeEntry> = emptyList(),
     val thesisChanges: List<WeeklyThesisChangeEntry> = emptyList(),
     val refresh: Boolean = false,
+    // L1: 행동 데이터 — 전체 행동 로그(판단대조 서버 재채점)·규율 성적 요약(T1 스냅샷 기반 로컬 계산).
+    val allTrades: List<JudgmentTradeEntry> = emptyList(),
+    val discipline: DisciplineSummaryEntry? = null,
+)
+
+/** 손절/익절 규율 성적 요약(누적) — 앱 DisciplineRow 분류 카운트. */
+@Serializable
+data class DisciplineSummaryEntry(
+    val pairs: Int,
+    val targetReached: Int,
+    val profitExit: Int,
+    val stopRespected: Int,
+    val stopViolated: Int,
 )
 
 /** 보유 포지션 1건(평단·수량). avgPrice = 수량 가중평균(다계좌 병합 후). */

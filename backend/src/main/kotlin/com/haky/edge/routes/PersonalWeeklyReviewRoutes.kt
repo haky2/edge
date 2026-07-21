@@ -25,6 +25,10 @@ data class PersonalWeeklyReviewRequest(
     val trades: List<WeeklyTrade> = emptyList(),
     val thesisChanges: List<WeeklyThesisChange> = emptyList(),
     val refresh: Boolean = false,
+    // L1: 행동 데이터 — 전체 행동 로그(판단대조 서버 재채점용)·규율 성적 요약(앱 로컬 T1 계산).
+    // 옵셔널 — 구버전 앱 하위호환(없으면 해당 facts 섹션 생략).
+    val allTrades: List<com.haky.edge.ai.JudgmentTrade> = emptyList(),
+    val discipline: com.haky.edge.ai.DisciplineSummary? = null,
 ) {
     @Serializable
     data class PositionEntry(val code: String, val avgPrice: Double, val qty: Long)
@@ -46,7 +50,10 @@ fun Route.personalWeeklyReviewRoutes(service: PersonalWeeklyReviewService) {
             call.respond(HttpStatusCode.BadRequest, ErrorResponse("회고할 데이터가 없습니다(포지션·매매·논지 모두 비어 있음)"))
             return@post
         }
-        call.respond(service.review(positions, trades, theses, req.refresh))
+        val allTrades = req.allTrades.filter {
+            it.code.trim().let { c -> CODE_REGEX.matches(c) } && it.action in setOf("buy", "sell", "interest")
+        }
+        call.respond(service.review(positions, trades, theses, req.refresh, allTrades, req.discipline))
     }
 }
 

@@ -55,6 +55,7 @@ import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.model.ActionLogEntry
 import com.haky.edge.model.HoldingMove
 import com.haky.edge.model.JudgmentComparison
+import com.haky.edge.model.DisciplineSummaryEntry
 import com.haky.edge.model.JudgmentTradeEntry
 import com.haky.edge.model.PersonalWeeklyReview
 import com.haky.edge.model.WatchItem
@@ -222,7 +223,7 @@ fun StatsScreen(
         // B2 개인 주간 회고
         weeklyReviewLoading = true
         weeklyReview = runCatching {
-            loadPersonalWeeklyReview(entries, nameMap, watchlistRepo, holdingRepo, api)
+            loadPersonalWeeklyReview(entries, nameMap, watchlistRepo, holdingRepo, api, disciplineRows)
         }.getOrNull()
         weeklyReviewLoading = false
 
@@ -1231,6 +1232,7 @@ private suspend fun loadPersonalWeeklyReview(
     watchlistRepo: WatchlistRepository,
     holdingRepo: HoldingRepository,
     api: EdgeApi,
+    disciplineRows: List<DisciplineRow> = emptyList(), // L1: 규율 요약(T1 스냅샷 기반)
 ): PersonalWeeklyReview? {
     val (weekEpoch, weekDateStr) = weekStartInfo()
 
@@ -1267,10 +1269,24 @@ private suspend fun loadPersonalWeeklyReview(
 
     if (positions.isEmpty() && weekTrades.isEmpty() && thesisChanges.isEmpty()) return null
 
+    // L1: 행동 데이터 — 전체 행동 로그(판단대조 서버 재채점, 판단대조 카드와 동일 매핑) + 규율 요약(T1)
+    val allTrades = entries
+        .filter { it.action in setOf("buy", "sell", "interest") }
+        .map { e -> JudgmentTradeEntry(e.code, e.action, epochToIsoDate(e.createdAt)) }
+    val discipline = if (disciplineRows.isEmpty()) null else DisciplineSummaryEntry(
+        pairs = disciplineRows.size,
+        targetReached = disciplineRows.count { it.status == DisciplineStatus.TargetReached },
+        profitExit = disciplineRows.count { it.status == DisciplineStatus.ProfitExit },
+        stopRespected = disciplineRows.count { it.status == DisciplineStatus.StopRespected },
+        stopViolated = disciplineRows.count { it.status == DisciplineStatus.StopViolated },
+    )
+
     return api.postPersonalWeeklyReview(
         positions     = positions,
         trades        = weekTrades,
         thesisChanges = thesisChanges,
         refresh       = false,
+        allTrades     = allTrades,
+        discipline    = discipline,
     )
 }

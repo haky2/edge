@@ -309,11 +309,13 @@ fun Application.module() {
     // B 주간 회고 — 토요일 아침, 한 주 서버 기록(방향예측·스탠스·목표가·주간 등락) 회고 → #아침브리핑.
     val weeklyReview = com.haky.edge.slack.WeeklyReviewService(
         slack, briefingChannel, kis, master, signalCodes, stanceLog, stanceStats, moodLog, targetPriceLog, eventSync, claude, modelRouter)
-    // B2 개인 주간 회고 — 앱이 포지션·매매·논지를 POST, 서버가 주간 등락·스탠스·목표가·이벤트를 합쳐 Opus 해석.
-    val personalWeeklyReview = com.haky.edge.ai.PersonalWeeklyReviewService(
-        kis, master, stanceLog, stanceStats, targetPriceLog, eventSync, claude, modelRouter)
     // 판단 대조 — 내 매매 vs AI 스탠스 반사실 성적(20거래일 초과수익 동일 잣대, LLM 0).
     val judgmentComparison = com.haky.edge.ai.JudgmentComparisonService(kis, stanceLog, dailyHistory)
+    // B2 개인 주간 회고 — 앱이 포지션·매매·논지를 POST, 서버가 주간 등락·스탠스·목표가·이벤트를 합쳐 Opus 해석.
+    // L1: 판단대조·규율·프리모템 발동까지 facts에 주입해 행동 처방 1개를 회고에 포함.
+    val personalWeeklyReview = com.haky.edge.ai.PersonalWeeklyReviewService(
+        kis, master, stanceLog, stanceStats, targetPriceLog, eventSync, claude, modelRouter,
+        judgmentComparison, signalFiredLog)
     // 포트폴리오 리스크 엔진 — 실측 상관·변동성·리스크 기여도·클러스터(LLM 0).
     val portfolioRisk = com.haky.edge.ai.PortfolioRiskService(kis, master, dailyHistory)
     // N4 시나리오 스트레스(축소판) — 코스피 충격 × 실측 베타만(무근거 매크로 샥 제외). risk 재사용.

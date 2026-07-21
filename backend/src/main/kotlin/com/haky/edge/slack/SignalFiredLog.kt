@@ -79,6 +79,12 @@ class SignalFiredLog(dataDir: String = System.getenv("DATA_DIR") ?: ".data") {
         return readLines().filter { it.date == date && it.code == code }
     }
 
+    /** 날짜 구간(양끝 포함, YYYY-MM-DD) 발화 목록 — 개인 주간 회고(L1)의 프리모템 이력 재료. */
+    fun between(fromDate: String, toDate: String): List<SignalFired> {
+        if (!file.exists()) return emptyList()
+        return readLines().filter { it.date in fromDate..toDate }
+    }
+
     private fun loadKeys(): MutableSet<String> =
         readLines().mapTo(mutableSetOf()) { keyOf(it) }
 }

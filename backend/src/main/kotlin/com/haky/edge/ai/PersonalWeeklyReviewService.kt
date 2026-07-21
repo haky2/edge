@@ -33,6 +33,19 @@ data class WeeklyThesisChange(
     val changedOn: String,       // YYYY-MM-DD
 )
 
+/**
+ * L1: 손절/익절 규율 성적 요약 — T1 매매 시점 스냅샷 기반이라 앱 로컬에서만 계산 가능(앱이 보냄).
+ * 분류는 앱 DisciplineRow.Status와 1:1(목표 달성/수익 매도/손절선 준수/손절선 위반).
+ */
+@Serializable
+data class DisciplineSummary(
+    val pairs: Int,
+    val targetReached: Int,
+    val profitExit: Int,
+    val stopRespected: Int,
+    val stopViolated: Int,
+)
+
 // ── 출력 DTO ──────────────────────────────────────────────────────────────
 
 /**
@@ -77,6 +90,9 @@ class PersonalWeeklyReviewService(
     private val eventSync: EventSyncService,
     private val claude: ClaudeClient,
     private val modelRouter: ModelRouter,
+    // L1: 행동 데이터 주입 — 판단대조(전체 행동 로그 재채점)·프리모템 발동 이력. null이면 해당 섹션 생략(테스트 등).
+    private val judgmentComparison: JudgmentComparisonService? = null,
+    private val signalFired: com.haky.edge.slack.SignalFiredLog? = null,
 ) {
     private val fileCache = FileCache("weekly-review-personal", PersonalWeeklyReview.serializer())
 
@@ -85,12 +101,14 @@ class PersonalWeeklyReviewService(
         trades: List<WeeklyTrade>,
         thesisChanges: List<WeeklyThesisChange>,
         force: Boolean = false,
+        allTrades: List<JudgmentTrade> = emptyList(),   // L1: 전체 행동 로그(판단대조 입력)
+        discipline: DisciplineSummary? = null,          // L1: 규율 성적 요약(앱 로컬 T1 계산)
     ): PersonalWeeklyReview {
         require(positions.isNotEmpty() || trades.isNotEmpty() || thesisChanges.isNotEmpty()) {
             "회고할 개인 데이터가 없습니다(포지션·매매·논지 모두 비어 있음)"
         }
         val (monday, friday) = WeeklyReviewService.weekWindow(LocalDate.now(SEOUL))
-        val key = buildKey(friday, positions, trades, thesisChanges)
+        val key = buildKey(friday, positions, trades, thesisChanges, allTrades, discipline)
 
         val cached = fileCache.get(key)
         if (cached != null) {
@@ -100,7 +118,7 @@ class PersonalWeeklyReviewService(
             }
         }
 
-        val result = build(monday, friday, positions, trades, thesisChanges)
+        val result = build(monday, friday, positions, trades, thesisChanges, allTrades, discipline)
         fileCache.put(key, result)
         return result
     }
@@ -111,6 +129,8 @@ class PersonalWeeklyReviewService(
         positions: Map<String, HoldingPosition>,
         trades: List<WeeklyTrade>,
         thesisChanges: List<WeeklyThesisChange>,
+        allTrades: List<JudgmentTrade>,
+        discipline: DisciplineSummary?,
     ): PersonalWeeklyReview = coroutineScope {
         val mondayStr = monday.toString()
         val fridayStr = friday.toString()
@@ -152,6 +172,15 @@ class PersonalWeeklyReviewService(
         // ④ 다음 주 이벤트(9일 = 다음 주 금요일까지).
         val upcoming = runCatching { eventSync.getUpcoming(9) }.getOrElse { emptyList() }
 
+        // ⑤ L1: 판단대조(전체 행동 로그 재채점 — judgment-comparison과 동일 입력이라 캐시 적중 잦음).
+        val judgment = if (allTrades.isEmpty()) null else
+            runCatching { judgmentComparison?.compare(allTrades) }.getOrNull()
+
+        // ⑥ L1: 이번 주 프리모템 발동 이력 + 주간 매도와 조인(발동 후 행동 여부).
+        val premortemFired = runCatching {
+            signalFired?.between(mondayStr, fridayStr).orEmpty().filter { it.kind == "PREMORTEM" }
+        }.getOrElse { emptyList() }
+
         // ── 보유 종목 주간 등락(구조화) — 앱이 정렬된 색상 행으로 렌더 ────────────
         val holdingMoves = positions.keys
             .mapNotNull { c -> weeklyMove[c]?.let { HoldingMove(nameOf[c] ?: c, it) } }
@@ -183,7 +212,8 @@ class PersonalWeeklyReviewService(
         // ── Claude 회고(해석만) ───────────────────────────────────────────
         val facts = buildFacts(monday, friday, positions, weekTrades, weeklyMove, currentPrice,
             weekStances, transitions, stats?.overall,
-            thesisChanges, targetChanges, upcoming, nameOf)
+            thesisChanges, targetChanges, upcoming, nameOf,
+            judgment, discipline, premortemFired)
         val model = modelRouter.modelFor(ModelRouter.WEEKLY_REVIEW)
         val raw = runCatching { claude.complete(PERSONAL_PROMPT, facts, maxTokens = 1800, modelOverride = model) }
             .getOrElse { "" }
@@ -218,6 +248,9 @@ class PersonalWeeklyReviewService(
         targetChanges: List<Triple<String, Long, Long>>,
         upcoming: List<com.haky.edge.macro.MarketEvent>,
         nameOf: Map<String, String>,
+        judgment: JudgmentComparison? = null,
+        discipline: DisciplineSummary? = null,
+        premortemFired: List<com.haky.edge.slack.SignalFired> = emptyList(),
     ): String = buildString {
         appendLine("회고 대상 주간: $monday(월) ~ $friday(금)")
         appendLine()
@@ -263,6 +296,45 @@ class PersonalWeeklyReviewService(
             stanceOverall?.let { b ->
                 val base = b.baseRatePct?.let { " · 기저율(항상 같은 스탠스 가정) ${"%.0f".format(it)}% — 이보다 높아야 정보 있음" } ?: ""
                 appendLine("- 스탠스 누적 채점(20거래일 코스피 대비 초과수익 대조): ${b.correct}/${b.n} 적중(${"%.0f".format(b.accuracyPct)}%)$base")
+            }
+            appendLine()
+        }
+
+        // ── L1: 행동 데이터(판단대조·규율·프리모템) — 표시로 끝나던 데이터를 회고 재료로 ──
+        fun bucketLine(b: ComparisonBucket?): String? = b?.let {
+            "${it.label}: n=${it.n}, 적중 ${it.winRatePct}%(${it.wins}/${it.n}), 평균 초과수익 ${fmtPct(it.avgExcessPct)}"
+        }
+        if (judgment != null && (judgment.myBuy != null || judgment.mySell != null)) {
+            appendLine("[내 판단 성적 — 누적 판단대조] (20거래일 코스피 대비 초과수익, 관심종목 유니버스라 상대 비교만 유효)")
+            listOf(judgment.myBuy, judgment.mySell, judgment.aiPositive, judgment.aiNegative)
+                .forEach { b -> bucketLine(b)?.let { appendLine("- $it") } }
+            (judgment.buyMatrix + judgment.sellMatrix).filter { it.n > 0 }.forEach { b ->
+                appendLine("- 매매×스탠스 ${bucketLine(b)}")
+            }
+            judgment.missedInterest?.let { m ->
+                append("- 관심 후 미매수: ${m.n}건 중 ${m.roseN}건 초과수익 양수, 평균 ${fmtPct(m.avgExcessPct)}")
+                if (m.aiPositiveN > 0) append(" (관심 시점 AI 긍정 ${m.aiPositiveN}건 중 ${m.aiPositiveRoseN}건 상승)")
+                appendLine()
+            }
+            appendLine("(주의: n<15 버킷은 참고 수준 — 단정 근거로 쓰지 말 것)")
+            appendLine()
+        }
+
+        if (discipline != null && discipline.pairs > 0) {
+            appendLine("[손절/익절 규율 성적 — 누적, 매매 시점 계획 스냅샷 기준]")
+            appendLine("- 판정 가능 ${discipline.pairs}쌍: 목표가 달성 ${discipline.targetReached} · " +
+                "수익 매도(목표 미달) ${discipline.profitExit} · 손절선 준수 ${discipline.stopRespected} · " +
+                "손절선 위반 ${discipline.stopViolated}")
+            appendLine()
+        }
+
+        if (premortemFired.isNotEmpty()) {
+            appendLine("[이번 주 프리모템 무효화 신호 발동] (매수 시 세운 계획의 무효화 조건이 실제 발동한 것)")
+            premortemFired.sortedBy { it.date }.forEach { f ->
+                val name = nameOf[f.code] ?: f.code
+                val acted = weekTrades.any { it.code == f.code && it.action == "sell" && it.date >= f.date }
+                val followUp = if (acted) "이후 이번 주 매도 기록 있음" else "이번 주 매도 기록 없음"
+                appendLine("- ${WeeklyReviewService.koreanDate(f.date)} $name: ${f.detail} → $followUp(사실만 — 대응이 옳았는지는 사유에 따라 다름)")
             }
             appendLine()
         }
@@ -313,12 +385,14 @@ class PersonalWeeklyReviewService(
             else -> action
         }
 
-        /** 캐시 키: 주 금요일 + 정렬된 포지션 + 매매 + 논지 해시. 입력이 다르면 새 키. */
+        /** 캐시 키: 주 금요일 + 정렬된 포지션 + 매매 + 논지 + 행동 데이터(L1) 해시. 입력이 다르면 새 키. */
         internal fun buildKey(
             friday: LocalDate,
             positions: Map<String, HoldingPosition>,
             trades: List<WeeklyTrade>,
             thesisChanges: List<WeeklyThesisChange>,
+            allTrades: List<JudgmentTrade> = emptyList(),
+            discipline: DisciplineSummary? = null,
         ): String {
             val p = positions.entries.sortedBy { it.key }
                 .joinToString(",") { "${it.key}:${it.value.avgPrice.toLong()}:${it.value.qty}" }
@@ -326,7 +400,9 @@ class PersonalWeeklyReviewService(
                 .joinToString(",") { "${it.date}:${it.code}:${it.action}:${it.price ?: 0}" }
             val th = thesisChanges.sortedWith(compareBy({ it.changedOn }, { it.code }))
                 .joinToString(",") { "${it.changedOn}:${it.code}:${it.thesis.trim()}" }
-            return "$friday|${AnalysisService.shortHash("$p|$t|$th")}"
+            val a = JudgmentComparisonService.cacheFingerprint(allTrades)
+            val d = discipline?.let { "${it.pairs}:${it.targetReached}:${it.profitExit}:${it.stopRespected}:${it.stopViolated}" } ?: ""
+            return "$friday|${AnalysisService.shortHash("$p|$t|$th|$a|$d")}"
         }
 
         // 개인 주간 회고 프롬프트 — 계산 사실(위 factLines·facts)은 이미 보여주므로 Claude는 "패턴 해석"만.
@@ -361,6 +437,13 @@ class PersonalWeeklyReviewService(
             R6. 매매 지시(사라/팔라/비중 조정) 금지. 격려·덕담·사과·인사말 금지 — 기록과 해석만 남겨라.
             R7. 형식: 소제목·불릿·구분선 없이 흐르는 문단(핵심 요약 블록 제외). 문단 사이 빈 줄 하나.
                 핵심 수치는 **굵게**. 모든 표현은 한국어로 — 영어 약어·시스템 내부 라벨을 그대로 옮기지 마라.
+            R8. "[내 판단 성적]"·"[손절/익절 규율 성적]"·"[프리모템 무효화 신호]" 섹션이 있으면 그 누적 데이터와
+                이번 주 행동을 연결해 관찰하라(예: 무참조 매수가 많은데 이번 주도 스탠스 확인 없이 샀는가,
+                손절선 위반 이력이 있는데 프리모템 발동을 흘려보냈는가). 그리고 **이번 주 매매가 1건 이상일 때만**,
+                맨 마지막에 "다음 주 행동 처방: "으로 시작하는 별도 문단 한 개를 붙여라 — 처방은 **정확히 1개**만.
+                처방은 기록·계획·확인 같은 과정 습관이어야 하며 특정 종목 매매 지시(R6 금지 대상)가 아니다.
+                반드시 위 데이터의 구체 수치를 근거로 들어라. 근거를 못 찾으면, 그리고 이번 주 매매가 0건이면
+                처방을 아예 생략하라(억지 처방 금지).
 
             마지막 경고: 너의 학습 지식 속 주가·지수·수치는 낡아서 틀렸다. 위 사실 데이터의 값만 그대로
             복사해 쓰라.

@@ -54,6 +54,7 @@ import com.haky.edge.model.PortfolioStress
 import com.haky.edge.model.PositionSizing
 import com.haky.edge.model.PositionSizingEntry
 import com.haky.edge.model.PositionSizingRequest
+import com.haky.edge.model.DisciplineSummaryEntry
 import com.haky.edge.model.PersonalWeeklyPositionEntry
 import com.haky.edge.model.PersonalWeeklyReview
 import com.haky.edge.model.PersonalWeeklyReviewRequest
@@ -634,13 +635,16 @@ class EdgeApi(
         trades: List<WeeklyTradeEntry> = emptyList(),
         thesisChanges: List<WeeklyThesisChangeEntry> = emptyList(),
         refresh: Boolean = false,
+        // L1: 행동 데이터 — 전체 행동 로그(판단대조)·규율 요약. 비우면 해당 회고 섹션 생략.
+        allTrades: List<JudgmentTradeEntry> = emptyList(),
+        discipline: DisciplineSummaryEntry? = null,
     ): PersonalWeeklyReview {
         val posEntries = positions.map { (code, pos) ->
             PersonalWeeklyPositionEntry(code, pos.first, pos.second)
         }
         return client.post("$baseUrl/weekly-review/personal") {
             contentType(ContentType.Application.Json)
-            setBody(PersonalWeeklyReviewRequest(posEntries, trades, thesisChanges, refresh))
+            setBody(PersonalWeeklyReviewRequest(posEntries, trades, thesisChanges, refresh, allTrades, discipline))
         }.body()
     }
 
