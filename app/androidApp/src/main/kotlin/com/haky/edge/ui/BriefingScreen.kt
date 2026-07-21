@@ -870,21 +870,7 @@ private fun SectorRotationCard(r: SectorRotation, loading: Boolean) {
             }
         },
     ) {
-        // 유입/이탈 배지
-        if (r.inflow.isNotEmpty() || r.outflow.isNotEmpty()) {
-            androidx.compose.foundation.layout.FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(bottom = 6.dp),
-            ) {
-                r.inflow.forEach { label ->
-                    RotationBadge(label, up = true)
-                }
-                r.outflow.forEach { label ->
-                    RotationBadge(label, up = false)
-                }
-            }
-        }
-        // 섹터별 행
+        // 섹터별 행(유입/이탈은 헤더 카운트 + 행별 ▲▼로 표현)
         r.sectors.forEachIndexed { i, s ->
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
@@ -921,22 +907,6 @@ private fun SectorRotationCard(r: SectorRotation, loading: Boolean) {
         Text("5일 / 20일 수익률 · ▲▼ 단기 순위 변화",
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp))
-    }
-}
-
-@Composable
-private fun RotationBadge(label: String, up: Boolean) {
-    val color = if (up) ChangeUp else ChangeDown
-    Surface(
-        shape = RoundedCornerShape(4.dp),
-        color = color.copy(alpha = 0.1f),
-    ) {
-        Text(
-            "${if (up) "▲" else "▼"} $label",
-            style = MaterialTheme.typography.labelSmall,
-            color = color,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-        )
     }
 }
 

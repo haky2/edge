@@ -587,19 +587,7 @@ struct BriefingView: View {
                     }
                 }
                 if let r = rotation {
-                    // 유입/이탈 요약 배지
-                    if !r.inflow.isEmpty || !r.outflow.isEmpty {
-                        HStack(spacing: 8) {
-                            ForEach(r.inflow, id: \.self) { label in
-                                rotationBadge(label, up: true)
-                            }
-                            ForEach(r.outflow, id: \.self) { label in
-                                rotationBadge(label, up: false)
-                            }
-                        }
-                        .padding(.vertical, 2)
-                    }
-                    // 섹터별 5일/20일 수익률 + 순위변화
+                    // 섹터별 5일/20일 수익률 + 순위변화(유입/이탈은 헤더 카운트 + 행별 ▲▼로 표현)
                     ForEach(0..<r.sectors.count, id: \.self) { i in
                         let s = r.sectors[i]
                         HStack(spacing: 0) {
@@ -631,17 +619,6 @@ struct BriefingView: View {
                 }
             }
         }
-    }
-
-    private func rotationBadge(_ label: String, up: Bool) -> some View {
-        HStack(spacing: 2) {
-            Text(up ? "▲" : "▼").font(.caption2)
-            Text(label).font(.caption2)
-        }
-        .padding(.horizontal, 6).padding(.vertical, 2)
-        .background(up ? Color.red.opacity(0.1) : Color(red: 0.2, green: 0.4, blue: 1.0).opacity(0.1))
-        .foregroundColor(up ? .red : Color(red: 0.2, green: 0.4, blue: 1.0))
-        .cornerRadius(4)
     }
 
     private func rankDeltaBadge(_ delta: Int) -> some View {
