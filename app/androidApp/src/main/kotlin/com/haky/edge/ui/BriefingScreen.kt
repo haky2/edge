@@ -65,7 +65,6 @@ import androidx.compose.ui.unit.sp
 import com.haky.edge.api.EdgeApi
 import com.haky.edge.db.WatchlistRepository
 import com.haky.edge.model.DartDisclosure
-import com.haky.edge.model.DiscoveryCandidate
 import com.haky.edge.model.EarningsEntry
 import com.haky.edge.model.SectorRotation
 import com.haky.edge.model.MacroIndicator
@@ -140,8 +139,6 @@ fun BriefingScreen(
     var dartItems by remember { mutableStateOf<List<DartItem>>(emptyList()) }
     var catalystBriefLoading by remember { mutableStateOf(false) }
     var catalystBriefSectors by remember { mutableStateOf<List<com.haky.edge.model.SectorCatalystLine>>(emptyList()) }
-    var discoveryLoading by remember { mutableStateOf(false) }
-    var discoveryCandidates by remember { mutableStateOf<List<DiscoveryCandidate>>(emptyList()) }
     var rotationLoading by remember { mutableStateOf(false) }
     var sectorRotation by remember { mutableStateOf<SectorRotation?>(null) }
 
@@ -299,13 +296,6 @@ fun BriefingScreen(
         } finally { catalystBriefLoading = false }
     }
 
-    suspend fun buildDiscovery() {
-        discoveryLoading = true
-        try {
-            val r = runCatching { api.getDiscovery() }.getOrNull() ?: return
-            discoveryCandidates = r.candidates
-        } finally { discoveryLoading = false }
-    }
 
     suspend fun buildSectorRotation() {
         rotationLoading = true
@@ -318,7 +308,7 @@ fun BriefingScreen(
         loading = true; supplyLoading = true; dartLoading = true; macroLoading = true
         moodLoading = true; impactLoading = true; earningsLoading = true; eventsLoading = true
         sectorLoading = true; sectorBriefingLoading = true; catalystBriefLoading = true
-        discoveryLoading = true; rotationLoading = true
+        rotationLoading = true
         error = null
         supplyRows = emptyList(); dartItems = emptyList(); macroItems = emptyList()
         moodComment = ""; moodGeneratedAt = ""
@@ -326,7 +316,6 @@ fun BriefingScreen(
         earningsItems = emptyList(); eventItems = emptyList(); sectorItems = emptyList()
         sectorBriefingComment = ""; sectorSpotlight = emptyList(); sectorBriefingGeneratedAt = ""
         catalystBriefSectors = emptyList()
-        discoveryCandidates = emptyList()
         sectorRotation = null
 
         val allItems = watchlistRepo.all()
@@ -344,7 +333,6 @@ fun BriefingScreen(
             launch { buildImpact(allItems) }
             launch { buildSectorBriefing(codes) }
             launch { buildCatalystBrief(codes) }
-            launch { buildDiscovery() }
             launch { buildSectorRotation() }
             launch {
                 val quotes = runCatching { api.getQuotes(codes) }.getOrElse { e ->
@@ -545,28 +533,6 @@ fun BriefingScreen(
                                     catalystBriefSectors.forEachIndexed { i, sector ->
                                         CatalystBriefRow(sector)
                                         if (i < catalystBriefSectors.size - 1) HorizontalDivider()
-                                    }
-                                }
-                            }
-                        }
-                        // ── 지켜볼 후보 ──
-                        item {
-                            CollapsibleCard(
-                                title = "지켜볼 후보",
-                                trailing = {
-                                    if (!discoveryLoading && discoveryCandidates.isNotEmpty()) {
-                                        BadgeCount(discoveryCandidates.size)
-                                    }
-                                },
-                            ) {
-                                if (discoveryLoading) {
-                                    LoadingRow("스캔 중…")
-                                } else if (discoveryCandidates.isEmpty()) {
-                                    EmptyRow("현재 기준(2개 이상 신호)을 충족한 후보가 없어요.")
-                                } else {
-                                    discoveryCandidates.forEachIndexed { i, c ->
-                                        DiscoveryCandidateRow(c)
-                                        if (i < discoveryCandidates.size - 1) HorizontalDivider()
                                     }
                                 }
                             }
@@ -887,69 +853,6 @@ private fun CatalystBriefRow(item: com.haky.edge.model.SectorCatalystLine) {
         }
         Text(item.line, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
     }
-}
-
-// ── 지켜볼 후보 행 ──
-@Composable
-private fun DiscoveryCandidateRow(c: DiscoveryCandidate) {
-    val changeColor = when {
-        c.changeRate > 0 -> ChangeUp
-        c.changeRate < 0 -> ChangeDown
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val sign = if (c.changeRate >= 0) "+" else ""
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(c.name, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
-                Text(c.code, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text("$sign${"%.2f".format(c.changeRate)}%", style = MaterialTheme.typography.labelSmall, color = changeColor)
-        }
-        c.signals.forEach { signal ->
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.Top,
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = OrangeAccent.copy(alpha = 0.15f),
-                ) {
-                    Text(
-                        discoverySignalLabel(signal.type),
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = OrangeAccent,
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                    )
-                }
-                Text(
-                    signal.detail,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-        Text(c.sector, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-private fun discoverySignalLabel(type: String) = when (type) {
-    "FLOW_REVERSAL" -> "수급전환"
-    "MOMENTUM"      -> "상대모멘텀"
-    "HIGH_NEARBY"   -> "신고가근접"
-    "LOW_BOUNCE"    -> "저점반등"
-    else            -> type
 }
 
 // ── 섹터 자금 순환 카드 ──

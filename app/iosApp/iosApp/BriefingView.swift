@@ -84,10 +84,6 @@ struct BriefingView: View {
     @State private var catalystBriefSectors: [SectorCatalystLine] = []
     @State private var catalystBriefExpanded = false
 
-    // 지켜볼 후보 발굴 (discovery)
-    @State private var discoveryLoading = false
-    @State private var discoveryCandidates: [DiscoveryCandidate] = []
-    @State private var discoveryExpanded = false
 
     // 접기/펼치기 상태 (기본 접힘)
     @State private var supplyExpanded = false
@@ -119,7 +115,7 @@ struct BriefingView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    let isLoading = loading || supplyLoading || dartLoading || macroLoading || moodLoading || impactLoading || earningsLoading || eventsLoading || sectorLoading || sectorBriefingLoading || catalystBriefLoading || discoveryLoading || rotationLoading
+                    let isLoading = loading || supplyLoading || dartLoading || macroLoading || moodLoading || impactLoading || earningsLoading || eventsLoading || sectorLoading || sectorBriefingLoading || catalystBriefLoading || rotationLoading
                     if isLoading {
                         ProgressView().scaleEffect(0.8)
                     } else {
@@ -198,7 +194,6 @@ struct BriefingView: View {
                 supplySection
                 dartSection
                 catalystBriefSection
-                discoverySection
             } else {
                 marketMoodSection    // 오늘 시장 분위기 — 장 전 코스피 방향 한눈에
                 moodSignalSection    // 코스피 방향 선행 신호 (가중합 예측 + 적중률)
@@ -1500,83 +1495,6 @@ struct BriefingView: View {
         .padding(.vertical, 3)
     }
 
-    // MARK: - 섹션: 지켜볼 후보 발굴
-
-    private var discoverySection: some View {
-        Section {
-            Button { withAnimation { discoveryExpanded.toggle() } } label: {
-                HStack {
-                    Text("지켜볼 후보").font(.headline)
-                    Spacer()
-                    if !discoveryCandidates.isEmpty {
-                        Text("\(discoveryCandidates.count)개")
-                            .font(.caption2).foregroundColor(.secondary)
-                    }
-                    Image(systemName: discoveryExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption).foregroundColor(.secondary)
-                }
-            }
-            .foregroundColor(.primary)
-            if discoveryLoading {
-                HStack { ProgressView().scaleEffect(0.8); Text("스캔 중…").font(.footnote).foregroundColor(.secondary) }
-            } else if discoveryExpanded {
-                if discoveryCandidates.isEmpty {
-                    Text("현재 기준(2개 이상 신호)을 충족한 후보가 없어요.")
-                        .font(.footnote).foregroundColor(.secondary)
-                } else {
-                    // Divider 금지 — List Section 직속 Divider는 독립 행이 된다(섹터 자금 순환과 동일 버그).
-                    ForEach(discoveryCandidates.indices, id: \.self) { i in
-                        discoveryRow(discoveryCandidates[i])
-                    }
-                }
-            }
-        }
-    }
-
-    private func discoveryRow(_ c: DiscoveryCandidate) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(c.name).font(.subheadline).fontWeight(.medium)
-                Text(c.code).font(.caption2).foregroundColor(.secondary)
-                Spacer()
-                let sign = c.changeRate >= 0 ? "+" : ""
-                Text("\(sign)\(String(format: "%.2f", c.changeRate))%")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundColor(c.changeRate > 0 ? .red : c.changeRate < 0 ? Color(red: 0.2, green: 0.4, blue: 1.0) : .secondary)
-            }
-            // 신호 배지 + 상세
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(c.signals.indices, id: \.self) { i in
-                    HStack(alignment: .top, spacing: 6) {
-                        Text(signalLabel(c.signals[i].type))
-                            .font(.caption2).fontWeight(.semibold)
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Color.orange.opacity(0.15))
-                            .foregroundColor(.orange)
-                            .cornerRadius(4)
-                        Text(c.signals[i].detail)
-                            .font(.caption2).foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                    }
-                }
-            }
-            Text(c.sector)
-                .font(.caption2).foregroundColor(.secondary)
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func signalLabel(_ type: String) -> String {
-        switch type {
-        case "FLOW_REVERSAL":  return "수급전환"
-        case "MOMENTUM":       return "상대모멘텀"
-        case "HIGH_NEARBY":    return "신고가근접"
-        case "LOW_BOUNCE":     return "저점반등"
-        default:               return type
-        }
-    }
-
     private func biasBadge(_ bias: String) -> (String, Color) {
         switch bias {
         case "호재우위": return ("▲ 호재", .red)
@@ -1599,7 +1517,6 @@ struct BriefingView: View {
         sectorLoading = true
         sectorBriefingLoading = true
         catalystBriefLoading = true
-        discoveryLoading = true
         rotationLoading = true
         errorText = nil
         supplyRows = []
@@ -1618,7 +1535,6 @@ struct BriefingView: View {
         sectorSpotlight = []
         sectorBriefingGeneratedAt = ""
         catalystBriefSectors = []
-        discoveryCandidates = []
         sectorRotation = nil
 
         let allItems = Db.watchlist.all()
@@ -1636,7 +1552,6 @@ struct BriefingView: View {
         async let impactTask: Void          = buildImpact(allItems: allItems)
         async let sectorBriefingTask: Void  = buildSectorBriefing(codes: codes)
         async let catalystBriefTask: Void   = buildCatalystBrief(codes: codes)
-        async let discoveryTask: Void       = buildDiscovery()
         async let rotationTask: Void        = buildSectorRotation()
 
         let quotes: [Quote]
@@ -1647,7 +1562,7 @@ struct BriefingView: View {
             loading = false
             supplyLoading = false
             dartLoading = false
-            _ = await (macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, eventsTask, impactTask, sectorBriefingTask, catalystBriefTask, discoveryTask, rotationTask)
+            _ = await (macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, eventsTask, impactTask, sectorBriefingTask, catalystBriefTask, rotationTask)
             return
         }
         let quoteMap = Dictionary(uniqueKeysWithValues: quotes.map { ($0.code, $0) })
@@ -1663,7 +1578,7 @@ struct BriefingView: View {
         // supply·dart·macro·impact·sectorBriefing은 섹션 내부 스피너 유지하며 병렬 진행
         async let supplyTask: Void = buildSupply(allItems: allItems, quoteMap: quoteMap)
         async let dartTask: Void   = buildDart(codes: codes, allItems: allItems)
-        _ = await (supplyTask, dartTask, macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, eventsTask, impactTask, sectorBriefingTask, catalystBriefTask, discoveryTask, rotationTask)
+        _ = await (supplyTask, dartTask, macroTask, moodTask, moodAccuracyTask, sectorTask, earningsTask, eventsTask, impactTask, sectorBriefingTask, catalystBriefTask, rotationTask)
 
         supplyLoading = false
         dartLoading = false
@@ -1674,12 +1589,6 @@ struct BriefingView: View {
         guard !codes.isEmpty else { return }
         guard let result = try? await api.getCatalystBrief(codes: codes) else { return }
         catalystBriefSectors = result.sectors
-    }
-
-    private func buildDiscovery() async {
-        defer { discoveryLoading = false }
-        guard let result = try? await api.getDiscovery() else { return }
-        discoveryCandidates = result.candidates
     }
 
     private func buildSectorRotation() async {
