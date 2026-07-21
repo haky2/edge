@@ -41,6 +41,12 @@ data class SectorRotation(
  * 판정 원리(상대적 순환): 각 업종의 5일·20일 수익률로 두 창의 상대순위를 매기고,
  * 20일 대비 5일 순위가 오른(=단기 가속) 업종을 "유입 조짐", 내린 업종을 "이탈 조짐"으로 본다.
  * 절대 등락이 아니라 상대 순위 변화라, 시장 전체가 함께 움직여도 순환 방향이 드러난다.
+ *
+ * 실측(X5, 2026-07 — docs/sector-rotation-validation-2026-07.md, signal-lab rotation 수트):
+ * 2년 리플레이에서 유입 [지지](20d 초과수익 baseline 대비 +1.20%p·승률 +1.30%p, 중앙값 음수라
+ * 약한 지지), 이탈 [혼재]. 정보는 5일 시계에 집중(유입 승률 +5.1%p·이탈 −7.9%p) — 순위 모멘텀은
+ * 1주 시계 신호이며 20일 지속성은 약하다. 연속 rankΔ는 무정보(ρ≈0), 문턱(±2) 신호만 유효.
+ * → 현행 유지하되 facts에 시계 한정을 명시해 한 달짜리 순환 서사를 가드(buildFacts).
  */
 class SectorRotationService(private val kis: KisClient) {
     private val fileCache = FileCache("sector_rotation", SectorRotation.serializer())
@@ -113,6 +119,9 @@ class SectorRotationService(private val kis: KisClient) {
             }
             if (inflow.isNotEmpty()) sb.appendLine("자금 유입 조짐(20일 대비 5일 상대순위 상승): ${inflow.joinToString(", ")}")
             if (outflow.isNotEmpty()) sb.appendLine("자금 이탈 조짐(상대순위 하락): ${outflow.joinToString(", ")}")
+            // X5 실측: 이 신호의 정보는 단기(1주) 시계에 집중, 20일 지속성 약함(이탈은 혼재).
+            // 코멘트가 "한 달 순환 흐름" 같은 장기 서사로 확대하지 않도록 시계를 명시해 준다.
+            sb.appendLine("(참고: 이 순환 신호는 단기 1주 시계 신호 — 실측상 한 달 이상 지속성은 확인되지 않았으니 장기 추세로 서술하지 말 것. 이탈 신호는 유입보다 근거가 약함)")
             return sb.toString().trimEnd()
         }
 
