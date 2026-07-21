@@ -179,10 +179,12 @@ struct PortfolioView: View {
 
             if portfolioRisk != nil || riskLoading {
                 Section {
-                    portfolioRiskCard
-                    if let st = portfolioStress, !st.scenarios.isEmpty {
-                        Divider()
-                        stressCard(st)
+                    VStack(alignment: .leading, spacing: 0) {
+                        portfolioRiskCard
+                        if let st = portfolioStress, !st.scenarios.isEmpty {
+                            Divider()
+                            stressCard(st)
+                        }
                     }
                 }
             }
@@ -608,9 +610,6 @@ struct PortfolioView: View {
                 Image(systemName: "arrow.down.forward.circle").font(.caption).foregroundColor(.teal)
                 Text("스트레스 시나리오").font(.subheadline.weight(.semibold))
                 Spacer()
-                if let b = st.portfolioBeta?.doubleValue {
-                    Text("베타 \(String(format: "%.2f", b))").font(.caption2).foregroundColor(.secondary)
-                }
                 Image(systemName: stressExpanded ? "chevron.up" : "chevron.down")
                     .font(.caption).foregroundColor(.secondary)
             }

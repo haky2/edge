@@ -741,9 +741,7 @@ struct StockDetailView: View {
                     .padding(.top, 4)
             }
         }
-        .padding(.horizontal, 12)
-        .background(Color(UIColor.secondarySystemGroupedBackground))
-        .cornerRadius(10)
+        .cardStyle()
     }
 
     // R5 수급 — 기본 접힘 래퍼
@@ -752,6 +750,7 @@ struct StockDetailView: View {
             HStack {
                 Text("수급 · 순매수").font(.subheadline.weight(.semibold))
                 Spacer()
+                dataTag("전일 확정")
                 Image(systemName: flowExpanded ? "chevron.up" : "chevron.down")
                     .font(.caption).foregroundColor(.secondary)
             }
@@ -764,9 +763,7 @@ struct StockDetailView: View {
                     .padding(.top, 4)
             }
         }
-        .padding(.horizontal, 12)
-        .background(Color(UIColor.secondarySystemGroupedBackground))
-        .cornerRadius(10)
+        .cardStyle()
     }
 
     // 지표 해석 ① 계산 기반(LLM 없음). 이미 받은 시세·수급으로 즉시 계산한 "위치/흐름" 요약.
@@ -1210,8 +1207,6 @@ struct StockDetailView: View {
     // 자세한 숫자·용어 설명은 ⓘ로 접어둔다(타고 들어가기). 계산만, 판단 없음.
     private func technicalCard(_ r: TechnicalResult, price: Double) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("기술적 지표").font(.subheadline.weight(.semibold)).padding(.top, 8)
-
             // ── 시각 요약: 추세 신호등 + RSI 게이지 ──
             HStack(alignment: .top, spacing: 16) {
                 trendSignal(r, price: price)
@@ -1231,7 +1226,6 @@ struct StockDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 6)
-        .cardStyle()
     }
 
     // 추세 신호등: MA5/MA20/MA60 각각 현재가가 위면 빨강(상승)·아래면 파랑(하락) 점.
@@ -1395,12 +1389,6 @@ struct StockDetailView: View {
     // 수급 카드. 상단: 외인·기관 방향 막대 차트(시각적). 하단: 전체 정확한 수치표.
     private func flowCard() -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Text("수급 · 순매수").font(.subheadline.weight(.semibold))
-                Spacer()
-                dataTag("전일 확정")
-            }
-            .padding(.top, 8)
             Chart(flowChartData) { e in
                 BarMark(x: .value("날짜", e.date), y: .value("순매수", e.shares))
                     .foregroundStyle(by: .value("투자자", e.investor))
@@ -1441,7 +1429,6 @@ struct StockDetailView: View {
             flowSensSection()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardStyle()
     }
 
     // U2 수급-가격 민감도 서브섹션(구 독립 카드 → '수급' 카드 하단으로 흡수). 데이터 없으면 렌더 안 함.

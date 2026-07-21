@@ -1455,11 +1455,6 @@ private fun PortfolioStressCard(stress: com.haky.edge.model.PortfolioStress) {
                 Text("스트레스 시나리오",
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                     modifier = Modifier.weight(1f))
-                stress.portfolioBeta?.let {
-                    Text("베타 ${String.format("%.2f", it)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
                 Icon(
                     if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                     contentDescription = null,
