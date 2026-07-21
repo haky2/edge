@@ -33,4 +33,5 @@ data class MacroSignal(
     val changeRate: Double,
     val direction: Int,
     val note: String,
+    val grade: String = "INCONCLUSIVE", // "SUPPORTED"/"INCONCLUSIVE" — 방향의 실측 지지 여부(D1 검증). 미검증은 칩 회색 강등
 )

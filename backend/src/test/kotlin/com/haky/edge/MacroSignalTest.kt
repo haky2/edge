@@ -119,6 +119,30 @@ class MacroSignalTest {
             }
     }
 
+    // ── 실측 등급(X3, 2026-07) — grade 전파 회귀 방지 ──────────────────────
+    @Test fun `실측 지지 신호는 grade SUPPORTED로 전파된다`() {
+        // SEMICONDUCTOR × nasdaq +1 = SUPPORTED(70.7%)
+        val signals = MacroImpactService.computeSignals(
+            listOf(Sector.MEMORY), listOf(indicator("nasdaq", "나스닥", +1.5)))
+        assertEquals("SUPPORTED", signals.first { it.indicator == "나스닥" }.grade)
+    }
+
+    @Test fun `실측 무근거 신호는 grade INCONCLUSIVE로 전파된다`() {
+        // SEMICONDUCTOR × crude −1 = INCONCLUSIVE
+        val signals = MacroImpactService.computeSignals(
+            listOf(Sector.MEMORY), listOf(indicator("crude", "WTI유가", +2.0)))
+        assertEquals("INCONCLUSIVE", signals.first { it.indicator == "WTI유가" }.grade)
+    }
+
+    @Test fun `crude·usdjpy 전 그룹은 INCONCLUSIVE 등급`() {
+        MacroImpactService.SENSITIVITY.values.flatten()
+            .filter { it.indicatorKey == "crude" || it.indicatorKey == "usdjpy" }
+            .forEach { s ->
+                assertEquals(MacroImpactService.SensitivityGrade.INCONCLUSIVE, s.grade,
+                    "${s.indicatorKey}는 실측 무근거 → INCONCLUSIVE 필요: ${s.note}")
+            }
+    }
+
     @Test fun `매핑 없는 지표는 신호 목록에 포함되지 않는다`() {
         val sectors = listOf(Sector.MEMORY)
         val indicators = listOf(indicator("unknown_key", "알수없음", +5.0))

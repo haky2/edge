@@ -1262,10 +1262,14 @@ private fun ImpactRowView(s: StockImpact) {
         } else {
             s.signals.forEach { sig ->
                 val d = sig.direction
-                val c = if (d > 0) ChangeUp else if (d < 0) ChangeDown else EdgeTheme.colors.neutral
                 val lbl = if (d > 0) "우호" else if (d < 0) "부담" else "중립"
                 val signed = (if (sig.changeRate >= 0) "+" else "") + "%.2f".format(sig.changeRate)
-                Text("${sig.indicator} $signed% → $lbl", style = MaterialTheme.typography.labelSmall, color = c)
+                // 실측 미검증(INCONCLUSIVE) 신호는 방향색 대신 회색 + 꼬리표로 시각 강등(X3).
+                val supported = sig.grade == "SUPPORTED"
+                val c = if (!supported) MaterialTheme.colorScheme.onSurfaceVariant
+                        else if (d > 0) ChangeUp else if (d < 0) ChangeDown else EdgeTheme.colors.neutral
+                val suffix = if (supported) "" else " · 실측 미검증"
+                Text("${sig.indicator} $signed% → $lbl$suffix", style = MaterialTheme.typography.labelSmall, color = c)
             }
         }
     }

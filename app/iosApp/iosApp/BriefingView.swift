@@ -1160,9 +1160,16 @@ struct BriefingView: View {
             } else {
                 ForEach(s.signals, id: \.indicator) { sig in
                     let dir = Int(sig.direction)
-                    Text("\(sig.indicator) \(signedRate(sig.changeRate))% → \(directionLabel(dir))")
-                        .font(.caption2)
-                        .foregroundColor(directionColor(dir))
+                    // 실측 미검증(INCONCLUSIVE) 신호는 방향색 대신 회색 + 꼬리표로 시각 강등(X3).
+                    let supported = sig.grade == "SUPPORTED"
+                    HStack(spacing: 4) {
+                        Text("\(sig.indicator) \(signedRate(sig.changeRate))% → \(directionLabel(dir))")
+                            .font(.caption2)
+                            .foregroundColor(supported ? directionColor(dir) : .secondary)
+                        if !supported {
+                            Text("· 실측 미검증").font(.caption2).foregroundColor(Color(.tertiaryLabel))
+                        }
+                    }
                 }
             }
         }

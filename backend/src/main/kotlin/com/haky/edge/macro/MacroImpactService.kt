@@ -50,6 +50,7 @@ data class MacroSignal(
     val changeRate: Double,  // 오늘 해당 지표 등락률 %
     val direction: Int,      // 이 종목에 미치는 방향(+1/0/-1)
     val note: String,        // 근거 한 줄
+    val grade: String = "INCONCLUSIVE", // "SUPPORTED"/"INCONCLUSIVE" — 방향의 실측 지지 여부(D1 검증). 기본값=구버전 캐시 호환
 )
 
 /** 보유 종목 포지션 정보. 공격적 모드에서 포트폴리오 스탠스 의견에 활용. */
@@ -199,7 +200,9 @@ class MacroImpactService(
                         sig.direction < 0 -> "부담"
                         else -> "중립"
                     }
-                    sb.appendLine("      · ${sig.indicator} ${signed(sig.changeRate)}% → $dir (${sig.note})")
+                    // 실측 미검증 신호는 태깅 → Claude가 방향을 단정 근거로 쓰지 않도록(프롬프트 규칙과 연동).
+                    val gradeTag = if (sig.grade == "SUPPORTED") "" else " [실측 미검증]"
+                    sb.appendLine("      · ${sig.indicator} ${signed(sig.changeRate)}% → $dir$gradeTag (${sig.note})")
                 }
             }
         }
@@ -362,8 +365,21 @@ $enumList
         COMPONENT("전자부품",    "MLCC·기판·카메라모듈 등 부품",         MacroGroup.ELECTRONICS),
     }
 
+    /**
+     * 실측 등급(D1 검증, docs/sensitivity-validation-2026-07.md).
+     *  - SUPPORTED: 2년 일별 실데이터에서 방향이 유의하게 지지됨(일치≥54%&r>0 또는 |t|≥2).
+     *  - INCONCLUSIVE: 실측 무근거(무유의). 방향은 구조 논리로 유지하되 강한 서술 금지.
+     * 클라 칩은 INCONCLUSIVE를 회색으로 시각 강등, Claude facts엔 [실측 미검증] 태깅.
+     */
+    internal enum class SensitivityGrade { SUPPORTED, INCONCLUSIVE }
+
     /** 대분류 × 지표 민감도 1건. direction: +1 = 지표 상승이 해당 그룹에 우호, -1 = 부담, 0 = 무관. */
-    internal data class Sensitivity(val indicatorKey: String, val direction: Int, val note: String)
+    internal data class Sensitivity(
+        val indicatorKey: String,
+        val direction: Int,
+        val note: String,
+        val grade: SensitivityGrade = SensitivityGrade.INCONCLUSIVE,
+    )
 
     companion object {
         // 대분류 → KOSPI 업종지수 key. SectorBriefingService의 SECTOR_INDEX_TO_OUR 역매핑.
@@ -394,47 +410,52 @@ $enumList
         //    작동해 상승일에 시크리컬 전반이 오른다. 전력기기는 구리 수요 자체가 인프라 투자 신호.
         //  - crude·usdjpy: 일별 실측 무근거(무유의)였으나 반증도 아니라 유지. 방향을 근거로 한 강한
         //    서술은 피해야 함(note에 실측 수준 표시하지 않음 — 구조 논리로만).
+        //
+        // grade(X3, 2026-07): 위 검증 문서의 셀별 판정을 코드 상수로 옮김(교정 후 방향 기준).
+        //  - SUPPORTED = 교정된 방향이 유의하게 지지(nasdaq 동조·rate3y 부담 3그룹·usdkrw −1 유의그룹·copper +1 반전).
+        //  - INCONCLUSIVE = 실측 무근거(crude·usdjpy 전부, 방산/조선 usdkrw, 조선/전력기기 rate3y 등).
+        //  판정 근거는 각 줄 끝 주석의 일치율/t 참고(문서 표 그대로).
         internal val SENSITIVITY = mapOf(
             MacroGroup.SEMICONDUCTOR to listOf(
-                Sensitivity("usdkrw", -1, "환율 급등(원화 약세) → 외국인 자금 이탈·리스크오프 신호 — 외국인 비중 큰 반도체에 단기 부담"),
-                Sensitivity("nasdaq", +1, "미국 빅테크·AI 반도체와 주가 동조"),
-                Sensitivity("usdjpy", -1, "엔화 약세 → 키옥시아·도시바 등 일본 경쟁사 가격 경쟁력 강화 → 부담"),
-                Sensitivity("crude",  -1, "유가 상승 → 인플레·금리 우려 → 성장주 부담"),
-                Sensitivity("rate3y", -1, "금리 상승 → 성장주 밸류에이션 할인율 확대"),
+                Sensitivity("usdkrw", -1, "환율 급등(원화 약세) → 외국인 자금 이탈·리스크오프 신호 — 외국인 비중 큰 반도체에 단기 부담", SensitivityGrade.SUPPORTED),   // t=−3.16
+                Sensitivity("nasdaq", +1, "미국 빅테크·AI 반도체와 주가 동조", SensitivityGrade.SUPPORTED),                                                     // 70.7%, t=8.71
+                Sensitivity("usdjpy", -1, "엔화 약세 → 키옥시아·도시바 등 일본 경쟁사 가격 경쟁력 강화 → 부담", SensitivityGrade.INCONCLUSIVE),                    // 무유의
+                Sensitivity("crude",  -1, "유가 상승 → 인플레·금리 우려 → 성장주 부담", SensitivityGrade.INCONCLUSIVE),                                          // r≈0
+                Sensitivity("rate3y", -1, "금리 상승 → 성장주 밸류에이션 할인율 확대", SensitivityGrade.SUPPORTED),                                              // 54.1%, t=3.49
             ),
             MacroGroup.SHIPBUILDING to listOf(
-                Sensitivity("usdkrw", -1, "환율 급등 → 외국인 자금 이탈·리스크오프 신호 — 단기 부담(달러 수주 채산성은 분기 실적 시계)"),
-                Sensitivity("crude",  +1, "유가 상승 → 유조선·LNG선 발주 수요 증가"),
-                Sensitivity("rate3y", -1, "금리 상승 → 선박금융 조달 비용 증가, 선주 투자 부담"),
+                Sensitivity("usdkrw", -1, "환율 급등 → 외국인 자금 이탈·리스크오프 신호 — 단기 부담(달러 수주 채산성은 분기 실적 시계)", SensitivityGrade.INCONCLUSIVE),  // t=−1.58 무유의
+                Sensitivity("crude",  +1, "유가 상승 → 유조선·LNG선 발주 수요 증가", SensitivityGrade.INCONCLUSIVE),                                             // r≈0
+                Sensitivity("rate3y", -1, "금리 상승 → 선박금융 조달 비용 증가, 선주 투자 부담", SensitivityGrade.INCONCLUSIVE),                                   // 47.5% 무근거
             ),
             MacroGroup.DEFENSE to listOf(
-                Sensitivity("usdkrw", -1, "환율 급등 → 외국인 자금 이탈·리스크오프 신호 — 단기 부담(수출 채산성은 분기 실적 시계)"),
+                Sensitivity("usdkrw", -1, "환율 급등 → 외국인 자금 이탈·리스크오프 신호 — 단기 부담(수출 채산성은 분기 실적 시계)", SensitivityGrade.INCONCLUSIVE),   // 50.0% 무근거
             ),
             MacroGroup.POWER_EQUIP to listOf(
-                Sensitivity("usdkrw", -1, "환율 급등 → 외국인 자금 이탈·리스크오프 신호 — 단기 부담(수출 채산성은 분기 실적 시계)"),
-                Sensitivity("nasdaq", +1, "미국 데이터센터·전력 인프라 투자 테마 연동"),
-                Sensitivity("usdjpy", -1, "엔화 약세 → 히타치 에너지·미쓰비시 전기 등 일본 전력기기 경쟁사 가격 경쟁력 강화"),
-                Sensitivity("crude",  +1, "유가 상승 → 에너지 전환·신재생 투자 가속화"),
-                Sensitivity("copper", +1, "구리 상승 → 전력 인프라·경기 수요 회복 신호(원가 부담을 압도)"),
-                Sensitivity("rate3y", -1, "금리 상승 → 인프라 투자 할인율 상승, 밸류에이션 부담"),
+                Sensitivity("usdkrw", -1, "환율 급등 → 외국인 자금 이탈·리스크오프 신호 — 단기 부담(수출 채산성은 분기 실적 시계)", SensitivityGrade.SUPPORTED),      // t=−2.24
+                Sensitivity("nasdaq", +1, "미국 데이터센터·전력 인프라 투자 테마 연동", SensitivityGrade.SUPPORTED),                                             // 67.1%, t=7.89
+                Sensitivity("usdjpy", -1, "엔화 약세 → 히타치 에너지·미쓰비시 전기 등 일본 전력기기 경쟁사 가격 경쟁력 강화", SensitivityGrade.INCONCLUSIVE),           // 무유의
+                Sensitivity("crude",  +1, "유가 상승 → 에너지 전환·신재생 투자 가속화", SensitivityGrade.INCONCLUSIVE),                                           // r≈0
+                Sensitivity("copper", +1, "구리 상승 → 전력 인프라·경기 수요 회복 신호(원가 부담을 압도)", SensitivityGrade.SUPPORTED),                            // 반전 t=+3.33
+                Sensitivity("rate3y", -1, "금리 상승 → 인프라 투자 할인율 상승, 밸류에이션 부담", SensitivityGrade.INCONCLUSIVE),                                  // 지지 표 외
             ),
             // IT서비스(내수)+로봇·AI(성장·수출)를 묶은 그룹. 내수·수출 혼재라 환율은 중립.
             MacroGroup.TECH_GROWTH to listOf(
-                Sensitivity("nasdaq", +1, "미국 빅테크·AI 테마와 동조 — 나스닥 강세 시 동반 상승"),
-                Sensitivity("rate3y", -1, "성장 기대가 반영된 높은 주가 배수 → 금리 상승 시 할인율 부담 확대"),
+                Sensitivity("nasdaq", +1, "미국 빅테크·AI 테마와 동조 — 나스닥 강세 시 동반 상승", SensitivityGrade.SUPPORTED),                                   // 61.8%, t=5.49
+                Sensitivity("rate3y", -1, "성장 기대가 반영된 높은 주가 배수 → 금리 상승 시 할인율 부담 확대", SensitivityGrade.SUPPORTED),                          // 54.5%, t=2.94
             ),
             MacroGroup.ELECTRONICS to listOf(
-                Sensitivity("usdkrw", -1, "환율 급등 → 외국인 자금 이탈·리스크오프 신호 — 단기 부담(수출 채산성은 분기 실적 시계)"),
-                Sensitivity("usdjpy", -1, "엔화 약세 → 소니·파나소닉 등 일본 가전·전자 경쟁사 가격 경쟁력 강화"),
-                Sensitivity("crude",  -1, "유가 상승 → 물류·부품 운반비 원가 부담"),
-                Sensitivity("copper", +1, "구리 상승 → 글로벌 경기 회복 신호 — 전자 수요 개선 기대(원가 부담보다 우세)"),
+                Sensitivity("usdkrw", -1, "환율 급등 → 외국인 자금 이탈·리스크오프 신호 — 단기 부담(수출 채산성은 분기 실적 시계)", SensitivityGrade.SUPPORTED),      // t=−2.04
+                Sensitivity("usdjpy", -1, "엔화 약세 → 소니·파나소닉 등 일본 가전·전자 경쟁사 가격 경쟁력 강화", SensitivityGrade.INCONCLUSIVE),                     // 무유의
+                Sensitivity("crude",  -1, "유가 상승 → 물류·부품 운반비 원가 부담", SensitivityGrade.INCONCLUSIVE),                                              // r≈0
+                Sensitivity("copper", +1, "구리 상승 → 글로벌 경기 회복 신호 — 전자 수요 개선 기대(원가 부담보다 우세)", SensitivityGrade.SUPPORTED),                // 반전 t=+3.83
             ),
             MacroGroup.AUTOMOBILE to listOf(
-                Sensitivity("usdkrw", -1, "환율 급등 → 외국인 자금 이탈·리스크오프 신호 — 단기 부담(수출 채산성은 분기 실적 시계)"),
-                Sensitivity("usdjpy", -1, "엔화 약세 → 토요타·혼다 등 일본차 가격 경쟁력 강화 → 현대·기아 점유율 압박"),
-                Sensitivity("crude",  -1, "유가 상승 → 소비자 유지비 부담 → 자동차 수요 심리 위축"),
-                Sensitivity("copper", +1, "구리 상승 → 글로벌 경기 회복 신호 — 자동차 수요 개선 기대(원가 부담보다 우세)"),
-                Sensitivity("rate3y", -1, "금리 상승 → 자동차 할부 이자 증가 → 구매 수요 감소"),
+                Sensitivity("usdkrw", -1, "환율 급등 → 외국인 자금 이탈·리스크오프 신호 — 단기 부담(수출 채산성은 분기 실적 시계)", SensitivityGrade.SUPPORTED),      // t=−2.08
+                Sensitivity("usdjpy", -1, "엔화 약세 → 토요타·혼다 등 일본차 가격 경쟁력 강화 → 현대·기아 점유율 압박", SensitivityGrade.INCONCLUSIVE),               // 무유의
+                Sensitivity("crude",  -1, "유가 상승 → 소비자 유지비 부담 → 자동차 수요 심리 위축", SensitivityGrade.INCONCLUSIVE),                                 // r≈0
+                Sensitivity("copper", +1, "구리 상승 → 글로벌 경기 회복 신호 — 자동차 수요 개선 기대(원가 부담보다 우세)", SensitivityGrade.SUPPORTED),              // 반전 t=+3.93
+                Sensitivity("rate3y", -1, "금리 상승 → 자동차 할부 이자 증가 → 구매 수요 감소", SensitivityGrade.SUPPORTED),                                      // 53.7%, t=3.56
             ),
         )
 
@@ -458,6 +479,8 @@ $enumList
             7. "임박 거시 이벤트" 섹션이 있으면, 그중 내 보유·관심 종목(섹터)에 영향이 큰 일정 1~2개를 마무리 문단(④)에서
                날짜(또는 D-day)와 함께 짚어라(예: "이번 주 목요일 FOMC를 앞두고 금리 민감한 반도체·성장주는 변동성이 커질 수 있다").
                날짜·이름은 사실대로, 영향은 조건부로. 일정을 전부 나열하지 말고 내 종목과 관련된 핵심만, 무관하면 건너뛰어라.
+            8. 지표 신호에 "[실측 미검증]" 표시가 붙어 있으면, 그 방향은 과거 데이터로 확인되지 않은 구조 논리일 뿐이다.
+               그 신호를 단정적 근거로 쓰지 말고("~라서 부담이다" 금지) 참고 수준으로만 다뤄라. 실측이 확인된(표시 없는) 신호를 우선한다.
 
             마지막 경고: 너의 학습 지식 속 지수·환율·금리 수치와 이 종목들의 주가·실적 기억은 전부 낡아서 틀렸다. 절대 사용하지 마라. 수치는 위 사실 데이터에서 그대로 복사해서만 쓴다.
         """.trimIndent()
@@ -489,6 +512,8 @@ $enumList
             6. "임박 거시 이벤트" 섹션이 있으면, 내 보유·관심 종목(섹터)에 영향이 큰 일정 1~2개를 마무리 스탠스(④)에 묶어
                대응까지 못박아라(예: "D-2 FOMC 전까지 금리 민감 반도체 비중은 늘리지 말고 결과를 보고 대응하라").
                날짜·이름은 사실대로, 결과 방향은 조건부로. 내 종목과 무관한 일정은 건너뛰어라.
+            7. 지표 신호에 "[실측 미검증]" 표시가 붙어 있으면, 그 방향은 과거 데이터로 확인되지 않은 구조 논리다.
+               단호한 스탠스의 주 근거로 삼지 마라 — 실측이 확인된(표시 없는) 신호를 우선하고, 미검증 신호는 보조 언급까지만.
 
             마지막 경고: 너의 학습 지식 속 지수·환율·금리 수치와 이 종목들의 주가·실적 기억은 전부 낡아서 틀렸다. 절대 사용하지 마라. 수치는 위 사실 데이터에서 그대로 복사해서만 쓴다.
         """.trimIndent()
@@ -523,7 +548,12 @@ $enumList
                     nonZeroSet.isEmpty() -> paired.first().first.note
                     else -> paired.firstOrNull { it.second != 0 }?.first?.note ?: paired.first().first.note
                 }
-                MacroSignal(indicator = ind.label, changeRate = rate, direction = direction, note = note)
+                // 등급: 최종 방향에 기여한(effDir==direction) 민감도 중 하나라도 SUPPORTED면 SUPPORTED.
+                // 방향 상쇄(direction==0)면 강한 주장 근거가 없으므로 INCONCLUSIVE.
+                val grade = if (direction != 0 &&
+                    paired.any { it.second == direction && it.first.grade == SensitivityGrade.SUPPORTED }
+                ) "SUPPORTED" else "INCONCLUSIVE"
+                MacroSignal(indicator = ind.label, changeRate = rate, direction = direction, note = note, grade = grade)
             }
         }
 
