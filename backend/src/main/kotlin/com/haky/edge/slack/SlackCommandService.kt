@@ -3,8 +3,6 @@ package com.haky.edge.slack
 import com.haky.edge.ai.Analysis
 import com.haky.edge.ai.AskAnswer
 import com.haky.edge.ai.AnalysisService
-import com.haky.edge.ai.Comparison
-import com.haky.edge.ai.ComparisonService
 import com.haky.edge.kis.InvestorFlow
 import com.haky.edge.kis.KisClient
 import com.haky.edge.macro.EventSyncService
@@ -23,7 +21,6 @@ import java.time.temporal.ChronoUnit
  *   /edge 종목명             → AI 분석 코멘트 (S7 기존)
  *   /edge 시황               → 오늘 시장 분위기 코멘트
  *   /edge 이벤트             → 거시 이벤트 캘린더 (30일)
- *   /edge 비교 A B           → 두 종목 나란히 비교
  *   /edge 신호 종목명        → 외인/기관 수급 신호 확인
  *   /edge 물어봐 종목명 질문 → 종목 자유 질문 (A3)
  *
@@ -39,7 +36,6 @@ class SlackCommandService(
     private val kis: KisClient,
     private val marketMood: MarketMoodService,
     private val eventSync: EventSyncService,
-    private val comparison: ComparisonService,
 ) {
     private val codeRegex = Regex("""[0-9A-Z]{6}""")
 
@@ -51,7 +47,6 @@ class SlackCommandService(
 • `/edge 종목명` — AI 분석 코멘트
 • `/edge 시황` — 오늘 시장 분위기
 • `/edge 이벤트` — 거시 이벤트 캘린더
-• `/edge 비교 종목A 종목B` — 두 종목 비교
 • `/edge 신호 종목명` — 수급 신호 확인
 • `/edge 물어봐 종목명 질문` — 종목 자유 질문""")
             return
@@ -62,8 +57,6 @@ class SlackCommandService(
             when {
                 sub == "시황" -> handleMarketMood(responseUrl)
                 sub == "이벤트" -> handleEvents(responseUrl)
-                sub == "비교" && parts.size >= 3 -> handleComparison(parts[1], parts[2], responseUrl)
-                sub == "비교" -> slack.postToResponseUrl(responseUrl, "사용법: `/edge 비교 종목A 종목B` (예: `/edge 비교 삼성전자 SK하이닉스`)")
                 sub == "신호" && parts.size >= 2 -> handleSignal(parts[1], responseUrl)
                 sub == "신호" -> slack.postToResponseUrl(responseUrl, "사용법: `/edge 신호 종목명` (예: `/edge 신호 삼성전자`)")
                 (sub == "물어봐" || sub == "질문") && parts.size >= 3 -> handleAsk(parts[1], parts[2], responseUrl)
@@ -106,11 +99,6 @@ class SlackCommandService(
         return when {
             sub == "시황" -> formatMarketMood(marketMood.get())
             sub == "이벤트" -> formatEvents(eventSync.getUpcoming(30))
-            sub == "비교" && parts.size >= 3 -> {
-                val codeA = resolveCode(parts[1]) ?: error("종목 미발견: ${parts[1]}")
-                val codeB = resolveCode(parts[2]) ?: error("종목 미발견: ${parts[2]}")
-                formatComparison(comparison.compare(codeA, codeB))
-            }
             sub == "신호" && parts.size >= 2 -> {
                 val code = resolveCode(parts[1]) ?: error("종목 미발견: ${parts[1]}")
                 val name = resolveStockName(code)
@@ -170,43 +158,6 @@ class SlackCommandService(
                 if (e.impact.isNotBlank()) appendLine("   _${e.impact}_")
             }
         }.trim()
-    }
-
-    // ─── 비교 ─────────────────────────────────────────────────────────────────
-
-    private suspend fun handleComparison(textA: String, textB: String, responseUrl: String) {
-        val codeA = resolveCode(textA) ?: run {
-            slack.postToResponseUrl(responseUrl, "'$textA' 종목을 못 찾았어요.")
-            return
-        }
-        val codeB = resolveCode(textB) ?: run {
-            slack.postToResponseUrl(responseUrl, "'$textB' 종목을 못 찾았어요.")
-            return
-        }
-        val cmp = comparison.compare(codeA, codeB)
-        slack.postWithShareButton(responseUrl, formatComparison(cmp), shareValue = "비교 $textA $textB")
-    }
-
-    private fun formatComparison(cmp: Comparison): String = buildString {
-        appendLine("*${cmp.a.name} vs ${cmp.b.name} 비교*")
-        appendLine()
-        appendLine("*지표 비교*")
-        fun pct(v: Double) = "%+.2f%%".format(v)
-        fun d1(v: Double) = "%.1f".format(v)
-        fun lf(v: Long) = "%,d".format(v)
-        appendLine("• 현재가: ${lf(cmp.a.price)}원 / ${lf(cmp.b.price)}원")
-        appendLine("• 등락률: ${pct(cmp.a.changeRate)} / ${pct(cmp.b.changeRate)}")
-        appendLine("• PER: ${d1(cmp.a.per)}배 / ${d1(cmp.b.per)}배")
-        appendLine("• PBR: ${d1(cmp.a.pbr)}배 / ${d1(cmp.b.pbr)}배")
-        appendLine("• 52주 위치: ${cmp.a.week52PosPct.toInt()}% / ${cmp.b.week52PosPct.toInt()}%")
-        if (cmp.a.upsidePct != null || cmp.b.upsidePct != null) {
-            appendLine("• 목표가 괴리: ${cmp.a.upsidePct?.let { pct(it) } ?: "-"} / ${cmp.b.upsidePct?.let { pct(it) } ?: "-"}")
-        }
-        cmp.a.valuationLabel?.let { appendLine("• ${cmp.a.name} 밸류: $it") }
-        cmp.b.valuationLabel?.let { appendLine("• ${cmp.b.name} 밸류: $it") }
-        appendLine()
-        appendLine(cmp.comment.trim())
-        append("\n\n_${cmp.generatedAt.ifBlank { "오늘" }} 기준 · 참고용_")
     }
 
     // ─── 신호 ─────────────────────────────────────────────────────────────────

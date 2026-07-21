@@ -63,10 +63,6 @@ struct StockDetailView: View {
     @State private var showEdit = false
     @State private var showLogSheet = false
     @State private var showAskSheet = false
-    @State private var showComparePicker = false
-    @State private var compareTarget: WatchItem? = nil
-    @State private var showComparison = false
-
     private let initialAccountId: Int64?
 
     // 계좌 컨텍스트 — nil=전체(전 계좌 병합), 값=해당 계좌 포지션 기준. 진입 경로가 초기값을 정하고
@@ -142,9 +138,6 @@ struct StockDetailView: View {
             // U4: 저빈도·고비용(비교·딥리서치·질문) → ⋯ 오버플로 메뉴. 고빈도(매매기록·평단·새로고침)는 아이콘 유지.
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button { showComparePicker = true } label: {
-                        Label("비교", systemImage: "arrow.left.arrow.right")
-                    }
                     Button {
                         if !deepResearchLoading { Task { await loadDeepResearch() } }
                     } label: {
@@ -215,20 +208,6 @@ struct StockDetailView: View {
                     if let r = review { tradeReview = r }
                 }
             )
-        }
-        .sheet(isPresented: $showComparePicker) {
-            ComparePickerView(
-                currentCode: item.code,
-                watchlist: Db.watchlist.all()
-            ) { selected in
-                compareTarget = selected
-                showComparison = true
-            }
-        }
-        .navigationDestination(isPresented: $showComparison) {
-            if let target = compareTarget {
-                ComparisonView(itemA: item, itemB: target, api: api)
-            }
         }
     }
 
@@ -3027,7 +3006,7 @@ struct StockAskSheetView: View {
                                         .foregroundColor(.purple.opacity(0.5))
                                     Text("\(item.name)에 대해 무엇이든 물어보세요")
                                         .font(.callout.weight(.semibold))
-                                    Text("뉴스·수급·PER·밸류 등 현재 데이터를 기반으로 답변해요")
+                                    Text("뉴스·수급·PER·밸류 등 현재 데이터 기반으로 답변해요. 다른 종목과의 비교 질문도 가능해요")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                 }

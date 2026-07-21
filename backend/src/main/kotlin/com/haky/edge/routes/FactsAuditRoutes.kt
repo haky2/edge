@@ -2,7 +2,6 @@ package com.haky.edge.routes
 
 import com.haky.edge.ErrorResponse
 import com.haky.edge.ai.AnalysisService
-import com.haky.edge.ai.ComparisonService
 import com.haky.edge.ai.PortfolioReviewService
 import com.haky.edge.ai.Position
 import com.haky.edge.ai.ThesisSnapshot
@@ -109,7 +108,6 @@ fun Route.factsAuditRoutes(analysis: AnalysisService, codes: List<String>) {
                 AnalysisService.promptCharSizes().forEach { (k, v) -> add(SectionSize(k, v)) }
                 add(SectionSize("portfolio_defensive", PortfolioReviewService.promptFor(AnalysisMode.DEFENSIVE).length))
                 add(SectionSize("portfolio_aggressive", PortfolioReviewService.promptFor(AnalysisMode.AGGRESSIVE).length))
-                ComparisonService.promptCharSizes().forEach { (k, v) -> add(SectionSize(k, v)) }
                 MarketMoodService.promptCharSizes().forEach { (k, v) -> add(SectionSize(k, v)) }
             }
 

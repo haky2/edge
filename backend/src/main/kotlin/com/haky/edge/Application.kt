@@ -6,7 +6,6 @@ import com.haky.edge.ai.CatalystService
 import com.haky.edge.ai.ClaudeClient
 import com.haky.edge.ai.ClaudeException
 import com.haky.edge.ai.ClaudeUsageTracker
-import com.haky.edge.ai.ComparisonService
 import com.haky.edge.ai.ModelRouter
 import com.haky.edge.ai.PeerValuationService
 import com.haky.edge.ai.ValuationBandService
@@ -42,7 +41,6 @@ import com.haky.edge.routes.backtestRoutes
 import com.haky.edge.routes.dividendRoutes
 import com.haky.edge.routes.catalystImpactRoutes
 import com.haky.edge.routes.catalystRoutes
-import com.haky.edge.routes.comparisonRoutes
 import com.haky.edge.routes.eventRoutes
 import com.haky.edge.routes.chartRoutes
 import com.haky.edge.routes.dartRoutes
@@ -255,7 +253,6 @@ fun Application.module() {
         signalFiredLog = signalFiredLog)
     // O4 해외 간단 코멘트 — 시세(15분 지연)+뉴스만 근거. (code,날짜) 당일 공유 캐시, 기본 Opus.
     val overseasAnalysis = com.haky.edge.ai.OverseasAnalysisService(kis, naver, overseasMaster, claude, modelRouter)
-    val comparison = ComparisonService(kis, naver, master, claude, dart, naverTargetPrice, valuationBand, modelRouter)
     // 포트폴리오 종합 진단(B) — 집중도·매크로 노출·밸류 분포는 계산, Claude는 구조 해석만.
     val portfolioReview = com.haky.edge.ai.PortfolioReviewService(kis, master, macroImpact, valuationBand, claude, modelRouter)
     // 리밸런싱 트리거(R1) — /portfolio-review가 남긴 포지션 스냅샷을 룰로 평가(비중 드리프트·상단권 쏠림).
@@ -335,7 +332,7 @@ fun Application.module() {
     val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes, backtest, earningsPreview, premortem, rebalance, investorHistory, signalFiredLog, guidanceService)
     // S7·S8 슬래시 명령 + 라운지 명령어. 서명검증 + 멀티 커맨드 라우팅.
     val slackVerifier = SlackSignatureVerifier(System.getenv("SLACK_SIGNING_SECRET").orEmpty())
-    val slackCommand = SlackCommandService(analysis, master, slack, kis, marketMood, eventSync, comparison)
+    val slackCommand = SlackCommandService(analysis, master, slack, kis, marketMood, eventSync)
     // Slack 분석은 Cloud Tasks 워커(POST /slack/analyze-task)로 돌려 Cloud Run CPU 스로틀링을 피한다.
     // 큐 미설정(로컬)이면 enabled=false → 라우트가 인프로세스 폴백으로 동작.
     val cloudTasks = CloudTasksClient(
@@ -393,7 +390,6 @@ fun Application.module() {
             peerValuationRoutes(peerValuation)
             backtestRoutes(backtest)
             dividendRoutes(dart, kis)
-            comparisonRoutes(comparison)
             portfolioReviewRoutes(portfolioReview, rebalance)
             rebalanceRoutes(rebalance)
             discoveryRoutes(discovery)

@@ -23,7 +23,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Flag
@@ -103,7 +102,6 @@ fun StockDetailScreen(
     actionLogRepo: ActionLogRepository,
     api: EdgeApi,
     onBack: () -> Unit,
-    onCompare: ((WatchItem) -> Unit)? = null,
 ) {
     // 관심종목 탭 경로의 item은 watchlist 기반이라 포지션 필드가 비어 있다(G1 이후 holding이 정본)
     // → holding을 얹어서 내 포지션 카드·차트 기준선·게이지가 어느 경로로 들어와도 보이게.
@@ -150,7 +148,6 @@ fun StockDetailScreen(
     }
     var loading by remember { mutableStateOf(false) }
     var showPositionSheet by remember { mutableStateOf(false) }
-    var showComparePicker by remember { mutableStateOf(false) }
     var analysisThesisChanged by remember { mutableStateOf(false) }  // S13: 논지 변경 힌트
     val scope = rememberCoroutineScope()
 
@@ -313,13 +310,6 @@ fun StockDetailScreen(
                             expanded = overflowMenuExpanded,
                             onDismissRequest = { overflowMenuExpanded = false },
                         ) {
-                            if (onCompare != null) {
-                                DropdownMenuItem(
-                                    text = { Text("비교") },
-                                    onClick = { showComparePicker = true; overflowMenuExpanded = false },
-                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.CompareArrows, contentDescription = null) },
-                                )
-                            }
                             DropdownMenuItem(
                                 text = { Text("딥리서치") },
                                 onClick = {
@@ -579,17 +569,6 @@ fun StockDetailScreen(
         )
     }
 
-    if (showComparePicker && onCompare != null) {
-        ComparePickerSheet(
-            currentCode = watchItem.code,
-            watchlist = watchlistRepo.all(),
-            onSelect = { selected ->
-                showComparePicker = false
-                onCompare(selected)
-            },
-            onDismiss = { showComparePicker = false },
-        )
-    }
 }
 
 // ─── 현재가 헤더 ─────────────────────────────────────────
@@ -1764,7 +1743,7 @@ private fun StockAskSheet(
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
-                                "뉴스·수급·PER·밸류 등 현재 데이터를 기반으로 답변해요",
+                                "뉴스·수급·PER·밸류 등 현재 데이터 기반으로 답변해요. 다른 종목과의 비교 질문도 가능해요",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,

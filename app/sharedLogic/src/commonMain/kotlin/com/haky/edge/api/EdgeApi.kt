@@ -15,7 +15,6 @@ import com.haky.edge.model.AskTurn
 import com.haky.edge.model.CatalystBriefReport
 import com.haky.edge.model.CatalystImpact
 import com.haky.edge.model.CatalystReport
-import com.haky.edge.model.Comparison
 import com.haky.edge.model.Backtest
 import com.haky.edge.model.DividendCard
 import com.haky.edge.model.FlowSensitivity
@@ -732,21 +731,4 @@ class EdgeApi(
             setBody(UsageEventBatch(events))
         }.body()
 
-    /**
-     * 두 종목 비교 코멘트. 핵심 지표(현재가·52주위치·PER·수급·밸류에이션)를 나란히 수집하고
-     * Claude가 어느 쪽이 더 나아 보이는지 결론을 내린다. 당일·모드별 캐시(codeA/B 순서 무관).
-     * refresh=true: 캐시 bypass 재생성.
-     */
-    @Throws(Exception::class)
-    suspend fun getComparison(
-        codeA: String,
-        codeB: String,
-        mode: String = "defensive",
-        refresh: Boolean = false,
-    ): Comparison = client.get("$baseUrl/compare") {
-        parameter("codeA", codeA)
-        parameter("codeB", codeB)
-        if (mode != "defensive") parameter("mode", mode)
-        if (refresh) parameter("refresh", "true")
-    }.body()
 }

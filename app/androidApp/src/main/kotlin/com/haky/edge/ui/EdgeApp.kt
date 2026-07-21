@@ -46,7 +46,6 @@ sealed class AppDestination {
     object Briefing : AppDestination()
     object Stats : AppDestination()
     object Settings : AppDestination()
-    data class Comparison(val itemA: WatchItem, val itemB: WatchItem) : AppDestination()
 }
 
 enum class AppTab(val label: String, val icon: ImageVector) {
@@ -83,14 +82,8 @@ fun EdgeApp(
     val isDetailScreen = destination is AppDestination.StockDetail
             || destination is AppDestination.OverseasDetail
             || destination is AppDestination.Search
-            || destination is AppDestination.Comparison
     BackHandler(enabled = isDetailScreen) {
-        destination = when (destination) {
-            is AppDestination.Comparison -> AppDestination.StockDetail(
-                (destination as AppDestination.Comparison).itemA, null
-            )
-            else -> tabDestination(activeTab)
-        }
+        destination = tabDestination(activeTab)
     }
 
     Scaffold(
@@ -129,7 +122,6 @@ fun EdgeApp(
                         is AppDestination.Briefing -> Usage.view("briefing")
                         is AppDestination.Stats -> Usage.view("stats")
                         is AppDestination.Portfolio -> Usage.view("portfolio")
-                        is AppDestination.Comparison -> Usage.view("comparison")
                         else -> {}
                     }
                 }
@@ -161,9 +153,6 @@ fun EdgeApp(
                         actionLogRepo = actionLogRepo,
                         api = api,
                         onBack = { destination = tabDestination(activeTab) },
-                        onCompare = { itemB ->
-                            destination = AppDestination.Comparison(dest.item, itemB)
-                        },
                     )
                     is AppDestination.Search -> SearchScreen(
                         api = api,
@@ -190,12 +179,6 @@ fun EdgeApp(
                     )
                     is AppDestination.Stats -> StatsScreen(watchlistRepo = watchlistRepo, holdingRepo = holdingRepo, actionLogRepo = actionLogRepo, api = api)
                     is AppDestination.Settings -> SettingsScreen(onThemeChange = onThemeChange)
-                    is AppDestination.Comparison -> ComparisonScreen(
-                        itemA = dest.itemA,
-                        itemB = dest.itemB,
-                        api = api,
-                        onBack = { destination = AppDestination.StockDetail(dest.itemA, null) },
-                    )
                 }
             }
         }
