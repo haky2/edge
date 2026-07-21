@@ -272,6 +272,7 @@ object BacktestEngine {
         val joinFailures: Int,
         val buckets: List<LabBucket>,
         val verdicts: List<LabVerdict>,
+        val extraStats: List<String> = emptyList(), // 수트 고유 보조 통계(예: rotation의 Spearman·기저율)
         val caveat: String,
         val textReport: String,
     )
@@ -300,6 +301,11 @@ object BacktestEngine {
                     "승률 ${b.winExcessPct}%$cmp$mark$dateNote")
             }
         }
+        if (r.extraStats.isNotEmpty()) {
+            appendLine()
+            appendLine("── 보조 통계 ──")
+            for (s in r.extraStats) appendLine("  $s")
+        }
         appendLine()
         appendLine("── 판정(사전 지정: 20일 초과수익·승률 둘 다 baseline 상회, 지정 시 대조군도 상회) ──")
         for (v in r.verdicts) appendLine("  [${v.verdict}] ${v.label} — ${v.reason}")
@@ -317,7 +323,7 @@ object BacktestEngine {
     }
 
     private fun List<Double>.averageOr0() = if (isEmpty()) 0.0 else average()
-    private fun fmtSigned(v: Double) = (if (v >= 0) "+" else "") + "%.2f".format(v)
+    internal fun fmtSigned(v: Double) = (if (v >= 0) "+" else "") + "%.2f".format(v)
     internal fun round1(v: Double) = kotlin.math.round(v * 10) / 10.0
     internal fun round2(v: Double) = kotlin.math.round(v * 100) / 100.0
 }

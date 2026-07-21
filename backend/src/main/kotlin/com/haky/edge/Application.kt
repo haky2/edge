@@ -323,7 +323,7 @@ fun Application.module() {
     // 전략 실험실 — 선언적 신호 수트 → 유니버스 리플레이 + 대조군 + 초과수익 채점(LLM 0).
     // R3 대조 유니버스 — 시총 상위 근사 무작위 표본(anchor 결론의 관심종목 편향 검증용).
     val controlUniverse = com.haky.edge.lab.ControlUniverseService(kis, master, signalCodes)
-    val signalLab = com.haky.edge.lab.SignalLabService(dailyHistory, yahooHistory, signalCodes, controlUniverse)
+    val signalLab = com.haky.edge.lab.SignalLabService(dailyHistory, yahooHistory, signalCodes, controlUniverse, kis)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
     val costSummary = CostSummaryService(slack, costChannel, usageTracker)
     // S3a/b+F4+F3+F5+R2 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가·수급 전환점·실적 리뷰·프리모템 발동·비중 점검 → #알림-신호 채널.
