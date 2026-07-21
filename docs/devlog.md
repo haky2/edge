@@ -6,6 +6,24 @@
 
 ---
 
+## 2026-07-21 — 페르소나 리뷰 K2·K3·K4 + O1·O2 완료
+
+**한 일**
+- **O1 (Sonnet)**: 침묵 실패 3종 — scheduler 재시도(deploy.sh +`--max-retry-attempts=2`), Claude 429/529 백오프(`ClaudeClient.postWithRetry()`), FileCache 쓰기 실패 알림(`companion.opsAlerter`+`alertedPrefixes` dedup). 유닛 3건.
+- **O2 (Sonnet)**: 비용 전제 갱신 — `ClaudeUsageTracker.webSearches` 추가, `CostSummaryService` 웹검색 별도 라인+캐시 적중률%, `decisions.md` 단가 1.67배로 수정.
+- **K2 (Sonnet)**: 종목 비교 전체 제거(커밋 62ce536). 백엔드 ComparisonService·Route·Slack `/비교`, iOS ComparisonView·툴바 버튼·시트, Android ComparisonScreen·AppDestination.Comparison, SharedLogic Comparison 모델·API 전부 삭제. Q&A 힌트에 "비교 질문도 가능" 유도 추가.
+- **K3 (Sonnet)**: 배당 카드 UI 제거(커밋 c7efb6a). iOS dividendCardView·@State 2개, Android DividendCard 컴포저블·호출·상태 전부 제거. 백엔드 /dividend 유지.
+- **K4 (Sonnet)**: Discovery(지켜볼 후보) 섹션 브리핑에서 제거(커밋 066eab8). 실측 n=43·+0.58%p 노이즈. 백엔드·Slack signals-scan 유지. iOS+Android 섹션·로딩·상태 전부 제거.
+
+**막힌 점·배운 것**
+- `FactsAuditRoutes`에 ComparisonService 참조가 숨어 있었음 — 컴파일 에러로 발견, promptCharSizes 라인 제거로 해결.
+- iOS `@Before` 어노테이션 없이 kotlin.test만으로 테스트 작성 필요(프로젝트 JUnit 의존 없음).
+
+**다음 할 일**
+- 미push 커밋(21+개) push + 백엔드 배포. 8월 초 /stance-stats pending 체크.
+
+---
+
 ## 2026-07-20 (3) — N2+R4 배포·R5 델타 스트립·N4 스트레스·R6 프롬프트 다이어트
 
 **한 일**
