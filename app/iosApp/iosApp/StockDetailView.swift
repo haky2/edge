@@ -794,6 +794,10 @@ struct StockDetailView: View {
 
     // 지표 해석 ① 계산 기반(LLM 없음). 이미 받은 시세·수급으로 즉시 계산한 "위치/흐름" 요약.
     // 사실만 보여주고 매수/매도 판단은 하지 않는다(그건 추후 Claude 층).
+    // 결론 배지 정책: 접힘 헤더 trailing = "펼칠 가치 판단 재료" 원칙.
+    // 각 카드는 접힌 상태에서도 핵심 한 줄이 보여야 한다.
+    // · 지표 해석 → 52주 구간 라벨 / · 검증된 신호 → 신호 N개
+    // · 유사 국면 → 국면 N건(이미) / · 뉴스·공시·프리모템·밸류에이션 → 기존 배지 유지
     @ViewBuilder
     private func analysisCard(_ q: Quote) -> some View {
         let ctx = StockAnalysis.shared.priceContext(q: q)
@@ -803,6 +807,9 @@ struct StockDetailView: View {
             HStack {
                 Text("지표 해석").font(.subheadline.weight(.semibold))
                 Spacer()
+                if let c = ctx {
+                    Text(rangeLabel(c.pctInRange52w)).font(.caption2).foregroundColor(.secondary)
+                }
                 Image(systemName: analysisExpanded ? "chevron.up" : "chevron.down")
                     .font(.caption).foregroundColor(.secondary)
             }
@@ -1802,7 +1809,7 @@ struct StockDetailView: View {
                 HStack {
                     Text("검증된 신호").font(.subheadline.weight(.semibold))
                     Spacer()
-                    Text("최근 \(bt.tradingDays)거래일 실측").font(.caption2).foregroundColor(.secondary)
+                    Text("신호 \(shown.count)개").font(.caption2).foregroundColor(.secondary)
                     Image(systemName: backtestExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption).foregroundColor(.secondary)
                 }

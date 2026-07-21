@@ -474,7 +474,7 @@ internal fun BacktestCard(bt: Backtest) {
     if (shown.isEmpty()) return
     CollapsibleCard(
         title = "검증된 신호",
-        trailing = { Text("최근 ${bt.tradingDays}거래일 실측", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        trailing = { Text("신호 ${shown.size}개", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val baseAvg = "%+.2f".format(bt.baselineAvgReturn)
@@ -864,6 +864,16 @@ private fun formattedDate8(d: String): String =
 
 // ─── 지표 해석 (계산 기반, LLM 없음) ────────────────────
 
+// 결론 배지 정책: 접힘 헤더 trailing = "펼칠 가치 판단 재료" 원칙.
+// · 지표 해석 → 52주 구간 라벨 / · 검증된 신호 → 신호 N개
+// · 유사 국면 → 국면 N건(기존) / · 뉴스·공시·프리모템·밸류에이션 → 기존 배지 유지
+private fun rangeLabel(pct: Double): String = when {
+    pct < 25 -> "저점권"
+    pct < 50 -> "중하단"
+    pct < 75 -> "중상단"
+    else -> "고점권"
+}
+
 @Composable
 internal fun InterpretationCard(
     quote: com.haky.edge.model.Quote,
@@ -875,7 +885,10 @@ internal fun InterpretationCard(
     val hasValuation = quote.per > 0 || quote.pbr > 0
     if (ctx == null && !hasValuation && targetPrice == null && streaks.isEmpty()) return
     var helpExpanded by remember { mutableStateOf(false) }
-    CollapsibleCard(title = "지표 해석") {
+    CollapsibleCard(
+        title = "지표 해석",
+        trailing = { ctx?.let { Text(rangeLabel(it.pctInRange52w), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (ctx != null) {
                 RangeGauge(ctx.pctInRange52w)
