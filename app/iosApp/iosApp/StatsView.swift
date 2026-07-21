@@ -437,7 +437,7 @@ struct StatsView: View {
             if missedLoading {
                 HStack {
                     ProgressView().scaleEffect(0.8)
-                    Text("현재가 확인 중…").font(.footnote).foregroundColor(.secondary)
+                    Text("집계 중…").font(.footnote).foregroundColor(.secondary)
                 }
             } else if missedRows.isEmpty {
                 Text("관심 기록 후 매수하지 않은 종목이 없어요").font(.footnote).foregroundColor(.secondary)
@@ -449,37 +449,17 @@ struct StatsView: View {
         } header: {
             Text("놓친 종목 (관심 후 미매수 \(missedRows.count)개)")
         } footer: {
-            Text("종목 상세 화면 하단의 '관심 기록' 버튼을 눌러야 여기 집계돼요. 그 종목을 매수하지 않았다면, 그때 샀을 경우 지금 수익률이 얼마였는지 보여줘요.")
+            Text("종목 상세 화면 하단의 '관심 기록' 버튼으로 기록된 종목 중 매수하지 않은 것 목록이에요. 아래 '판단 대조' 섹션에서 20거래일 상대 성과를 확인하세요.")
                 .font(.caption2)
         }
     }
 
     private func missedRow(_ row: MissedRow) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(row.name).font(.body)
-                Spacer()
-                if let ret = row.hypotheticalReturn {
-                    Text((ret >= 0 ? "+" : "") + String(format: "%.1f%%", ret))
-                        .font(.body.weight(.semibold))
-                        .foregroundColor(ret >= 0 ? .red : .blue)
-                }
-            }
-            HStack(spacing: 6) {
-                Text("관심 \(shortDate(row.lastInterestAt))")
-                    .font(.caption2).foregroundColor(.secondary)
-                if let then = row.thenPrice {
-                    Text("·").font(.caption2).foregroundColor(.secondary)
-                    Text("당시 \(then.formatted())원")
-                        .font(.caption2).foregroundColor(.secondary)
-                } else {
-                    Text("· 가격 미기록").font(.caption2).foregroundColor(.secondary)
-                }
-                if let now = row.currentPrice {
-                    Text("→ 현재 \(now.formatted())원")
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-            }
+        HStack {
+            Text(row.name).font(.body)
+            Spacer()
+            Text("관심 \(shortDate(row.lastInterestAt))")
+                .font(.caption2).foregroundColor(.secondary)
         }
         .padding(.vertical, 2)
     }
@@ -746,22 +726,10 @@ struct StatsView: View {
     // MARK: - 놓친 종목 모델
 
     struct MissedRow: Identifiable {
-        let id: String           // code
+        let id: String
         let code: String
         let name: String
         let lastInterestAt: Int64
-        let loggedPrice: Int64?      // 로그에 저장된 당시 가격 (v3 이후)
-        var lookbackPrice: Int64?    // 일봉 소급 가격 (구버전 로그, 로드 후 채워짐)
-        var currentPrice: Int64?
-
-        var thenPrice: Int64? { loggedPrice ?? lookbackPrice }
-
-        var hypotheticalReturn: Double? {
-            guard let then = thenPrice.map(Double.init),
-                  let now = currentPrice.map(Double.init),
-                  then > 0 else { return nil }
-            return (now - then) / then * 100
-        }
     }
 
     // MARK: - B2 주간 회고 로드
@@ -877,39 +845,7 @@ struct StatsView: View {
                 .filter { $0.code == code && $0.action == "interest" }
                 .max(by: { $0.createdAt < $1.createdAt })
             guard let e = latest else { continue }
-            let loggedPrice = e.price.map { $0.int64Value }
-            rows.append(MissedRow(
-                id: code, code: code,
-                name: nameMap[code] ?? code,
-                lastInterestAt: e.createdAt,
-                loggedPrice: loggedPrice
-            ))
-        }
-
-        // 현재가 일괄 조회
-        let codes = rows.map { $0.code }
-        if let quotes = try? await api.getQuotes(codes: codes) {
-            let qmap = Dictionary(uniqueKeysWithValues: quotes.map { ($0.code, $0.price) })
-            for i in rows.indices { rows[i].currentPrice = qmap[rows[i].code] }
-        }
-
-        // 구버전 로그(price 없음): 일봉 소급으로 당시 가격 추정
-        await withTaskGroup(of: (String, Int64?).self) { group in
-            for row in rows where row.loggedPrice == nil {
-                group.addTask {
-                    guard let bars = try? await self.api.getDaily(code: row.code, bars: 120)
-                    else { return (row.code, nil) }
-                    let targetDate = self.epochToYYYYMMDD(row.lastInterestAt)
-                    // 최신일이 앞 → 관심 등록일 이하인 첫 번째 바 = 당일 또는 직전 거래일
-                    let match = bars.first { $0.date <= targetDate }
-                    return (row.code, match?.close)
-                }
-            }
-            for await (code, price) in group {
-                if let idx = rows.firstIndex(where: { $0.code == code }) {
-                    rows[idx].lookbackPrice = price
-                }
-            }
+            rows.append(MissedRow(id: code, code: code, name: nameMap[code] ?? code, lastInterestAt: e.createdAt))
         }
 
         missedRows = rows.sorted { $0.lastInterestAt > $1.lastInterestAt }

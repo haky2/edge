@@ -146,17 +146,7 @@ private data class MissedRow(
     val code: String,
     val name: String,
     val lastInterestAt: Long,
-    val loggedPrice: Long?,
-    var lookbackPrice: Long? = null,
-    var currentPrice: Long? = null,
-) {
-    val thenPrice: Long? get() = loggedPrice ?: lookbackPrice
-    val hypotheticalReturn: Double? get() {
-        val then = thenPrice?.toDouble() ?: return null
-        val now = currentPrice?.toDouble() ?: return null
-        return if (then > 0) (now - then) / then * 100 else null
-    }
-}
+)
 
 // ── StatsScreen ───────────────────────────────────────────────────────────────
 
@@ -226,7 +216,7 @@ fun StatsScreen(
 
         // 놓친 종목 비동기 로드
         missedLoading = true
-        missedRows = loadMissed(entries, nameMap, api)
+        missedRows = loadMissed(entries, nameMap)
         missedLoading = false
 
         // B2 개인 주간 회고
@@ -444,12 +434,12 @@ fun StatsScreen(
             item {
                 SectionCard(
                     header = "놓친 종목 (관심 후 미매수 ${missedRows.size}개)",
-                    footer = "종목 상세 하단 '관심 기록' 버튼으로 기록된 종목 중 매수하지 않은 것의 가상 수익률이에요.",
+                    footer = "종목 상세 하단 '관심 기록' 버튼으로 기록된 종목 중 매수하지 않은 것 목록이에요. 아래 '판단 대조' 섹션에서 20거래일 상대 성과를 확인하세요.",
                 ) {
                     when {
                         missedLoading -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            Text("현재가 확인 중…", style = MaterialTheme.typography.bodySmall,
+                            Text("집계 중…", style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         missedRows.isEmpty() -> Text("관심 기록 후 매수하지 않은 종목이 없어요",
@@ -1050,34 +1040,12 @@ private fun DisciplineRowItem(row: DisciplineRow, nameMap: Map<String, String>) 
 
 @Composable
 private fun MissedRowItem(row: MissedRow) {
-    val fmt = NumberFormat.getNumberInstance(Locale.KOREA)
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically) {
-            Text(row.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-            row.hypotheticalReturn?.let { ret ->
-                val sign = if (ret >= 0) "+" else ""
-                Text("$sign${String.format("%.1f%%", ret)}",
-                    style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
-                    color = if (ret >= 0) ChangeUp else ChangeDown)
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("관심 ${shortDate(row.lastInterestAt)}", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            row.thenPrice?.let { then ->
-                Text("·", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("당시 ${fmt.format(then)}원", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } ?: Text("· 가격 미기록", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            row.currentPrice?.let { now ->
-                Text("→ 현재 ${fmt.format(now)}원", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(row.name, style = MaterialTheme.typography.bodyMedium)
+        Text("관심 ${shortDate(row.lastInterestAt)}", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -1172,10 +1140,9 @@ private fun computeCodeRows(entries: List<ActionLogEntry>): List<CodeRow> {
 
 // ── 놓친 종목 로드 ────────────────────────────────────────────────────────────
 
-private suspend fun loadMissed(
+private fun loadMissed(
     entries: List<ActionLogEntry>,
     nameMap: Map<String, String>,
-    api: EdgeApi,
 ): List<MissedRow> {
     val interestCodes = entries.filter { it.action == "interest" }.map { it.code }.toSet()
     val buyCodes      = entries.filter { it.action == "buy" }.map { it.code }.toSet()
@@ -1185,22 +1152,7 @@ private suspend fun loadMissed(
     val rows = missedCodes.mapNotNull { code ->
         val latest = entries.filter { it.code == code && it.action == "interest" }
             .maxByOrNull { it.createdAt } ?: return@mapNotNull null
-        MissedRow(code = code, name = nameMap[code] ?: code,
-            lastInterestAt = latest.createdAt, loggedPrice = latest.price)
-    }.toMutableList()
-
-    // 현재가 일괄 조회
-    val quotes = runCatching { api.getQuotes(rows.map { it.code }) }.getOrDefault(emptyList())
-    val qmap = quotes.associateBy { it.code }
-    for (i in rows.indices) rows[i].currentPrice = qmap[rows[i].code]?.price
-
-    // 구버전(loggedPrice == null): 일봉 소급으로 추정
-    rows.filter { it.loggedPrice == null }.forEach { row ->
-        val bars = runCatching { api.getDaily(code = row.code, bars = 120) }.getOrNull() ?: return@forEach
-        val targetDate = epochToYYYYMMDD(row.lastInterestAt)
-        val match = bars.firstOrNull { it.date <= targetDate }
-        val idx = rows.indexOfFirst { it.code == row.code }
-        if (idx >= 0) rows[idx].lookbackPrice = match?.close
+        MissedRow(code = code, name = nameMap[code] ?: code, lastInterestAt = latest.createdAt)
     }
 
     return rows.sortedByDescending { it.lastInterestAt }
