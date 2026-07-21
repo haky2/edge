@@ -33,7 +33,6 @@ import com.haky.edge.news.TargetPriceLogService
 import com.haky.edge.news.NewsException
 import com.haky.edge.routes.analogRoutes
 import com.haky.edge.routes.analogValidationRoutes
-import com.haky.edge.routes.discoveryValidationRoutes
 import com.haky.edge.routes.moodWeightValidationRoutes
 import com.haky.edge.routes.analysisRoutes
 import com.haky.edge.routes.stanceStatsRoutes
@@ -73,7 +72,6 @@ import com.haky.edge.routes.targetPriceRoutes
 import com.haky.edge.routes.valuationBandRoutes
 import com.haky.edge.routes.warningsRoutes
 import com.haky.edge.routes.sensitivityValidationRoutes
-import com.haky.edge.routes.anchorValidationRoutes
 import com.haky.edge.routes.factsAuditRoutes
 import com.haky.edge.routes.catalystValidationRoutes
 import com.haky.edge.routes.morningBriefRoutes
@@ -295,16 +293,18 @@ fun Application.module() {
     val sensitivityValidation = com.haky.edge.macro.SensitivityValidationService(
         dailyHistory, ecosApiKey = System.getenv("ECOS_API_KEY").orEmpty())
     // ②-1 catalyst 판정 실증 — LLM 판정(호재/악재·강도·선반영) × 사후 초과수익률(vs 코스피) 채점.
+    // K5(이관 판정): 이벤트(공시일) 기반 신호라 signal-lab의 종목 가격 SignalDef로 표현 불가 → 유지(10월 재실측 도구).
     val catalystValidation = com.haky.edge.ai.CatalystValidationService(catalystEventLog, dailyHistory, kis, master)
-    // ②-3 기술적 앵커 실증 — 20일 저점/고점·MA20/60 레벨의 지지/저항 신호를 대조군 대비 채점.
-    val anchorValidation = com.haky.edge.ai.AnchorValidationService(dailyHistory, master, signalCodes)
     // ②-2a Analog 캘리브레이션 실증 — 유사 국면 카드 forward 분포를 walk-forward replay로 채점.
+    // K5(이관 판정): 유사 국면 매칭(분포 예측)은 signal-lab 단순 신호 리플레이와 형태가 달라 이관 불가 → 유지(9월 재실측 도구).
     val analogValidation = com.haky.edge.ai.AnalogValidationService(dailyHistory, master, signalCodes)
-    // ②-2b Discovery 가격 3신호 실증 — peer 유니버스 750봉 × 코스피(^KS11) 초과수익 채점.
     val yahooHistory = com.haky.edge.macro.YahooHistoryClient()
-    val discoveryValidation = com.haky.edge.ai.DiscoveryValidationService(dailyHistory, yahooHistory)
     // ③ MoodLog 가중치 실측 — Yahoo 2년 8지표 × 코스피 3분류, 홀드아웃 검증.
+    // K5(이관 판정): 거시지표→코스피 방향 예측이라 종목 단위 signal-lab과 형태가 달라 이관 불가 → 유지(선물 재론 도구).
     val moodWeightValidation = com.haky.edge.macro.MoodWeightValidationService(yahooHistory)
+    // K5: anchor·discovery 검증은 signal-lab 수트(suite=anchor|discovery)로 이관 완료 — 라우트 등록 해제.
+    //   discovery는 실측 재현 완전 일치(2026-07-21 대조), anchor는 5/20 초과수익 기준(원 ②-3은 5/10 원수익 — 방법론 상이).
+    //   서비스 파일(AnchorValidationService·DiscoveryValidationService)은 원 리포트 재현·단위테스트용으로 동결 보존.
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     // B 주간 회고 — 토요일 아침, 한 주 서버 기록(방향예측·스탠스·목표가·주간 등락) 회고 → #아침브리핑.
     val weeklyReview = com.haky.edge.slack.WeeklyReviewService(
@@ -399,10 +399,9 @@ fun Application.module() {
             eventRoutes(eventSync)
             sensitivityValidationRoutes(sensitivityValidation)
             catalystValidationRoutes(catalystValidation)
-            anchorValidationRoutes(anchorValidation)
             analogValidationRoutes(analogValidation)
-            discoveryValidationRoutes(discoveryValidation)
             moodWeightValidationRoutes(moodWeightValidation)
+            // K5: anchor·discovery는 signal-lab 수트(GET /signal-lab?suite=anchor|discovery)로 이관 — 라우트 해제.
             factsAuditRoutes(analysis, signalCodes)
             prewarmRoutes(kis, dart)
             slackTestRoutes(slack, opsChannel)

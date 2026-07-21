@@ -48,6 +48,12 @@
 
 ## 2b — Discovery 가격 3신호 실측 (`GET /discovery-validation`)
 
+> **K5 이관 (2026-07-21)**: 핵심 3신호(상대모멘텀+5p·신고가근접·저점반등)는 **signal-lab discovery 수트**
+> (`GET /signal-lab?suite=discovery&universe=peer`)로 이관됐다. 2026-07-21 대조에서 baseline·n·Δ가
+> **소수점까지 완전 일치**(오차 0) — signal-lab이 정본. `/discovery-validation` 라우트는 등록 해제.
+> 그리드({+3,+7})·교집합(2신호) 민감도 버킷은 signal-lab 수트에 없어 원 서비스 파일에 재현용으로 동결 보존.
+> Analog(2a)는 유사 국면 매칭이라 signal-lab로 이관 불가 — 서비스·라우트 유지(9월 재실측 도구).
+
 **질문**: 후보 발굴 컷(신호 2개 교집합·상대모멘텀 +5%p·신고가 90%·저점반등 30%/+5%)이 전부
 손짐작 값 — 발굴 후보가 실제로 코스피 대비 초과수익을 냈나.
 

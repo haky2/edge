@@ -32,6 +32,11 @@ data class AnchorValidationReport(
  * (20일 저점/고점·MA20·MA60, **종가 기준** — AnalysisService.technicalAnchorsText와 동일 정의)가
  * 실제로 지지/저항/돌파 신호로 기능하는지 관심종목 2년 일봉으로 채점한다. LLM 0.
  *
+ * ⚠️ K5(2026-07-21): **정본은 signal-lab anchor 수트**(GET /signal-lab?suite=anchor). 라우트 등록 해제됨.
+ * 이 파일은 원 ②-3 리포트(docs/anchor-validation-2026-07.md, forward 5/10 **원수익률**) 재현·단위테스트용으로 동결.
+ * signal-lab은 5/20 **코스피 초과수익**·클러스터 dedupe 기준이라 방법론이 다르다 —
+ * touchLow20 판정이 원 리포트('약한 지지')와 signal-lab('반증')에서 뒤집힌다(R3 섹션에 기록). 신규 실측은 signal-lab을 쓸 것.
+ *
  * 교란 통제: low20 터치일은 대개 하락일이다 — 무조건 baseline과만 비교하면 "하락 후 반등"
  * 일반 효과(평균회귀)와 "앵커 레벨" 고유 효과가 섞인다. 그래서 **하락일(-2%)·상승일(+2%)
  * 대조군**을 함께 채점한다: touchLow20이 ctlDown2보다 낫지 않으면 앵커의 고유 신호는 없다.
