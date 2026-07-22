@@ -2916,6 +2916,15 @@ struct StockAskSheetView: View {
     @State private var pendingQuestion: String? = nil   // 답변 대기 중인 질문(말풍선 즉시 표시용)
     @State private var errorMsg: String? = nil
 
+    // 타이핑 없이 바로 누를 수 있는 예시 질문(전부 우리가 수집한 사실로 답 가능한 것들).
+    private let presetQuestions = [
+        "최근 주가 흐름을 요약해줘",
+        "지금 밸류에이션은 비싼 편이야?",
+        "외국인·기관 수급은 어때?",
+        "최근 뉴스·공시 중 중요한 게 있어?",
+        "올해 실적 전망은 어때?",
+    ]
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -2935,8 +2944,35 @@ struct StockAskSheetView: View {
                                 }
                                 .frame(maxWidth: .infinity)
                                 .multilineTextAlignment(.center)
-                                .padding(.top, 48)
+                                .padding(.top, 40)
                                 .padding(.horizontal, 24)
+
+                                // 예시 질문 — 누르면 바로 전송
+                                VStack(spacing: 8) {
+                                    ForEach(presetQuestions, id: \.self) { q in
+                                        Button {
+                                            Task { await sendQuestion(q) }
+                                        } label: {
+                                            HStack(spacing: 8) {
+                                                Text(q).font(.callout).foregroundColor(.purple)
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                                Image(systemName: "arrow.up.circle")
+                                                    .font(.caption).foregroundColor(.purple.opacity(0.6))
+                                            }
+                                            .padding(.horizontal, 14).padding(.vertical, 10)
+                                            .background(Color.purple.opacity(0.08))
+                                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding(.top, 16)
+
+                                Text("대화 기록은 오늘 하루만 보관돼요 · 날짜가 바뀌면 새로 시작해요")
+                                    .font(.caption2).foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, 12)
                             }
                             ForEach(Array(turns.enumerated()), id: \.offset) { idx, turn in
                                 VStack(alignment: .leading, spacing: 8) {
@@ -3022,6 +3058,7 @@ struct StockAskSheetView: View {
             }
             .navigationTitle("\(item.name) Q&A")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear { loadCachedTurns() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("닫기") { dismiss() }
@@ -3044,9 +3081,9 @@ struct StockAskSheetView: View {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !sending
     }
 
-    private func sendQuestion() async {
-        let q = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return }
+    private func sendQuestion(_ explicit: String? = nil) async {
+        let q = (explicit ?? inputText).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty, !sending else { return }
         errorMsg = nil
         sending = true
         inputText = ""
@@ -3065,12 +3102,36 @@ struct StockAskSheetView: View {
                 horizon: horizon
             )
             turns.append(AskTurn(question: q, answer: ans.answer))
+            saveCachedTurns()
         } catch {
             errorMsg = "답변을 불러오지 못했어요. 다시 시도해 주세요."
             inputText = q
         }
         pendingQuestion = nil
         sending = false
+    }
+
+    // ── Q&A 당일 캐시 (UserDefaults) — 같은 날 재진입/재시작 시 복원, 날짜 바뀌면 폐기 ──
+    // 답변은 그날의 사실 데이터에 묶여 생성되므로 하루 지나면 낡음 → 날짜 키로 자동 만료.
+    private func qnaToday() -> String {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "Asia/Seoul")
+        return f.string(from: Date())
+    }
+
+    private func loadCachedTurns() {
+        let d = UserDefaults.standard
+        guard d.string(forKey: "qna_date_\(item.code)") == qnaToday(),
+              let qs = d.stringArray(forKey: "qna_q_\(item.code)"),
+              let ans = d.stringArray(forKey: "qna_a_\(item.code)"),
+              qs.count == ans.count else { return }
+        turns = zip(qs, ans).map { AskTurn(question: $0, answer: $1) }
+    }
+
+    private func saveCachedTurns() {
+        let d = UserDefaults.standard
+        d.set(qnaToday(), forKey: "qna_date_\(item.code)")
+        d.set(turns.map { $0.question }, forKey: "qna_q_\(item.code)")
+        d.set(turns.map { $0.answer }, forKey: "qna_a_\(item.code)")
     }
 }
 

@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EditNote
@@ -43,6 +44,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.WindowInsets
@@ -1641,6 +1643,7 @@ private fun StockAskSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     var turns by remember { mutableStateOf<List<AskTurn>>(emptyList()) }
     var inputText by remember { mutableStateOf("") }
@@ -1648,13 +1651,48 @@ private fun StockAskSheet(
     var pendingQuestion by remember { mutableStateOf<String?>(null) }   // 답변 대기 중인 질문(말풍선 즉시 표시용)
     var errorMsg by remember { mutableStateOf<String?>(null) }
 
+    // 타이핑 없이 바로 누를 수 있는 예시 질문(전부 우리가 수집한 사실로 답 가능한 것들).
+    val presetQuestions = listOf(
+        "최근 주가 흐름을 요약해줘",
+        "지금 밸류에이션은 비싼 편이야?",
+        "외국인·기관 수급은 어때?",
+        "최근 뉴스·공시 중 중요한 게 있어?",
+        "올해 실적 전망은 어때?",
+    )
+
     LaunchedEffect(turns.size, sending) {
         if (turns.isNotEmpty()) listState.animateScrollToItem(turns.size - 1)
     }
 
-    fun sendQuestion() {
-        val q = inputText.trim()
-        if (q.isEmpty()) return
+    // ── Q&A 당일 캐시 (SharedPreferences) — 같은 날 재진입/재시작 시 복원, 날짜 바뀌면 폐기 ──
+    // 답변은 그날의 사실 데이터에 묶여 생성되므로 하루 지나면 낡음 → 날짜 키로 자동 만료.
+    fun qnaToday() = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Seoul")).toString()
+    fun loadCachedTurns() {
+        val prefs = context.getSharedPreferences("qna_cache", android.content.Context.MODE_PRIVATE)
+        if (prefs.getString("date_${item.code}", null) != qnaToday()) return
+        val json = prefs.getString("turns_${item.code}", null) ?: return
+        try {
+            val arr = org.json.JSONArray(json)
+            turns = (0 until arr.length()).map {
+                val o = arr.getJSONObject(it)
+                AskTurn(question = o.getString("q"), answer = o.getString("a"))
+            }
+        } catch (_: Exception) {}
+    }
+    fun saveCachedTurns() {
+        val prefs = context.getSharedPreferences("qna_cache", android.content.Context.MODE_PRIVATE)
+        val arr = org.json.JSONArray()
+        turns.forEach { arr.put(org.json.JSONObject().put("q", it.question).put("a", it.answer)) }
+        prefs.edit()
+            .putString("date_${item.code}", qnaToday())
+            .putString("turns_${item.code}", arr.toString())
+            .apply()
+    }
+    LaunchedEffect(Unit) { loadCachedTurns() }
+
+    fun sendQuestion(explicit: String? = null) {
+        val q = (explicit ?: inputText).trim()
+        if (q.isEmpty() || sending) return
         errorMsg = null
         sending = true
         val savedInput = q
@@ -1675,6 +1713,7 @@ private fun StockAskSheet(
                     horizon = horizon,
                 )
                 turns = turns + AskTurn(question = q, answer = ans.answer)
+                saveCachedTurns()
             } catch (_: Exception) {
                 errorMsg = "답변을 불러오지 못했어요. 다시 시도해 주세요."
                 inputText = savedInput
@@ -1747,6 +1786,38 @@ private fun StockAskSheet(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
+                            )
+                            // 예시 질문 — 누르면 바로 전송
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                presetQuestions.forEach { q ->
+                                    Surface(
+                                        onClick = { sendQuestion(q) },
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = PurpleAccent.copy(alpha = 0.08f),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(q, style = MaterialTheme.typography.bodyMedium,
+                                                color = PurpleAccent, modifier = Modifier.weight(1f))
+                                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null,
+                                                tint = PurpleAccent.copy(alpha = 0.6f),
+                                                modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                }
+                            }
+                            Text(
+                                "대화 기록은 오늘 하루만 보관돼요 · 날짜가 바뀌면 새로 시작해요",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = 4.dp),
                             )
                         }
                     }
