@@ -232,7 +232,6 @@ class AnalysisService(
         val deltaLines = buildDeltaLines(
             stance = currentStance,
             prev = prev,
-            targetEvents = cf.targetEvents,
             currentRegime = extractRegime(facts),
             todaySignals = signalFiredLog?.todayFor(code, today) ?: emptyList(),
         )
@@ -682,19 +681,17 @@ class AnalysisService(
             "REBALANCE" to "리밸런싱",
         )
 
+        // "어제와 달라진 점" 스트립 재료 — 진짜 델타(직전 분석 대비 전환·오늘 발화 신호)만 넣는다.
+        // 목표가 90일 누적 카운트 같은 상시 통계는 매일 동일하게 떠서 "달라진 점"과 안 맞음 → 제외
+        // (목표가 이벤트는 targetEventsLine으로 AI facts엔 여전히 주입됨).
         internal fun buildDeltaLines(
             stance: String?,
             prev: StanceEntry?,
-            targetEvents: com.haky.edge.news.TargetPriceEvents?,
             currentRegime: String?,
             todaySignals: List<SignalFired>,
         ): List<String> = buildList {
             if (stance != null && prev?.stance != null && stance != prev.stance)
                 add("스탠스 전환: ${prev.stance} → $stance")
-            if (targetEvents != null) {
-                if (targetEvents.raisesIn90d > 0) add("목표가 90일 내 ${targetEvents.raisesIn90d}회 상향")
-                if (targetEvents.cutsIn90d > 0) add("목표가 90일 내 ${targetEvents.cutsIn90d}회 하향")
-            }
             if (currentRegime != null && prev?.regime != null && currentRegime != prev.regime)
                 add("국면 전환: ${prev.regime} → $currentRegime")
             todaySignals.forEach { s ->
