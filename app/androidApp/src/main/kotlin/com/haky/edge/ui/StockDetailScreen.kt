@@ -361,7 +361,7 @@ fun StockDetailScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ZoneHeader("현재 상황")
-            PriceHeader(code = watchItem.code, quote = quote)
+            PriceHeader(name = watchItem.name, code = watchItem.code, quote = quote)
             WarningChips(warnings)
             quote?.let { q -> priceLimits?.let { PriceLimitsLine(it, q.price) } }
             quote?.let { q ->
@@ -573,7 +573,7 @@ fun StockDetailScreen(
 // ─── 현재가 헤더 ─────────────────────────────────────────
 
 @Composable
-private fun PriceHeader(code: String, quote: Quote?) {
+private fun PriceHeader(name: String, code: String, quote: Quote?) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -581,6 +581,7 @@ private fun PriceHeader(code: String, quote: Quote?) {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        Text(name, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
         Text(code, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (quote != null) {
             Spacer(modifier = Modifier.height(4.dp))

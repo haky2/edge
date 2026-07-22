@@ -84,7 +84,11 @@ struct StockDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                Text(item.code).font(.caption).foregroundColor(.secondary)
+                VStack(spacing: 2) {
+                    Text(item.name).font(.title3.weight(.bold))
+                        .multilineTextAlignment(.center)
+                    Text(item.code).font(.caption).foregroundColor(.secondary)
+                }
 
                 if let q = quote {
                     // ── 현재 상황 ──
