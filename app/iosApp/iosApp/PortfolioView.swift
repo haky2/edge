@@ -765,6 +765,8 @@ struct PortfolioView: View {
                                 .font(.caption.weight(.semibold))
                                 .foregroundColor(.purple)
                             }
+                            // List 행 안에서 버튼 탭이 행 선택으로 새는 것 방지(borderless로 탭 타깃 격리).
+                            .buttonStyle(.borderless)
                         }
 
                         // 노출 요약 (상위 2개)
@@ -876,6 +878,7 @@ struct PortfolioView: View {
                                         .font(.caption2)
                                         .foregroundColor(.purple)
                                 }
+                                .buttonStyle(.borderless)
                             }
                         }
                         Text("투자 판단과 책임은 본인에게 있습니다")
