@@ -1645,6 +1645,7 @@ private fun StockAskSheet(
     var turns by remember { mutableStateOf<List<AskTurn>>(emptyList()) }
     var inputText by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
+    var pendingQuestion by remember { mutableStateOf<String?>(null) }   // 답변 대기 중인 질문(말풍선 즉시 표시용)
     var errorMsg by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(turns.size, sending) {
@@ -1658,6 +1659,7 @@ private fun StockAskSheet(
         sending = true
         val savedInput = q
         inputText = ""
+        pendingQuestion = q
         scope.launch {
             try {
                 val ans = api.ask(
@@ -1677,6 +1679,7 @@ private fun StockAskSheet(
                 errorMsg = "답변을 불러오지 못했어요. 다시 시도해 주세요."
                 inputText = savedInput
             }
+            pendingQuestion = null
             sending = false
         }
     }
@@ -1778,13 +1781,27 @@ private fun StockAskSheet(
                 }
                 if (sending) {
                     item {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = PurpleAccent)
-                            Text("답변 생성 중…", style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // 방금 보낸 질문 말풍선을 즉시 표시(무슨 질문이었는지 유지)
+                            pendingQuestion?.let { pq ->
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    Text(
+                                        pq,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier
+                                            .background(PurpleAccent.copy(alpha = 0.1f), RoundedCornerShape(12.dp, 12.dp, 2.dp, 12.dp))
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    )
+                                }
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = PurpleAccent)
+                                Text("답변 생성 중…", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 }

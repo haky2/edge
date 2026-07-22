@@ -2913,6 +2913,7 @@ struct StockAskSheetView: View {
     @State private var turns: [AskTurn] = []
     @State private var inputText = ""
     @State private var sending = false
+    @State private var pendingQuestion: String? = nil   // 답변 대기 중인 질문(말풍선 즉시 표시용)
     @State private var errorMsg: String? = nil
 
     var body: some View {
@@ -2965,10 +2966,26 @@ struct StockAskSheetView: View {
                                 .id(idx)
                             }
                             if sending {
-                                HStack(spacing: 8) {
-                                    ProgressView().scaleEffect(0.8)
-                                    Text("답변 생성 중…").font(.caption).foregroundColor(.secondary)
-                                    Spacer()
+                                VStack(alignment: .leading, spacing: 8) {
+                                    // 방금 보낸 질문 말풍선을 즉시 표시(무슨 질문이었는지 유지)
+                                    if let pq = pendingQuestion {
+                                        HStack {
+                                            Spacer()
+                                            Text(pq)
+                                                .font(.callout)
+                                                .padding(.horizontal, 12)
+                                                .padding(.vertical, 8)
+                                                .background(Color.purple.opacity(0.12))
+                                                .cornerRadius(12)
+                                        }
+                                    }
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "sparkles")
+                                            .font(.caption).foregroundColor(.purple).padding(.top, 2)
+                                        ProgressView().scaleEffect(0.8)
+                                        Text("답변 생성 중…").font(.caption).foregroundColor(.secondary)
+                                        Spacer()
+                                    }
                                 }
                                 .id("loading")
                             }
@@ -3033,6 +3050,7 @@ struct StockAskSheetView: View {
         errorMsg = nil
         sending = true
         inputText = ""
+        pendingQuestion = q
         do {
             let ans = try await api.ask(
                 code: item.code,
@@ -3051,6 +3069,7 @@ struct StockAskSheetView: View {
             errorMsg = "답변을 불러오지 못했어요. 다시 시도해 주세요."
             inputText = q
         }
+        pendingQuestion = nil
         sending = false
     }
 }
