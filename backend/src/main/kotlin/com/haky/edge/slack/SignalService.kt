@@ -40,7 +40,8 @@ class SignalService(
     private val dart: DartClient,
     private val valuationBand: ValuationBandService,
     private val signalChannel: String,
-    private val codes: List<String>,
+    // 스캔 대상 관심종목을 스캔 시점에 조회(앱 등록 기반 동적 목록). 고정 리스트가 아니다.
+    private val watchlist: () -> List<String>,
     private val backtest: com.haky.edge.ai.BacktestService? = null, // F4 필터·근거용(없으면 전환 신호 skip)
     private val earningsPreview: com.haky.edge.ai.EarningsPreviewService? = null, // F3 리뷰용(없으면 skip)
     private val premortem: com.haky.edge.ai.PremortemService? = null, // F5 무효화 조건 감시(없으면 skip)
@@ -81,6 +82,7 @@ class SignalService(
 
     /** 관심종목 순회 → 4종 신호 평가 → 디듀프 통과분만 한 메시지로 발송. */
     suspend fun scan(): ScanResult {
+        val codes = watchlist()
         val state = loadState()
         val today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Seoul")).toString()
         val flowSignals = mutableListOf<FlowSignal>()

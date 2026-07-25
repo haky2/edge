@@ -4,6 +4,7 @@ import com.haky.edge.model.AnalogReport
 import com.haky.edge.model.UsageAck
 import com.haky.edge.model.UsageEvent
 import com.haky.edge.model.UsageEventBatch
+import com.haky.edge.model.WatchlistSyncBody
 import com.haky.edge.model.Analysis
 import com.haky.edge.model.EarningsPreview
 import com.haky.edge.model.Premortem
@@ -645,6 +646,20 @@ class EdgeApi(
             contentType(ContentType.Application.Json)
             setBody(PersonalWeeklyReviewRequest(posEntries, trades, thesisChanges, refresh, allTrades, discipline))
         }.body()
+    }
+
+    /**
+     * 관심종목을 백엔드에 동기화 — 슬랙 신호·주간회고 스캔 대상이 된다(기기별 등록, 활성 합집합).
+     * best-effort: 실패해도 앱 동작엔 영향 없음(조용히 무시).
+     */
+    @Throws(Exception::class)
+    suspend fun syncWatchlist(deviceId: String, codes: List<String>) {
+        runCatching {
+            client.post("$baseUrl/watchlist/sync") {
+                contentType(ContentType.Application.Json)
+                setBody(WatchlistSyncBody(deviceId, codes))
+            }
+        }
     }
 
     /** POST /portfolio-risk — 실측 상관 기반 리스크 스냅샷(LLM 0). */

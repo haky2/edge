@@ -88,6 +88,7 @@ import com.haky.edge.routes.commentSmokeRoutes
 import com.haky.edge.routes.signalRoutes
 import com.haky.edge.routes.overseasRoutes
 import com.haky.edge.routes.prewarmRoutes
+import com.haky.edge.routes.watchlistRoutes
 import com.haky.edge.routes.slackCommandRoutes
 import com.haky.edge.routes.slackTestRoutes
 import com.haky.edge.slack.CostSummaryService
@@ -153,10 +154,13 @@ fun Application.module() {
     val eventChannel = System.getenv("SLACK_EVENT_CHANNEL").orEmpty()
     val deployChannel = System.getenv("SLACK_DEPLOY_CHANNEL").orEmpty()
     val costChannel = System.getenv("SLACK_COST_CHANNEL").orEmpty()
-    // 신호 평가 대상 종목 — prewarm과 같은 공통 관심종목(SIGNAL_CODES env, 없으면 CLAUDE.md 11종목 폴백).
-    // 사용자별 워치리스트 서버 등록은 후속(S3 메모리) — 그 전까진 공통 목록으로 동작.
-    val signalCodes = (System.getenv("SIGNAL_CODES")
-        ?: "018260,329180,066570,307950,000660,005930,267260,001440,062040,047810,012450")
+    // 슬랙 신호·주간회고 대상 = 앱이 올려준 관심종목(기기별 등록, 활성 합집합). 스캔 시점에 조회.
+    val watchlistRegistry = com.haky.edge.watchlist.WatchlistRegistry()
+    // 검증·백테스트 레퍼런스 유니버스 — "내 관심종목"과 분리된 고정 시장 표본(섹터 14종).
+    // signal-lab·analog-validation·control-universe·discovery·facts-audit 전용, 슬랙엔 안 나옴.
+    // REFERENCE_CODES env로 재조정(캘리브레이션 트랙에서 유니버스 바꿀 때). 기본=섹터별 대표 대형주 14.
+    val referenceCodes = (System.getenv("REFERENCE_CODES")
+        ?: "005930,006400,035420,005380,207940,105560,005490,329180,012450,017670,015760,033780,051910,000720")
         .split(",").map { it.trim() }.filter { it.isNotBlank() }
     val opsAlerter = OpsAlerter(
         slack = slack,
@@ -258,7 +262,7 @@ fun Application.module() {
     // 리밸런싱 트리거(R1) — /portfolio-review가 남긴 포지션 스냅샷을 룰로 평가(비중 드리프트·상단권 쏠림).
     val rebalance = com.haky.edge.ai.RebalanceService(kis, master, valuationBand)
     // 지켜볼 후보 발굴(D1) — peer 바스켓 유니버스(관심종목 제외) 신호 스캔.
-    val discovery = com.haky.edge.ai.DiscoveryService(kis, master, signalCodes)
+    val discovery = com.haky.edge.ai.DiscoveryService(kis, master, referenceCodes)
     val moodLog = MarketMoodLogService()
     // C 섹터 자금 순환 — 업종지수 5/20일 상대강도. 시장 분위기 facts에 순환 문단 주입(신호 있을 때만).
     val sectorRotation = com.haky.edge.macro.SectorRotationService(kis)
@@ -295,7 +299,7 @@ fun Application.module() {
     val catalystValidation = com.haky.edge.ai.CatalystValidationService(catalystEventLog, dailyHistory, kis, master)
     // ②-2a Analog 캘리브레이션 실증 — 유사 국면 카드 forward 분포를 walk-forward replay로 채점.
     // K5(이관 판정): 유사 국면 매칭(분포 예측)은 signal-lab 단순 신호 리플레이와 형태가 달라 이관 불가 → 유지(9월 재실측 도구).
-    val analogValidation = com.haky.edge.ai.AnalogValidationService(dailyHistory, master, signalCodes)
+    val analogValidation = com.haky.edge.ai.AnalogValidationService(dailyHistory, master, referenceCodes)
     val yahooHistory = com.haky.edge.macro.YahooHistoryClient()
     // ③ MoodLog 가중치 실측 — Yahoo 2년 8지표 × 코스피 3분류, 홀드아웃 검증.
     // K5(이관 판정): 거시지표→코스피 방향 예측이라 종목 단위 signal-lab과 형태가 달라 이관 불가 → 유지(선물 재론 도구).
@@ -306,7 +310,7 @@ fun Application.module() {
     val morningBrief = MorningBriefService(slack, briefingChannel, marketMood, moodLog, eventSync)
     // B 주간 회고 — 토요일 아침, 한 주 서버 기록(방향예측·스탠스·목표가·주간 등락) 회고 → #아침브리핑.
     val weeklyReview = com.haky.edge.slack.WeeklyReviewService(
-        slack, briefingChannel, kis, master, signalCodes, stanceLog, stanceStats, moodLog, targetPriceLog, eventSync, claude, modelRouter)
+        slack, briefingChannel, kis, master, { watchlistRegistry.activeCodes() }, stanceLog, stanceStats, moodLog, targetPriceLog, eventSync, claude, modelRouter)
     // 판단 대조 — 내 매매 vs AI 스탠스 반사실 성적(20거래일 초과수익 동일 잣대, LLM 0).
     val judgmentComparison = com.haky.edge.ai.JudgmentComparisonService(kis, stanceLog, dailyHistory)
     // B2 개인 주간 회고 — 앱이 포지션·매매·논지를 POST, 서버가 주간 등락·스탠스·목표가·이벤트를 합쳐 Opus 해석.
@@ -322,14 +326,14 @@ fun Application.module() {
     val positionSizing = com.haky.edge.ai.PositionSizingService(master, dailyHistory)
     // 전략 실험실 — 선언적 신호 수트 → 유니버스 리플레이 + 대조군 + 초과수익 채점(LLM 0).
     // R3 대조 유니버스 — 시총 상위 근사 무작위 표본(anchor 결론의 관심종목 편향 검증용).
-    val controlUniverse = com.haky.edge.lab.ControlUniverseService(kis, master, signalCodes)
-    val signalLab = com.haky.edge.lab.SignalLabService(dailyHistory, yahooHistory, signalCodes, controlUniverse, kis)
+    val controlUniverse = com.haky.edge.lab.ControlUniverseService(kis, master, referenceCodes)
+    val signalLab = com.haky.edge.lab.SignalLabService(dailyHistory, yahooHistory, referenceCodes, controlUniverse, kis)
     val eventReminder = EventReminderService(slack, eventChannel, eventSync)
     val costSummary = CostSummaryService(slack, costChannel, usageTracker)
     // S3a/b+F4+F3+F5+R2 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가·수급 전환점·실적 리뷰·프리모템 발동·비중 점검 → #알림-신호 채널.
     // 수급 아카이브 — signals-scan이 매일 확정 일별 수급을 jsonl로 영속(F4 사후 검증의 데이터 기반).
     val investorHistory = com.haky.edge.kis.InvestorHistoryLog()
-    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, signalCodes, backtest, earningsPreview, premortem, rebalance, investorHistory, signalFiredLog, guidanceService)
+    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, { watchlistRegistry.activeCodes() }, backtest, earningsPreview, premortem, rebalance, investorHistory, signalFiredLog, guidanceService)
     // S7·S8 슬래시 명령 + 라운지 명령어. 서명검증 + 멀티 커맨드 라우팅.
     val slackVerifier = SlackSignatureVerifier(System.getenv("SLACK_SIGNING_SECRET").orEmpty())
     val slackCommand = SlackCommandService(analysis, master, slack, kis, marketMood, eventSync)
@@ -399,8 +403,9 @@ fun Application.module() {
             analogValidationRoutes(analogValidation)
             moodWeightValidationRoutes(moodWeightValidation)
             // K5: anchor·discovery는 signal-lab 수트(GET /signal-lab?suite=anchor|discovery)로 이관 — 라우트 해제.
-            factsAuditRoutes(analysis, signalCodes)
+            factsAuditRoutes(analysis, referenceCodes)
             prewarmRoutes(kis, dart)
+            watchlistRoutes(watchlistRegistry)
             slackTestRoutes(slack, opsChannel)
             morningBriefRoutes(morningBrief)
             weeklyReviewRoutes(weeklyReview)

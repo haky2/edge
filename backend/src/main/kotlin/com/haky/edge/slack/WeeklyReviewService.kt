@@ -49,7 +49,8 @@ class WeeklyReviewService(
     private val channel: String,
     private val kis: KisClient,
     private val master: StockMaster,
-    private val codes: List<String>,
+    // 주간 회고 대상 관심종목을 생성 시점에 조회(앱 등록 기반 동적 목록).
+    private val watchlist: () -> List<String>,
     private val stanceLog: StanceLog,
     private val stanceStats: StanceStatsService,
     private val moodLog: MarketMoodLogService,
@@ -86,6 +87,7 @@ class WeeklyReviewService(
 
     /** 계산 요약(우리) + Claude 회고(해석)를 합친 Slack 전문을 만든다. */
     private suspend fun buildReport(monday: LocalDate, friday: LocalDate): String = coroutineScope {
+        val codes = watchlist()
         val mondayStr = monday.toString()
         val fridayStr = friday.toString()
 

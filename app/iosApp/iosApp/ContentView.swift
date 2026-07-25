@@ -232,6 +232,7 @@ struct WatchlistView: View {
         let codes = items.map { $0.code }
         let domesticCodes = codes.filter { !$0.hasPrefix("US:") }
         let overseasCodes = codes.filter { $0.hasPrefix("US:") }
+        WatchlistSync.push(api: api, codes: domesticCodes)   // 슬랙 신호·주간회고 대상 동기화
         async let domFetch = fetchDomesticQuotes(domesticCodes)
         async let ovsFetch = fetchOverseasQuotes(overseasCodes)
         let dList = await domFetch

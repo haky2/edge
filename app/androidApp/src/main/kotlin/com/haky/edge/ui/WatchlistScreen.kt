@@ -45,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -92,6 +93,7 @@ fun WatchlistScreen(
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val loadedAtState = remember { mutableStateOf(0L) }
+    val context = LocalContext.current
 
     suspend fun loadSparklines(watchlist: List<WatchItem>) {
         val todayStr = run {
@@ -145,6 +147,7 @@ fun WatchlistScreen(
             items = watchlist
             val domesticCodes = watchlist.map { it.code }.filter { !it.startsWith("US:") }
             val overseasCodes = watchlist.map { it.code }.filter { it.startsWith("US:") }
+            WatchlistSync.push(context, api, scope, domesticCodes)   // 슬랙 신호·주간회고 대상 동기화
             try {
                 coroutineScope {
                     val domDeferred = async { if (domesticCodes.isNotEmpty()) api.getQuotes(domesticCodes) else emptyList() }
