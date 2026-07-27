@@ -4,6 +4,10 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!-- 앱 보관함(App Library) 분류 = 금융. App Store 미등록(개발자 설치) 상태에서
+	     iOS가 카테고리를 못 정해 개발자 이름 폴더로 묶이는 걸, 금융으로 지정해 MTS·은행앱과 함께 모이게. -->
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.finance</string>
 	<!-- 백엔드 주소·공유 토큰(1.0c-a). 빌드 설정에서 치환된다(Config.xcconfig / 배포 시 Secrets.xcconfig).
 	     비어 있으면 앱이 localhost·토큰없음으로 폴백 → 로컬 개발 기존 동작 유지. -->
 	<key>EDGE_BASE_URL</key>
