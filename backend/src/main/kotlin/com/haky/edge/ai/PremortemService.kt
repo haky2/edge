@@ -144,10 +144,18 @@ class PremortemService(
             .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
 
     companion object {
-        /** signals-scan이 평가 가능한 타입(v1). target_cut·event_before는 표시용 저장만(평가 skip). */
-        val EVALUABLE_TYPES = setOf("price_below", "price_above", "flow_exit")
-        private val KNOWN_TYPES = EVALUABLE_TYPES + setOf("target_cut", "event_before")
+        /**
+         * signals-scan이 평가 가능한 타입.
+         * v1: price_below·price_above·flow_exit(가격·수급).
+         * v2: target_cut(목표가 하향 전환)·event_before(임박 이벤트) — 펀더멘털/논지 파손도 감시.
+         */
+        val EVALUABLE_TYPES = setOf("price_below", "price_above", "flow_exit", "target_cut", "event_before")
+        private val KNOWN_TYPES = EVALUABLE_TYPES
         private val parser = Json { ignoreUnknownKeys = true; isLenient = true }
+
+        /** event_before threshold(임박 며칠 전 발화) 기본값·범위. 목표가 하향 판정 최소 낙폭은 TargetPriceLogService. */
+        const val DEFAULT_EVENT_LEAD_DAYS = 5
+        private val EVENT_LEAD_RANGE = 1..30
 
         /** Claude JSON 응답 파싱(순수 함수). 형식 불일치·빈 결과는 null(산문 폴백 신호). */
         internal fun parsePremortem(raw: String): Premortem? {
@@ -188,7 +196,12 @@ class PremortemService(
                         val t = inv.threshold?.toInt()?.coerceIn(1, 30) ?: return@mapNotNull null
                         inv.copy(threshold = t.toDouble(), evaluable = true)
                     }
-                    in KNOWN_TYPES -> inv.copy(evaluable = false) // target_cut·event_before — 기록만
+                    "target_cut" -> inv.copy(evaluable = true) // threshold 불필요 — 생성 이후 목표가 하향 전환을 감시
+                    "event_before" -> {
+                        // threshold = 임박 며칠 전 발화. 없거나 범위 밖이면 기본값으로 클램프.
+                        val d = inv.threshold?.toInt()?.coerceIn(EVENT_LEAD_RANGE) ?: DEFAULT_EVENT_LEAD_DAYS
+                        inv.copy(threshold = d.toDouble(), evaluable = true)
+                    }
                     else -> inv.copy(evaluable = false)            // 미지 타입 — 기록만
                 }
             }
@@ -199,10 +212,19 @@ class PremortemService(
             invs.map { it.copy(evaluable = it.type in EVALUABLE_TYPES) }
 
         /**
-         * 일일 평가(순수 함수): 현재가·외국인 연속 순매도 일수로 활성 조건 발동 여부.
-         * 반환 = 발동한 조건의 인덱스 목록(원본 리스트 기준).
+         * 일일 평가(순수 함수): 현재가·외국인 연속 순매도 일수·목표가 하향 여부·임박 이벤트 D-day로
+         * 활성 조건 발동 여부. 반환 = 발동한 조건의 인덱스 목록(원본 리스트 기준).
+         *
+         * targetLowered/daysToNextEvent는 SignalService가 조회해 주입(순수성 유지). 기본값이 있어
+         * 가격·수급만 검증하던 기존 호출부·테스트는 그대로 동작한다.
          */
-        internal fun firedInvalidations(pm: Premortem, price: Long?, foreignSellStreak: Int): List<Int> =
+        internal fun firedInvalidations(
+            pm: Premortem,
+            price: Long?,
+            foreignSellStreak: Int,
+            targetLowered: Boolean = false,
+            daysToNextEvent: Int? = null,
+        ): List<Int> =
             pm.invalidations.mapIndexedNotNull { i, inv ->
                 if (!inv.active) return@mapIndexedNotNull null
                 val t = inv.threshold
@@ -210,6 +232,11 @@ class PremortemService(
                     "price_below" -> price != null && t != null && price < t
                     "price_above" -> price != null && t != null && price > t
                     "flow_exit" -> t != null && foreignSellStreak >= t.toInt()
+                    "target_cut" -> targetLowered
+                    "event_before" -> {
+                        val lead = (t?.toInt() ?: DEFAULT_EVENT_LEAD_DAYS).coerceIn(EVENT_LEAD_RANGE)
+                        daysToNextEvent != null && daysToNextEvent in 0..lead
+                    }
                     else -> false
                 }
                 if (fired) i else null
@@ -242,7 +269,7 @@ class PremortemService(
             2. invalidations는 2~4개. price_below(지지 이탈)와 flow_exit(수급 이탈)를 우선 고려하라.
             3. 매수 사유가 구체적이지 않으면("그냥", 한두 단어) 일반 리스크 관리 조건(손절 라인·수급 이탈)만 제시하라.
             4. flow_exit의 threshold는 연속 순매도 일수(정수, 3~7 권장). description에 주체(외국인)를 명시하라.
-            5. 사유가 특정 이벤트·실적·수주 기대라면 그 가설이 깨지는 신호(target_cut: 목표가 하향 전환 등)를 포함하라.
+            5. 사유가 특정 이벤트·실적·수주 기대라면 그 가설이 깨지는 신호를 포함하라 — 목표가가 하향 전환되면 target_cut(threshold 불필요), 임박한 실적/이벤트 발표 전에 재점검이 필요하면 event_before(threshold=며칠 전에 알림받을지, 정수 1~30, 미지정 시 5).
             6. 너의 학습 지식 속 이 회사 수치는 낡았다 — 모든 숫자는 사실 데이터에서만.
         """.trimIndent()
     }

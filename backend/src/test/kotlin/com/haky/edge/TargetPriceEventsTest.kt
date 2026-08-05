@@ -79,4 +79,60 @@ class TargetPriceEventsTest {
         assertEquals(1, e.raisesIn90d)
         assertEquals(0, e.breakthroughDays)
     }
+
+    // ── computeCutSince (F5 target_cut 감시) ────────────────────────────
+
+    private val created = "2026-06-10T15:00:00"  // 프리모템 생성 시점
+
+    @Test fun `생성 이후 CUT_PCT 이상 하향 - 발화`() {
+        val snaps = listOf(
+            TargetSnapshot("2026-06-05", 400000),  // 생성 이전(포함) 마지막 → 기준
+            TargetSnapshot("2026-06-20", 370000),  // -7.5% → 하향 전환
+        )
+        val cut = TargetPriceLogService.computeCutSince(snaps, created)!!
+        assertEquals(400000L, cut.fromTarget)
+        assertEquals(370000L, cut.toTarget)
+        assertEquals(-7.5, cut.changePct)
+    }
+
+    @Test fun `낙폭이 CUT_PCT 미만이면 null`() {
+        val snaps = listOf(
+            TargetSnapshot("2026-06-05", 400000),
+            TargetSnapshot("2026-06-20", 393000),  // -1.75% < 3% → 노이즈
+        )
+        assertNull(TargetPriceLogService.computeCutSince(snaps, created))
+    }
+
+    @Test fun `생성 이후 상향은 null`() {
+        val snaps = listOf(
+            TargetSnapshot("2026-06-05", 400000),
+            TargetSnapshot("2026-06-20", 440000),  // +10% 상향
+        )
+        assertNull(TargetPriceLogService.computeCutSince(snaps, created))
+    }
+
+    @Test fun `생성 이전만 있으면 - 스냅샷 1개 취급 null`() {
+        // 기준=끝=같은 스냅샷(생성 후 갱신 없음) → 감지 불가
+        val snaps = listOf(TargetSnapshot("2026-06-05", 400000))
+        assertNull(TargetPriceLogService.computeCutSince(snaps, created))
+    }
+
+    @Test fun `기준이 생성 이전에 없으면 이후 첫 스냅샷 기준 - 그 내부 하락 감지`() {
+        val snaps = listOf(
+            TargetSnapshot("2026-06-15", 400000),  // 전부 생성 이후 → 첫 스냅샷이 기준
+            TargetSnapshot("2026-06-25", 380000),  // -5% 하향
+        )
+        val cut = TargetPriceLogService.computeCutSince(snaps, created)!!
+        assertEquals(400000L, cut.fromTarget)
+        assertEquals(380000L, cut.toTarget)
+    }
+
+    @Test fun `net 기준 - 내렸다 회복하면 하향 아님`() {
+        val snaps = listOf(
+            TargetSnapshot("2026-06-05", 400000),  // 기준
+            TargetSnapshot("2026-06-12", 360000),  // 일시 하락
+            TargetSnapshot("2026-06-25", 398000),  // 회복(-0.5% net) → null
+        )
+        assertNull(TargetPriceLogService.computeCutSince(snaps, created))
+    }
 }

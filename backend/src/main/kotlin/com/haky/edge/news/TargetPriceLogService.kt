@@ -15,6 +15,9 @@ import java.time.temporal.ChronoUnit
 @Serializable
 data class TargetSnapshot(val date: String, val target: Long, val price: Long? = null)
 
+/** 프리모템 생성 시점 대비 목표가 하향 전환. from→to, changePct(음수). */
+data class TargetCut(val fromTarget: Long, val toTarget: Long, val changePct: Double)
+
 /**
  * 목표가 이벤트 집계(최근 90일 스냅샷 기준). "매주 목표가가 올라간다"·"주가가 목표가를 뚫었다"
  * 같은 리레이팅 정황을 정량 사실로 만든다. 스냅샷이 쌓여야 의미가 생긴다(초기엔 대부분 0).
@@ -104,6 +107,17 @@ class TargetPriceLogService {
         )
     }
 
+    /**
+     * 프리모템 생성(sinceIso) 이후 목표가 하향 전환 감지(F5 target_cut 감시).
+     * 생성 시점 목표가(그 이전 마지막 스냅샷, 없으면 이후 첫 스냅샷) 대비 최신 목표가가
+     * CUT_PCT 이상 낮으면 TargetCut, 아니면 null. 단발 노이즈는 CUT_PCT(>MOVE_THRESHOLD)로 거른다.
+     */
+    @Synchronized
+    fun cutSince(code: String, sinceIso: String): TargetCut? {
+        val snapshots = loadLog()[code] ?: return null
+        return computeCutSince(snapshots, sinceIso)
+    }
+
     /** 최근 90일 스냅샷에서 목표가 이벤트 집계. 스냅샷 2개 미만이면 null. */
     @Synchronized
     fun events(code: String): TargetPriceEvents? {
@@ -138,6 +152,23 @@ class TargetPriceLogService {
         private const val PRUNE_DAYS = 180L         // 보관 기간
         private const val MOVE_THRESHOLD = 1.0      // ±1% 미만은 "유지"(노이즈 컷)
         private const val EVENTS_WINDOW_DAYS = 90L  // 이벤트 집계 창
+        const val CUT_PCT = 3.0                     // 프리모템 target_cut 발화 최소 낙폭(단발 노이즈>MOVE_THRESHOLD)
+
+        /**
+         * 생성 시점 이후 목표가 하향 전환 순수 함수(테스트 대상). 기준 = sinceIso 날짜 이전(포함) 마지막
+         * 스냅샷, 없으면 이후 첫 스냅샷. 끝 = 최신 스냅샷. 기준=끝(같은 스냅샷)이거나 낙폭 < CUT_PCT면 null.
+         */
+        internal fun computeCutSince(snapshots: List<TargetSnapshot>, sinceIso: String): TargetCut? {
+            val sinceDate = sinceIso.take(10)   // "2026-07-04T15:00:00" → "2026-07-04"
+            val valid = snapshots.filter { it.target > 0 }.sortedBy { it.date }
+            if (valid.size < 2) return null
+            val baseline = valid.lastOrNull { it.date <= sinceDate } ?: valid.first()
+            val latest = valid.last()
+            if (baseline.date == latest.date) return null
+            val changePct = (latest.target - baseline.target).toDouble() / baseline.target * 100
+            if (changePct > -CUT_PCT) return null
+            return TargetCut(baseline.target, latest.target, kotlin.math.round(changePct * 10) / 10)
+        }
 
         /**
          * 이벤트 집계 순수 함수(테스트 대상). 최근 [EVENTS_WINDOW_DAYS]일 스냅샷을 날짜순으로 보고

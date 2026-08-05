@@ -84,10 +84,22 @@ class PremortemTest {
     }
 
     @Test
-    fun `target_cut 등 표시용 타입은 threshold 무관 통과`() {
+    fun `target_cut·event_before는 이제 평가 대상, 미지 타입만 기록용`() {
         val out = PremortemService.guardInvalidations(
-            listOf(inv("target_cut"), inv("event_before"), inv("custom_type")), facts)
+            listOf(inv("target_cut"), inv("event_before", 3.0), inv("custom_type")), facts)
         assertEquals(3, out.size)
+        assertTrue(out[0].evaluable)                 // target_cut
+        assertTrue(out[1].evaluable)                 // event_before
+        assertEquals(3.0, out[1].threshold)          // 범위 내 → 유지
+        assertTrue(!out[2].evaluable)                // custom_type → 기록용
+    }
+
+    @Test
+    fun `event_before threshold 없거나 범위 밖이면 기본·클램프`() {
+        val out = PremortemService.guardInvalidations(
+            listOf(inv("event_before"), inv("event_before", 99.0)), facts)
+        assertEquals(PremortemService.DEFAULT_EVENT_LEAD_DAYS.toDouble(), out[0].threshold) // 미지정 → 5
+        assertEquals(30.0, out[1].threshold)                                                // 99 → 30 클램프
     }
 
     // ── firedInvalidations ─────────────────────────────────────────────
@@ -114,11 +126,48 @@ class PremortemTest {
     }
 
     @Test
-    fun `비활성 조건과 표시용 타입은 평가 제외`() {
+    fun `비활성 조건은 평가 제외`() {
         val p = pm(
             inv("price_below", 320400.0).copy(active = false),
-            inv("target_cut"),
+            inv("target_cut").copy(active = false),
         )
-        assertTrue(PremortemService.firedInvalidations(p, price = 100, foreignSellStreak = 10).isEmpty())
+        assertTrue(PremortemService.firedInvalidations(p, price = 100, foreignSellStreak = 10,
+            targetLowered = true).isEmpty())
+    }
+
+    @Test
+    fun `target_cut - 목표가 하향 전환 시에만 발동`() {
+        val p = pm(inv("target_cut"))
+        assertEquals(listOf(0), PremortemService.firedInvalidations(p, price = 350000, foreignSellStreak = 0,
+            targetLowered = true))
+        assertTrue(PremortemService.firedInvalidations(p, price = 350000, foreignSellStreak = 0,
+            targetLowered = false).isEmpty())
+    }
+
+    @Test
+    fun `event_before - D-day가 threshold 이내면 발동`() {
+        val p = pm(inv("event_before", 5.0))
+        assertEquals(listOf(0), PremortemService.firedInvalidations(p, price = null, foreignSellStreak = 0,
+            daysToNextEvent = 3))            // D-3 ≤ 5 → 발동
+        assertEquals(listOf(0), PremortemService.firedInvalidations(p, price = null, foreignSellStreak = 0,
+            daysToNextEvent = 5))            // 경계(D-5) 포함
+        assertTrue(PremortemService.firedInvalidations(p, price = null, foreignSellStreak = 0,
+            daysToNextEvent = 6).isEmpty())  // D-6 > 5 → 미발동
+        assertTrue(PremortemService.firedInvalidations(p, price = null, foreignSellStreak = 0,
+            daysToNextEvent = null).isEmpty()) // 예정 없음 → 미발동
+    }
+
+    @Test
+    fun `event_before - 이미 지난 이벤트(음수 D-day)는 미발동`() {
+        val p = pm(inv("event_before", 5.0))
+        assertTrue(PremortemService.firedInvalidations(p, price = null, foreignSellStreak = 0,
+            daysToNextEvent = -1).isEmpty())
+    }
+
+    @Test
+    fun `기본 인자 - 가격·수급만 검증하던 기존 호출 그대로 동작`() {
+        val p = pm(inv("target_cut"), inv("price_below", 320400.0))
+        // targetLowered·daysToNextEvent 생략 → target_cut은 안 울리고 가격만 평가.
+        assertEquals(listOf(1), PremortemService.firedInvalidations(p, price = 320000, foreignSellStreak = 0))
     }
 }

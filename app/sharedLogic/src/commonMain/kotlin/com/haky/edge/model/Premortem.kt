@@ -15,8 +15,9 @@ data class Invalidation(
     @SerialName("description") val desc: String,
     val active: Boolean = true,
     val firedAt: String? = null,
-    // T2: signals-scan이 실제로 자동 평가하는 타입 여부(price_below/above/flow_exit=true).
-    // false면 저장은 되지만 자동 감시 안 됨(target_cut·event_before 등) — UI에서 "기록만" 표시.
+    // T2: signals-scan이 실제로 자동 평가하는 타입 여부.
+    //   watched(true): price_below/above·flow_exit(가격·수급) + target_cut·event_before(목표가 하향·임박 이벤트).
+    //   false: 미지 타입 등 — 저장은 되지만 자동 감시 안 됨. UI에서 "기록만" 표시.
     val evaluable: Boolean = false,
 )
 

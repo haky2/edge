@@ -45,6 +45,7 @@ class SignalService(
     private val backtest: com.haky.edge.ai.BacktestService? = null, // F4 필터·근거용(없으면 전환 신호 skip)
     private val earningsPreview: com.haky.edge.ai.EarningsPreviewService? = null, // F3 리뷰용(없으면 skip)
     private val premortem: com.haky.edge.ai.PremortemService? = null, // F5 무효화 조건 감시(없으면 skip)
+    private val targetLog: com.haky.edge.news.TargetPriceLogService? = null, // F5 target_cut 감시용 목표가 이력(없으면 skip)
     private val rebalance: com.haky.edge.ai.RebalanceService? = null, // R2 비중 점검 신호(없으면 skip)
     private val investorHistory: com.haky.edge.kis.InvestorHistoryLog? = null, // 수급 아카이브(없으면 skip)
     private val signalFiredLog: SignalFiredLog? = null, // N3-a 발화 로그(없으면 skip)
@@ -193,7 +194,8 @@ class SignalService(
         }
 
         // 6. 프리모템 무효화 조건(F5) — 관심종목 목록과 무관하게 활성 프리모템 전체를 평가.
-        //    가격·수급만으로 평가 가능한 타입(price_below/above·flow_exit)이 대상(EVALUABLE_TYPES).
+        //    가격·수급(price_below/above·flow_exit) + 펀더멘털(target_cut 목표가 하향·event_before 임박 이벤트).
+        //    target_cut/event_before 조회는 해당 타입이 활성일 때만(불필요한 DART/이력 조회 회피).
         //    markFired(1회성 비활성화)는 여기서 하지 않고 발송 성공 후에 — 발송 실패 시 알림이
         //    영영 사라지는 걸 막는다(다음 스캔에 재평가·재발송).
         val premortemSignals = mutableListOf<PremortemSignal>()
@@ -203,14 +205,31 @@ class SignalService(
                 val price = runCatching { kis.getPrice(pm.code).price }.getOrNull()
                 val sellStreak = runCatching { kis.getInvestorFlow(pm.code, days = 10) }.getOrNull()
                     ?.let { flows -> foreignSellStreak(flows) } ?: 0
-                val fired = com.haky.edge.ai.PremortemService.firedInvalidations(pm, price, sellStreak)
+                val hasType = { type: String -> pm.invalidations.any { it.active && it.type == type } }
+                val targetCut = if (hasType("target_cut"))
+                    runCatching { targetLog?.cutSince(pm.code, pm.createdAt) }.getOrNull() else null
+                val daysToEvent = if (hasType("event_before"))
+                    runCatching { earningsPreview?.preview(pm.code)?.dDay }.getOrNull() else null
+                val fired = com.haky.edge.ai.PremortemService.firedInvalidations(
+                    pm, price, sellStreak,
+                    targetLowered = targetCut != null,
+                    daysToNextEvent = daysToEvent,
+                )
                 if (fired.isEmpty()) continue
                 premortemFired += pm.code to fired
                 premortemSignals += PremortemSignal(
                     pm.code, pm.name, pm.reason,
                     fired.map { i ->
                         val inv = pm.invalidations[i]
-                        inv.description + (inv.anchor?.let { " ($it)" } ?: "")
+                        val base = inv.description + (inv.anchor?.let { " ($it)" } ?: "")
+                        // target_cut/event_before 발화 시 관측한 실제 값을 병기(사실 앵커).
+                        when {
+                            inv.type == "target_cut" && targetCut != null ->
+                                "$base (목표가 ${"%,d".format(targetCut.fromTarget)}→${"%,d".format(targetCut.toTarget)}원, ${"%+.1f".format(targetCut.changePct)}%)"
+                            inv.type == "event_before" && daysToEvent != null ->
+                                "$base (실적 D-$daysToEvent)"
+                            else -> base
+                        }
                     },
                 )
             }
