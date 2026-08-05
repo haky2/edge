@@ -6,6 +6,26 @@
 
 ---
 
+## 2026-08-05 — F5 프리모템 무효화 감시 확장(target_cut·event_before)
+
+**한 일**
+- 브레인스토밍 3안 중 #2 채택(#1 SENSITIVITY 백테스트는 D1로 이미 완료, #3 Toss는 인프라 블로커 확인). F5 프리모템이 가격·수급(price_below/above·flow_exit)만 감시하고 **target_cut·event_before는 생성·저장만 하고 감시 skip**하던 절반 상태를 해소 — 펀더멘털/논지 파손도 감시.
+- **PremortemService**: `EVALUABLE_TYPES`에 두 타입 추가. `firedInvalidations`에 `targetLowered`·`daysToNextEvent` 인자(기본값 有 → 기존 호출·테스트 무변경). event_before threshold 클램프(1~30, 기본 5). 프롬프트 규칙5에 두 트리거 생성 유도.
+- **TargetPriceLogService.computeCutSince**: 프리모템 생성 시점 목표가 대비 net −3%(CUT_PCT) 이상 하락 시 하향 전환. 내렸다 회복하면 미발화(노이즈 방어).
+- **SignalService**: 해당 타입 활성일 때만 목표가 이력·실적 D-day 조회(불필요 조회 회피), 발화 메시지에 실측 병기(`목표가 12,000→11,000원 -8.3%` / `실적 D-3`). 1회성 markFired가 반복 차단.
+- **앱**: evaluable 설계(T2)상 두 조건이 자동으로 "감시 중"에 포함 — 코드 무변경, 스테일 주석만 정합. iOS BUILD SUCCEEDED.
+- 커밋 5e53d08 push, **배포 00110-t8l**. 배포 후 signals-scan 스모크 HTTP 200(scanned 22·fired 0·런타임 정상).
+
+**막힌 점·배운 것**
+- 브레인스토밍 스펙 뽑기 전 **코드부터 확인**이 필수 — #1·#2 모두 이미 상당 부분 구현돼 있어(D1, F5 프리모템) 안 봤으면 중복 작업을 스펙으로 뽑을 뻔. 성숙한 코드베이스에선 "없는 기능"보다 "반쯤 지은 기능"이 더 흔함.
+- persona T2의 evaluable 불린 설계 덕에 백엔드가 타입을 감시 대상으로 승격하면 앱 UI가 자동 적응 — 앱 재릴리스 불필요.
+
+**다음 할 일**
+- 배포 후 첫 2주 프리모템 발화 로그 오탐 관찰(R4 스모크 문화). 특히 target_cut net −3% 임계·event_before D-day 경계.
+- (선택) 별도 "논지"(thesis) AI 재유효성 점검을 pull→push로 — LLM 비용 붙어 프리모템과 성격 다름, 별 슬라이스.
+
+---
+
 ## 2026-07-21 — 페르소나 리뷰 K2·K3·K4 + O1·O2 완료
 
 **한 일**
