@@ -6,6 +6,27 @@
 
 ---
 
+## 2026-08-06 — 논지 pull→push: 물질적 사건 뒤 논지 재점검 알림
+
+**한 일**
+- 프리모템 확장의 선택 후속(논지 pull→push)을 슬라이스화. **핵심 난관**: 논지는 클라 로컬 DB 정본이라 서버가 몰라 signals-scan이 파손을 알릴 수 없음 → 논지를 서버로 동기화가 필수 선결. 사용자 선택 **B(명시적 /thesis/sync + 앱 릴리스)**.
+- **설계 = 게이트드 LLM 재점검(타이머 금지)**: signals-scan이 이미 계산하는 물질적 신호(공시·실적·밸류 진입) 뒤에만 LLM 재점검을 태워 비용을 사건 빈도에 비례시킴. 약화/무효만 발화.
+- **1a**: `ThesisRegistry`(기기별·활성 최신·30일 만료) + `POST /thesis/sync`(watchlist sync 미러, 길이 가드 재사용).
+- **2(Opus)**: `ThesisRecheckService` — 논지+이력+현재 facts(논지 미포함본)+"무엇이 바뀌었나" → 구조화 `{verdict, changedFact, reason}`. C12/C16 아부 금지 규율 압축·데이터 부족 시 판단불가. `ModelRouter.THESIS_RECHECK`(기본 Opus).
+- **3**: signals-scan 통합 — 물질적 신호 뜬 종목 중 서버가 논지 아는 것만 재점검. "🧭 논지 점검" 발화(약화/무효만). 비용가드: 스캔당 상한 8 + (code,논지hash) 14일 쿨다운(논지 편집 시 hash 리셋). 기존 신호 디듀프 상속 → 자연 저빈도.
+- **1b(앱)**: `EdgeApi.syncThesis` + 공유 모델 + `WatchlistRepository.allTheses`(수집 중복 제거). watchlist sync와 같은 트리거에 논지도 동기화(직전 같으면 skip·국내만). iOS+Android.
+- 유닛 14건(Recheck 5·Registry 5·Gate 4)·전체 회귀 없음. 커밋 ecbfc60 push. **배포 00111-gkn**. 스모크: /thesis/sync 200(저장)·signals-scan 200(런타임 정상)·더미 논지 정리.
+
+**막힌 점·배운 것**
+- 프리모템과 결정적 차이: 프리모템 데이터는 이미 서버에 있어 배포 즉시 가동했지만, **논지는 서버에 없어 앱이 sync한 뒤에야 실가동**(registry가 차야 함). 같은 "push" 기능도 데이터 소재가 릴리스 필요성을 가른다.
+- 게이트를 signals-scan 기존 신호(자체 디듀프됨) 뒤에 두니 별도 쿨다운·타이머 없이도 재점검 빈도가 자연 저빈도로 수렴 — LLM 비용의 열쇠는 "언제 부르지 않을지".
+
+**다음 할 일**
+- 앱 릴리스(iOS 빌드·Android APK 완료) 후 논지 sync 되면 실발화 시작. 첫 2주 발화 품질·오탐 관찰(약화/무효 판정 정확도, 아부 금지 준수).
+- (선택) Step 2 프롬프트 Fable 정밀화 — 실호출 관찰 후 필요 시.
+
+---
+
 ## 2026-08-05 — F5 프리모템 무효화 감시 확장(target_cut·event_before)
 
 **한 일**
