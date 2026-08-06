@@ -52,8 +52,8 @@ android {
         applicationId = "com.haky.edge"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
 
         val baseUrl = localProps.getProperty("EDGE_BASE_URL", "")
         val apiToken = localProps.getProperty("EDGE_API_TOKEN", "")

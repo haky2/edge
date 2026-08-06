@@ -6,6 +6,23 @@
 
 ---
 
+## 2026-08-06 (3) — 앱 릴리스 1.3 (프리모템 확장 + 논지 pull→push 반영)
+
+**한 일**
+- 1.2 이후 누적 기능(프리모템 target_cut·event_before 감시 + 논지 pull→push + 그간 백엔드 반영분)을 실릴리스로. 버전 **1.3 / vc4**(iOS도 MARKETING_VERSION 1.3·빌드 2로 파리티).
+- **Android 서명 Release APK 빌드 완료** — `androidApp/build/outputs/apk/release/androidApp-release.apk`(52MB, V2 서명 CN=Edge App, versionCode 4/1.3). local.properties가 운영 URL이라 prod 연결.
+- **iOS Release 구성 BUILD SUCCEEDED**(시뮬 검증). Secrets.xcconfig 운영 URL/토큰 주입 확인 — Release=운영 분기.
+- 실기기 설치는 **이번엔 스킵**(사용자가 iPhone 미연결). 기기 연결 후 Xcode Release 설치 or 다음 세션에 devicectl 설치.
+
+**막힌 점·배운 것**
+- 실기기 릴리스는 반드시 **Release 구성** — Debug는 로컬 백엔드(localhost)로 붙어 실기기에서 안 됨([[edge-local-dev-setup]] 분기 규칙).
+- 논지 push는 이 릴리스가 기기에 설치·관심종목 화면 진입으로 논지 sync가 돌아야 실가동(registry 채워짐).
+
+**다음 할 일**
+- iPhone 연결 시 iOS Release 실기기 설치 → 논지 sync 확인(POST /thesis/sync 200) → 첫 발화 관찰 시작.
+
+---
+
 ## 2026-08-06 (2) — 논지 재점검 프롬프트 정밀화(Fable) + 수동 검증 라우트
 
 **한 일**
