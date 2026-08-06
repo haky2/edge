@@ -410,7 +410,7 @@ fun Application.module() {
             factsAuditRoutes(analysis, referenceCodes)
             prewarmRoutes(kis, dart)
             watchlistRoutes(watchlistRegistry)
-            thesisSyncRoutes(thesisRegistry)
+            thesisSyncRoutes(thesisRegistry, thesisRecheck, master)
             slackTestRoutes(slack, opsChannel)
             morningBriefRoutes(morningBrief)
             weeklyReviewRoutes(weeklyReview)
