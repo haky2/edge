@@ -147,7 +147,7 @@ fun WatchlistScreen(
             items = watchlist
             val domesticCodes = watchlist.map { it.code }.filter { !it.startsWith("US:") }
             val overseasCodes = watchlist.map { it.code }.filter { it.startsWith("US:") }
-            WatchlistSync.push(context, api, scope, domesticCodes)   // 슬랙 신호·주간회고 대상 동기화
+            WatchlistSync.push(context, api, scope, watchlistRepo, domesticCodes)   // 슬랙 신호·주간회고 + 논지 동기화
             try {
                 coroutineScope {
                     val domDeferred = async { if (domesticCodes.isNotEmpty()) api.getQuotes(domesticCodes) else emptyList() }

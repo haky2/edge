@@ -89,6 +89,7 @@ import com.haky.edge.routes.signalRoutes
 import com.haky.edge.routes.overseasRoutes
 import com.haky.edge.routes.prewarmRoutes
 import com.haky.edge.routes.watchlistRoutes
+import com.haky.edge.routes.thesisSyncRoutes
 import com.haky.edge.routes.slackCommandRoutes
 import com.haky.edge.routes.slackTestRoutes
 import com.haky.edge.slack.CostSummaryService
@@ -156,6 +157,8 @@ fun Application.module() {
     val costChannel = System.getenv("SLACK_COST_CHANNEL").orEmpty()
     // 슬랙 신호·주간회고 대상 = 앱이 올려준 관심종목(기기별 등록, 활성 합집합). 스캔 시점에 조회.
     val watchlistRegistry = com.haky.edge.watchlist.WatchlistRegistry()
+    // 논지 pull→push: 앱이 올려준 투자 논지를 서버가 보관(signals-scan 재점검 대상).
+    val thesisRegistry = com.haky.edge.thesis.ThesisRegistry()
     // 검증·백테스트 레퍼런스 유니버스 — "내 관심종목"과 분리된 고정 시장 표본(섹터 14종).
     // signal-lab·analog-validation·control-universe·discovery·facts-audit 전용, 슬랙엔 안 나옴.
     // REFERENCE_CODES env로 재조정(캘리브레이션 트랙에서 유니버스 바꿀 때). 기본=섹터별 대표 대형주 14.
@@ -333,7 +336,8 @@ fun Application.module() {
     // S3a/b+F4+F3+F5+R2 신호 알림: 연속 순매수·신규 공시·밸류밴드 저평가·수급 전환점·실적 리뷰·프리모템 발동·비중 점검 → #알림-신호 채널.
     // 수급 아카이브 — signals-scan이 매일 확정 일별 수급을 jsonl로 영속(F4 사후 검증의 데이터 기반).
     val investorHistory = com.haky.edge.kis.InvestorHistoryLog()
-    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, { watchlistRegistry.activeCodes() }, backtest, earningsPreview, premortem, targetPriceLog, rebalance, investorHistory, signalFiredLog, guidanceService)
+    val thesisRecheck = com.haky.edge.ai.ThesisRecheckService(analysis, claude, modelRouter)
+    val signalService = com.haky.edge.slack.SignalService(slack, kis, master, dart, valuationBand, signalChannel, { watchlistRegistry.activeCodes() }, backtest, earningsPreview, premortem, targetPriceLog, rebalance, investorHistory, signalFiredLog, guidanceService, thesisRegistry, thesisRecheck)
     // S7·S8 슬래시 명령 + 라운지 명령어. 서명검증 + 멀티 커맨드 라우팅.
     val slackVerifier = SlackSignatureVerifier(System.getenv("SLACK_SIGNING_SECRET").orEmpty())
     val slackCommand = SlackCommandService(analysis, master, slack, kis, marketMood, eventSync)
@@ -406,6 +410,7 @@ fun Application.module() {
             factsAuditRoutes(analysis, referenceCodes)
             prewarmRoutes(kis, dart)
             watchlistRoutes(watchlistRegistry)
+            thesisSyncRoutes(thesisRegistry)
             slackTestRoutes(slack, opsChannel)
             morningBriefRoutes(morningBrief)
             weeklyReviewRoutes(weeklyReview)

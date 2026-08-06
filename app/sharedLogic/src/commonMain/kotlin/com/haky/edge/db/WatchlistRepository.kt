@@ -80,6 +80,16 @@ class WatchlistRepository(driverFactory: DriverFactory) {
             com.haky.edge.model.ThesisSnapshot(d = changedOn, t = thesis)
         }.executeAsList().reversed()
 
+    /**
+     * 논지가 기록된 관심종목 전체 → 서버 sync용(현재 논지 + 최근 이력). pull→push 재점검 대상.
+     * 국내 코드 필터(US: 제외)는 호출부(WatchlistSync)가 관심종목과 동일 기준으로 처리한다.
+     */
+    fun allTheses(historyLimit: Long = 5): List<com.haky.edge.model.ThesisSyncItemBody> =
+        all().mapNotNull { item ->
+            val t = item.thesis?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            com.haky.edge.model.ThesisSyncItemBody(item.code, t, thesisHistory(item.code, historyLimit))
+        }
+
     /** 이번 주(date 이후) 논지 변경 전체. B2 개인 주간 회고 POST에 사용. date = "YYYY-MM-DD". */
     fun thesisChangesSince(date: String): List<com.haky.edge.model.WeeklyThesisChangeEntry> =
         db.thesisHistoryQueries.sinceDateAll(date) { code, thesis, changedOn ->

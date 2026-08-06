@@ -50,6 +50,8 @@ class SignalService(
     private val investorHistory: com.haky.edge.kis.InvestorHistoryLog? = null, // 수급 아카이브(없으면 skip)
     private val signalFiredLog: SignalFiredLog? = null, // N3-a 발화 로그(없으면 skip)
     private val guidance: com.haky.edge.ai.GuidanceService? = null, // N2 가이던스 수집(없으면 skip)
+    private val thesisRegistry: com.haky.edge.thesis.ThesisRegistry? = null, // 논지 pull→push 대상(없으면 skip)
+    private val thesisRecheck: com.haky.edge.ai.ThesisRecheckService? = null, // 논지 재점검 LLM(없으면 skip)
 ) {
     private val dataDir = File(System.getenv("DATA_DIR") ?: ".data").also { it.mkdirs() }
     private val stateFile = File(dataDir, "signal_state.json")
@@ -75,6 +77,7 @@ class SignalService(
     )
     private data class PremortemSignal(val code: String, val name: String, val reason: String, val descriptions: List<String>)
     private data class RebalanceSignal(val text: String)
+    private data class ThesisRecheckSignal(val code: String, val name: String, val verdict: String, val changedFact: String, val reason: String)
 
     internal enum class FlowType(val label: String) { FOREIGN("외국인"), INSTITUTION("기관") }
 
@@ -262,24 +265,51 @@ class SignalService(
             }
         }
 
+        // 8. 논지 재점검(pull→push) — 물질적 신호(공시·실적·밸류 진입)가 뜬 종목 중 서버가 논지를
+        //    아는 것만 LLM 1콜로 재점검. 약화/무효만 발화(유효/판단불가 침묵 — 원신호는 이미 나감).
+        //    게이트가 signals-scan의 기존 디듀프를 상속하므로(공시 등은 1회만 발화) 자연 저빈도.
+        //    비용가드: 스캔당 일일 상한 + (code,논지hash) 쿨다운(논지 편집 시 hash 달라져 리셋).
+        val thesisSignals = mutableListOf<ThesisRecheckSignal>()
+        val registry = thesisRegistry
+        val recheck = thesisRecheck
+        if (registry != null && recheck != null) {
+            val materialByCode = buildMaterialChanges(disclosureSignals, reviewSignals, valuationSignals)
+            var budget = THESIS_RECHECK_DAILY_LIMIT
+            for ((code, change) in materialByCode) {
+                if (budget <= 0) break
+                val thesis = runCatching { registry.activeThesis(code) }.getOrNull() ?: continue
+                val hash = thesisHash(thesis.text)
+                val key = "THESIS:$code"
+                if (withinThesisCooldown(state[key], today, hash)) continue // 같은 논지 최근 발화분은 skip
+                val name = runCatching { master.findByCode(code)?.name }.getOrNull() ?: code
+                val verdict = runCatching { recheck.recheck(code, name, thesis, change) }.getOrNull() ?: continue
+                budget--
+                if (com.haky.edge.ai.ThesisRecheckService.isPushWorthy(verdict.verdict)) {
+                    state[key] = "$today|$hash" // 발화분만 쿨다운(유효/판단불가는 다음 사건 때 재점검)
+                    thesisSignals += ThesisRecheckSignal(code, name, verdict.verdict, verdict.changedFact, verdict.reason)
+                }
+            }
+        }
+
         val descriptions = flowSignals.map { "${it.name}(${it.code}) ${it.type.label} ${it.streak}일 연속 순매수" } +
             disclosureSignals.map { "${it.name}(${it.code}) 공시: ${it.title}" } +
             valuationSignals.map { "${it.name}(${it.code}) 밸류 저평가(PER 하위 ${it.percentile}%)" } +
             reversalSignals.map { "${it.name}(${it.code}) ${it.type.label} ${if (it.toBuy) "매수" else "매도"} 전환(직전 ${it.prevStreak}일 반대)" } +
             reviewSignals.map { "${it.name}(${it.code}) 실적 리뷰: ${it.review.periodLabel} run-rate ${it.review.verdict}" } +
             premortemSignals.map { "${it.name}(${it.code}) 무효화 조건 발동: ${it.descriptions.joinToString("; ")}" } +
-            rebalanceSignals.map { "비중 점검 신호: ${it.text}" }
+            rebalanceSignals.map { "비중 점검 신호: ${it.text}" } +
+            thesisSignals.map { "${it.name}(${it.code}) 논지 ${it.verdict}: ${it.reason}" }
 
         // N3-a: 발송 직전 — 디듀프 통과분(signal lists)을 jsonl에 영속.
         if (descriptions.isNotEmpty()) {
             runCatching {
-                signalFiredLog?.appendNew(buildFiredEntries(today, flowSignals, disclosureSignals, valuationSignals, reversalSignals, reviewSignals, premortemSignals, rebalanceSignals))
+                signalFiredLog?.appendNew(buildFiredEntries(today, flowSignals, disclosureSignals, valuationSignals, reversalSignals, reviewSignals, premortemSignals, rebalanceSignals, thesisSignals))
             }
         }
 
         var posted = false
         if (descriptions.isNotEmpty()) {
-            posted = slack.postMessage(signalChannel, formatMessage(flowSignals, disclosureSignals, valuationSignals, reversalSignals, reviewSignals, premortemSignals, rebalanceSignals))
+            posted = slack.postMessage(signalChannel, formatMessage(flowSignals, disclosureSignals, valuationSignals, reversalSignals, reviewSignals, premortemSignals, rebalanceSignals, thesisSignals))
         }
         // 상태 저장·프리모템 비활성화는 "알릴 게 없거나, 알림이 실제로 나갔을 때"만 —
         // 발송 실패 시 디듀프 상태가 앞서 나가 신호가 조용히 유실되는 걸 막는다(다음 스캔 재시도).
@@ -304,6 +334,7 @@ class SignalService(
         reviews: List<EarningsReviewSignal>,
         premortems: List<PremortemSignal>,
         rebalances: List<RebalanceSignal>,
+        theses: List<ThesisRecheckSignal> = emptyList(),
     ): List<SignalFired> = buildList {
         flows.forEach { add(SignalFired(date, it.code, "FLOW", "${it.type.label} ${it.streak}일 연속 순매수")) }
         discs.forEach { add(SignalFired(date, it.code, "DISCLOSURE", it.title)) }
@@ -312,6 +343,20 @@ class SignalService(
         reviews.forEach { add(SignalFired(date, it.code, "EARNINGS_REVIEW", "${it.review.periodLabel} ${it.review.verdict}")) }
         premortems.forEach { add(SignalFired(date, it.code, "PREMORTEM", it.descriptions.joinToString("; "))) }
         rebalances.forEach { add(SignalFired(date, "", "REBALANCE", it.text)) }
+        theses.forEach { add(SignalFired(date, it.code, "THESIS", "${it.verdict}: ${it.changedFact}")) }
+    }
+
+    /** 논지 재점검 게이트 대상: 물질적 신호(공시·실적·밸류 진입)가 뜬 종목 → 변화 요약. code당 1건. */
+    private fun buildMaterialChanges(
+        discs: List<DisclosureSignal>,
+        reviews: List<EarningsReviewSignal>,
+        vals: List<ValuationSignal>,
+    ): Map<String, String> {
+        val m = linkedMapOf<String, MutableList<String>>()
+        discs.forEach { m.getOrPut(it.code) { mutableListOf() } += "공시: ${it.title}" }
+        reviews.forEach { m.getOrPut(it.code) { mutableListOf() } += "실적 리뷰: ${it.review.periodLabel} run-rate ${it.review.verdict}" }
+        vals.forEach { m.getOrPut(it.code) { mutableListOf() } += "밸류 역사적 하단권 진입(PER 하위 ${it.percentile}%)" }
+        return m.mapValues { it.value.joinToString("; ") }
     }
 
     /** 한 종목·한 신호종류의 연속 순매수 streak. THRESHOLD 미만이면 null. */
@@ -370,6 +415,7 @@ class SignalService(
         reviews: List<EarningsReviewSignal> = emptyList(),
         premortems: List<PremortemSignal> = emptyList(),
         rebalances: List<RebalanceSignal> = emptyList(),
+        theses: List<ThesisRecheckSignal> = emptyList(),
     ): String = buildString {
         appendLine("🔔 *오늘의 관심종목 신호*")
         appendLine()
@@ -435,6 +481,16 @@ class SignalService(
             appendLine("  _${com.haky.edge.ai.RebalanceService.CAVEAT}_")
             appendLine()
         }
+        if (theses.isNotEmpty()) {
+            appendLine("🧭 *논지 점검 — 기록한 가설이 흔들림*")
+            theses.forEach { t ->
+                appendLine("• *${t.name}* (${t.code}) — 논지 *${t.verdict}*")
+                if (t.changedFact.isNotBlank()) appendLine("  변화: ${t.changedFact}")
+                if (t.reason.isNotBlank()) appendLine("  _${t.reason}_")
+            }
+            appendLine("  _기록한 논지를 오늘의 사실로 재점검한 결과입니다. 매매 지시가 아니라 점검 신호입니다._")
+            appendLine()
+        }
         append("_장 마감 후 확정 데이터 기준 · 참고용_")
     }
 
@@ -457,6 +513,20 @@ class SignalService(
         internal const val REVERSAL_MIN_CORR = 0.3  // flow-sensitivity r 하한(수급이 가격을 움직이는 종목만)
         internal const val REBALANCE_COOLDOWN_DAYS = 14 // 리밸런싱 룰별 재알림 금지 기간
         private const val GUIDANCE_MAX_LINES = 4    // N2 실적 리뷰당 가이던스 표시 상한(도배 방지)
+        internal const val THESIS_RECHECK_DAILY_LIMIT = 8 // 스캔당 논지 재점검 LLM 상한(비용 backstop)
+        internal const val THESIS_COOLDOWN_DAYS = 14      // 같은 논지 재발화 금지(논지 편집 시 hash 리셋)
+
+        /** 논지 텍스트 해시(SHA-256 앞 12자) — 쿨다운 키. 논지가 바뀌면 해시가 달라져 쿨다운이 리셋된다. */
+        internal fun thesisHash(text: String): String =
+            java.security.MessageDigest.getInstance("SHA-256")
+                .digest(text.trim().toByteArray()).joinToString("") { "%02x".format(it) }.take(12)
+
+        /** THESIS:{code} 상태값("date|hash")으로 재점검 쿨다운 판정. 해시가 다르면(논지 편집) 쿨다운 없음. */
+        internal fun withinThesisCooldown(stateVal: String?, today: String, hash: String): Boolean {
+            val parts = stateVal?.split("|") ?: return false
+            if (parts.size != 2 || parts[1] != hash) return false
+            return withinCooldown(parts[0], today, THESIS_COOLDOWN_DAYS)
+        }
 
         /**
          * 수급 전환점 감지(F4, 순수 함수). netByDay = 한 주체의 일별 순매수량, 최신이 앞(확정 일별값).

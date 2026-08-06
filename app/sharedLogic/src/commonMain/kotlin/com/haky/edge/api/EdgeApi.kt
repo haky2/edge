@@ -5,6 +5,8 @@ import com.haky.edge.model.UsageAck
 import com.haky.edge.model.UsageEvent
 import com.haky.edge.model.UsageEventBatch
 import com.haky.edge.model.WatchlistSyncBody
+import com.haky.edge.model.ThesisSyncBody
+import com.haky.edge.model.ThesisSyncItemBody
 import com.haky.edge.model.Analysis
 import com.haky.edge.model.EarningsPreview
 import com.haky.edge.model.Premortem
@@ -658,6 +660,20 @@ class EdgeApi(
             client.post("$baseUrl/watchlist/sync") {
                 contentType(ContentType.Application.Json)
                 setBody(WatchlistSyncBody(deviceId, codes))
+            }
+        }
+    }
+
+    /**
+     * 기록한 투자 논지를 백엔드에 동기화 — signals-scan 논지 재점검(pull→push) 대상이 된다.
+     * best-effort: 실패해도 앱 동작엔 영향 없음(조용히 무시). 논지 정본은 앱 로컬 DB.
+     */
+    @Throws(Exception::class)
+    suspend fun syncThesis(deviceId: String, theses: List<ThesisSyncItemBody>) {
+        runCatching {
+            client.post("$baseUrl/thesis/sync") {
+                contentType(ContentType.Application.Json)
+                setBody(ThesisSyncBody(deviceId, theses))
             }
         }
     }

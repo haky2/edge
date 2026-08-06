@@ -2,6 +2,7 @@ package com.haky.edge.ui
 
 import android.content.Context
 import com.haky.edge.api.EdgeApi
+import com.haky.edge.db.WatchlistRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -23,12 +24,22 @@ object WatchlistSync {
         return id
     }
 
-    fun push(ctx: Context, api: EdgeApi, scope: CoroutineScope, codes: List<String>) {
+    @Volatile private var lastThesisSig: String? = null
+
+    fun push(ctx: Context, api: EdgeApi, scope: CoroutineScope, repo: WatchlistRepository, codes: List<String>) {
+        val id = deviceId(ctx)
         val domestic = codes.filter { !it.startsWith("US:") }
         val set = domestic.toSet()
-        if (set == lastSynced) return   // 변화 없으면 skip
-        lastSynced = set
-        val id = deviceId(ctx)
-        scope.launch { runCatching { api.syncWatchlist(id, domestic) } }
+        if (set != lastSynced) {          // 변화 없으면 skip
+            lastSynced = set
+            scope.launch { runCatching { api.syncWatchlist(id, domestic) } }
+        }
+        // 논지도 함께 동기화(pull→push 재점검 대상). 국내만, 직전과 같으면 skip.
+        val theses = repo.allTheses(5).filter { !it.code.startsWith("US:") }
+        val sig = theses.joinToString("|") { "${it.code}:${it.thesis}" }
+        if (sig != lastThesisSig) {
+            lastThesisSig = sig
+            scope.launch { runCatching { api.syncThesis(id, theses) } }
+        }
     }
 }

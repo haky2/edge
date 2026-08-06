@@ -20,9 +20,23 @@ enum WatchlistSync {
     static func push(api: EdgeApi, codes: [String]) {
         let domestic = codes.filter { !$0.hasPrefix("US:") }
         let set = Set(domestic)
-        if set == lastSynced { return }   // 변화 없으면 skip
-        lastSynced = set
+        if set != lastSynced {            // 변화 없으면 skip
+            lastSynced = set
+            let id = deviceId()
+            Task { try? await api.syncWatchlist(deviceId: id, codes: domestic) }
+        }
+        pushTheses(api: api)              // 논지도 함께 동기화(pull→push 재점검 대상)
+    }
+
+    private static var lastThesisSig: String? = nil
+
+    /// 기록한 논지(국내)를 백엔드에 동기화. 직전과 같으면 skip(중복 POST 방지).
+    private static func pushTheses(api: EdgeApi) {
+        let theses = Db.watchlist.allTheses(historyLimit: 5).filter { !$0.code.hasPrefix("US:") }
+        let sig = theses.map { "\($0.code):\($0.thesis)" }.joined(separator: "|")
+        if sig == lastThesisSig { return }
+        lastThesisSig = sig
         let id = deviceId()
-        Task { try? await api.syncWatchlist(deviceId: id, codes: domestic) }
+        Task { try? await api.syncThesis(deviceId: id, theses: theses) }
     }
 }
